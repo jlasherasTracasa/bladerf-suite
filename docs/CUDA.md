@@ -1,5 +1,15 @@
 # CUDA en BladeRF Lab (agente C1)
 
+## Figuras
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/gpu-dark.png">
+  <img src="img/gpu-light.png" alt="DDC por lotes, PFB y espectro asíncrono en GPU">
+</picture>
+
+*Figura. Las tres piezas de CUDA con las cifras medidas de este documento (máquina de medida: RTX 4080 Laptop, CUDA 13.2).*
+
+
 Todo el código de GPU vive en `src/gpu/` y está escrito desde cero (sin cuFFT ni
 bibliotecas). Sin CUDA (`make CUDA=0` o sin `nvcc`) se compilan los `*_stub.c` y
 el programa sigue por CPU; las partes de C puro (`ddc_plan.c`, `pfb_plan.c`) se
@@ -280,3 +290,10 @@ se sostienen solo 42–80 Msps con **cualquier** espectro, incluida la CPU: ver 
   pedir más muestras de las que quedaban y `memcpy` leía más allá del búfer de la prueba; que cayera en la página
   de guarda o no dependía de la disposición del montón (cambiada por usar CUDA antes). Mismo patrón en la prueba del
   PFB. Las pruebas ya pasan en cualquier orden.
+
+### Calibración absoluta (C2)
+El espectro salía 66,2 dB (= 20·log10 2048) bajo lo documentado: las muestras se dividían entre 2048 al cargar la
+FFT (CPU: `w/2048`; GPU: `k_load`) y `norm_db` volvía a incluir ×2048. Ahora `norm_db = −20·log10(Σw)`.
+`tests/test_gpu.c` mide tonos de 0, −6, −20 y −60 dBFS con FFT 1024, 4096, 16384 y 65536 en CPU y GPU: error máximo
+0,09 dB. Cuantificación del mensaje de espectro (`engine.c`): −145 dBFS + 0,6 dB·v → techo +8 dBFS (antes −12,5).
+`dbm_offset` no cambia (dBm = dBFS + offset; ahora los dBFS sí son correctos).

@@ -123,6 +123,19 @@ y `./rdloop 122.88e6 15 1048576` (programa auxiliar no incluido en el repositori
 Con el servidor: `bladerf-lab --rate 122.88M --freq 100M --config /tmp/x.json` y mira
 `status.stats.{rate,overruns,drops,ring_ms,load}` por WebSocket.
 
+### Repetición con la máquina libre (carga 10, equipo libre, 25 s + 4 s de arranque)
+
+| Caso | Resultado |
+|---|---|
+| Servidor, 61,44 Msps, 1 cliente WFM | 61,5 Msps, 3 overruns de hardware, **0 drops**, DSP 0,20 |
+| Servidor, 122,88 Msps, 1 cliente WFM | 122,9 Msps, 22 overruns, **0 drops**, DSP 0,26 |
+| Bucle vacío 61,44 Msps, 10 s | 3 de 586 bloques con overrun |
+| Bucle vacío 122,88 Msps, 10 s | 3 de 1 173 bloques con overrun |
+
+Con la máquina libre los overruns son escasos y del mismo orden con el bucle vacío que con el servidor: el DSP ya
+no los provoca (0 drops); lo que queda es pérdida del USB. Las cifras de 1 236 y 5 001 de arriba se midieron con
+la máquina a carga 56 (compilación de Quartus), es decir, con el lector sin CPU.
+
 ## 5. Defecto ajeno detectado: escala de `spectrum.c`
 
 Con `src/dsp/spectrum.c` (22:54) y `src/gpu/spectrum_gpu.cu` (23:04) tal como estaban, el espectro sale
@@ -134,6 +147,9 @@ compara con la trama corregida, así que no depende del arreglo; el dueño de `s
 uno de los dos factores.
 
 ## 6. Pendientes para otros ficheros
-* `host.{h,c}`: `dec_host_needs_float()` (hoy se deduce de `dec_list`).
-* `docs/PROTOCOLO.md`: `status.stats.drops` y `status.stats.ring_ms` nuevos; `overruns` ahora es solo de hardware.
+* `host.{h,c}`: `dec_host_needs_float()` ya existe (C2); `engine.c` puede sustituir su deducción por esa llamada.
+* (hecho) `docs/PROTOCOLO.md`: `stats.drops`, `stats.ring_ms`, `overruns`.
 * `Makefile`/`filter.c`: `firdec_process` y `cfir_process` siguen siendo serie (los usa el DDC del host).
+
+## 7. Barrido a modo lento (no medido)
+No se midió la latencia de retuneo frente al tiempo de asentamiento: `src/sdr/sweep.c` no es de P1 y no quedó tiempo. Propuesta: medir en `sweep.c` el intervalo entre `source_retune_at` y la marca de tiempo real del primer bloque tras el salto, y fijar el adelanto de programación a (p95 de esa latencia + asentamiento) en vez de un valor fijo.

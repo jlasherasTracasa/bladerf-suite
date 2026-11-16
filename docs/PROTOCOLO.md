@@ -1,5 +1,15 @@
 # Protocolo WebSocket (`GET /ws`)
 
+## Figuras
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/protocolo-ws-dark.png">
+  <img src="img/protocolo-ws-light.png" alt="Protocolo WebSocket">
+</picture>
+
+*Figura. Mensajes binarios (tipos 1–6) y JSON del protocolo `GET /ws`; abajo, el orden de envío al conectar.*
+
+
 Un cliente se conecta a `ws://host:puerto/ws` (la cabecera `Origin` debe coincidir
 con `Host`). Todo es little-endian. Hay mensajes binarios (datos) y JSON (control).
 
@@ -7,7 +17,7 @@ con `Host`). Todo es little-endian. Hay mensajes binarios (datos) y JSON (contro
 
 | Tipo | Cabecera | Datos |
 |---|---|---|
-| 1 espectro | `[1]`=1 si GPU, `[4..7]` u32 n, `[8..15]` f64 centro Hz, `[16..23]` f64 tasa, `[24..27]` f32 dbmin, `[28..31]` f32 dbstep | n bytes `v`: dBFS = dbmin + v·dbstep (dbmin = −140, dbstep = 0,5) |
+| 1 espectro | `[1]`=1 si GPU, `[4..7]` u32 n, `[8..15]` f64 centro Hz, `[16..23]` f64 tasa, `[24..27]` f32 dbmin, `[28..31]` f32 dbstep | n bytes `v`: dBFS = dbmin + v·dbstep. Hoy dbmin = −145, dbstep = 0,6 (rango −145…+8 dBFS; 0 dBFS = tono complejo de amplitud 1,0): léelos siempre de la cabecera |
 | 2 audio | `[1]` flags, `[2]` canales (1/2), `[4..7]` f32 nivel dBFS | PCM int16 48 kHz intercalado |
 | 3 nivel | igual que audio | — (sin datos) |
 | 4 barrido | ver abajo (cabecera de 32 bytes como el tipo 1) | n bytes `v`, dBFS = dbmin + v·dbstep |
@@ -35,9 +45,13 @@ continua (±2 bins del centro) ya viene sustituido en el espectro.
  "format":"sc16|sc8|…","oversample":bool,"dbm_offset":dB|null,
  "sweep":null|{"start","stop","fft","rate","hops","bins","mode":"quick|slow","sweeps","restarts"},
  "biastee","fft","fps","det_snr","profile":"id"|null,"loc":{"lat","lon"}|null,
- "stats":{"rate","overruns","temp","load","clients","sent","backend"}}
+ "stats":{"rate","overruns","drops","ring_ms","temp","load","clients","sent","backend"}}
 ```
 (`adsb`/`adsb_active` ya no existen.) El mismo objeto responde a `GET /api/status`.
+
+* `stats.overruns`: muestras que el hardware/USB declaró perdidas (solo bladeRF; 0 con fichero).
+  `stats.drops`: bloques de IQ que el hilo DSP no llegó a consumir (anillo lleno). `stats.ring_ms`: cola
+  máxima del anillo entre el lector y el DSP en el último segundo (ms); cerca del tamaño del anillo = el DSP va justo.
 
 * `device.rate_max` llega limitado a 61,44 Msps; `device.rate_max_oversample` es
   `null` o 122 880 000 (modo oversample SC8, FPGA ≥ 0.15): solo entonces se pueden

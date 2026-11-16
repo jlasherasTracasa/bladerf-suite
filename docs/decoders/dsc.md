@@ -64,10 +64,29 @@ No se decodifican llamadas con especificadores no listados ni mensajes con
 extensiones largas (frecuencia en 3 símbolos se deja en `ext`); sin corrección de
 dos errores; el canal 70 de socorro se decodifica pero nunca se emite.
 
-## Validación con señales reales (V1, 2026-11-15)
+## Validación con la norma ITU-R M.493-15 (V1, 2026-11-16)
 
-**Sin validar.** No se encontró ninguna grabación pública de DSC VHF (canal 70, 1200 Bd,
-1300/2100 Hz): ni la Signal Identification Wiki ni los repositorios de pruebas consultados la
-tienen, y ninguno de los decodificadores de referencia instalados (multimon-ng, acarsdec,
-dumpvdl2, redsea, dump1090-fa) decodifica DSC. Los bits de comprobación y las categorías siguen
-sin contrastar con tráfico real.
+**Sin grabación real** (no existe ninguna pública de DSC VHF que se haya encontrado; ninguno de los
+decodificadores de referencia instalados lo decodifica), pero la norma M.493-15 (ITU, descargable
+gratis en itu.int; PDF `R-REC-M.493-15-201901-S`) se leyó y se contrastaron las constantes. Resultado:
+
+| Constante | Antes | Según M.493 | Acción |
+|---|---|---|---|
+| Bits de comprobación (bits 8-10) | nº de ceros, **LSB primero** en el modulador; el decodificador aceptaba ambos órdenes | nº de ceros (B) en binario, **MSB primero** (§1.1.1, Tabla A1-1: p. ej. 6 ceros = YYB) | corregido: modulador MSB-first, decodificador solo MSB-first; test con 15 símbolos de la Tabla A1-1 |
+| Tonos | 1300 Hz = 1, 2100 Hz = 0 | 2100 Hz = B = 0 (más alta), 1300 Hz = Y = 1 (§1.4) | confirmado |
+| Especificador de formato | un solo símbolo | **dos idénticos seguidos** ("2 identical characters", Fig. 1) | decodificador: se elimina el duplicado antes de ECC y análisis (se tolera uno solo); modulador: lo emite duplicado |
+| EOS | un símbolo + ECC | 3 veces en DX y 1 en RX; el ECC va justo tras el primer EOS (§9, Fig. 1b); en el ECC solo cuenta un FS y un EOS | el decodificador ya leía el ECC tras el primer EOS; el modulador emite los dos EOS extra |
+| ECC | XOR de los símbolos FS…EOS | bits menos significativos de la suma módulo 2 (paridad vertical par) (§10.2) | confirmado |
+| Categorías | 100/108/110/112 | rutina/seguridad/urgencia/socorro (Tabla A1-3) | confirmado |
+| Naturaleza del socorro | 100-110, 112 | igual (§8.1.1) | confirmado |
+| Especificadores | 102, 112, 114, 116, 120, 123 | igual | confirmado |
+| Telemandos | 107 J3E, 109 acuse, 110 retrans., 111 TTY-FEC, 113 TTY-ARQ | 109 J3E TP, **110 acuse de socorro, 112 retransmisión de socorro**, 113 TTY-FEC, 115 TTY-ARQ, 118 prueba, 121 posición | corregidos |
+| Acuse/retransmisión de socorro | dos telemandos + identidad | **un** telemando (110 ó 112) + identidad + naturaleza + posición + hora + comunicación (Tablas A1-4.2/4.3) | corregido el análisis |
+| Posición | cuadrante 0 NE, 1 NO, 2 SE, 3 SO + gg mm + ggg mm | igual (§8.1.2); 9999999999 = sin posición | confirmado |
+| Hora | hhmm; 8888 = no disponible | igual (§8.1.3) | confirmado |
+
+Lo que sigue **sin validar con tráfico real**: la polaridad de tonos con una señal de aire, la
+asignación de huecos DX/RX con una grabación (la norma da "cuatro caracteres entre medias", es
+decir, copia RX 5 huecos después, que es lo implementado), y las llamadas de socorro, acuse y
+retransmisión de extremo a extremo. Test: `tests/test_dsc.c` (símbolos de la Tabla A1-1 y un acuse
+de socorro de la Tabla A1-4.2).

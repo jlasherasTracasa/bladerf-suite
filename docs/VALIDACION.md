@@ -1,5 +1,15 @@
 # Validación con señales reales
 
+## Figuras
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/matriz-validacion-dark.png">
+  <img src="img/matriz-validacion-light.png" alt="Matriz de validación">
+</picture>
+
+*Figura. Estado de validación de los 21 decodificadores (en el aire, datos reales, sintético y pendiente).*
+
+
 Cada decodificador se probó al principio solo contra su propio modulador; una constante
 equivocada (tabla, polaridad, CRC, orden de bits) habría pasado los tests y fallado con tráfico
 real. Este documento recoge lo que se contrastó con grabaciones públicas y con los decodificadores
@@ -33,13 +43,13 @@ Cada sección la escribe el agente de su grupo. Relee el fichero antes de editar
 |---|---|---|---|---|
 | ais | sigidwiki "AIS Sound" (Long Beach, FM) y "AIS IQ" (Dinamarca, IQ 48 kHz) | CRC correcto pero "tipo 8, MMSI 98xxxxxxx" (basura) | tipo 1, MMSI 367003560 / 366982310 y 219…/538…, posiciones coherentes | **orden de bits de los campos M.1371** (octetos con LSB primero) |
 | acars | sigidwiki "ACARS sound" (11 bloques, Nueva Zelanda) e "ACARS IQ" (VQ-BKV) | 0 bloques | 11/11 = acarsdec; BCS, paridad y LSB-primero confirmados | **codificación diferencial** (2400 Hz = bit igual al anterior, 1200 Hz = cambia); n.º de mensaje no siempre "M…" |
-| flex | multimon-ng `FLEX_1600_2fsk_P2000_proef_alarm.flac`; sigidwiki FLEX 1600/3200/3200-4 | 0 mensajes | 1600/2: 20 mensajes con texto idéntico a multimon-ng; 3200/2 y 3200/4: **siguen sin decodificar**; direcciones largas no soportadas | palabra A = código + **0xA6C6** (no el complemento); falsa sincronía con la 1ª copia (~A) del Sync 1; 7 bits de cabecera en la 1ª palabra de datos |
+| flex | multimon-ng `FLEX_1600_2fsk_P2000_proef_alarm.flac`; sigidwiki FLEX 1600/3200/3200-4 | 0 mensajes | 1600/2: 20 mensajes con texto idéntico a multimon-ng; 3200/2, 3200/4 y 6400/4: **siguen sin decodificar** (solo hay muestras reales de 3200/4; Sync 1 y FIW bien, mapeo de niveles y direcciones largas sin resolver) | palabra A = código + **0xA6C6** (no el complemento); falsa sincronía con la 1ª copia (~A) del Sync 1; 7 bits de cabecera en la 1ª palabra de datos |
 | pocsag | multimon-ng `POCSAG_sample_-_{512,1200,2400}_bps.flac` | no probado | 3/3 = multimon-ng (RIC 273040/1022869, texto "+++TIME=…") | nada |
 | aprs | sigidwiki "AFSK1200 Sound" (BBS FBB ZL1AB) | no probado | tramas AX.25 idénticas a multimon-ng y Dire Wolf | nada (las tramas no son APRS de posición: ese análisis sigue sin contrastar) |
 | rds | `redsea` sobre la salida de `--gen rds`; RDS real captado por el orquestador (Radio Pamplona, 100,4 MHz: PI E239, PS "SER") | — | PI/grupos/PTY/AF/DI idénticos | nada |
 | adsb | `dump1090-fa` sobre la salida de `--gen adsb` (remuestreada a 2,4 MS/s); sin señal real (la antena actual no recibe 1090 MHz) | — | decodifica las mismas 4 tramas DF17 (KLM1023, posiciones, velocidad) | nada. **Sin validar con tráfico real** |
-| vdl2 | sigidwiki "VDL-M2 IQ" (50 ráfagas, 11 tramas decodificables con `dumpvdl2`) | 0 tramas | **sigue en 0**: UW, D8PSK, 10 500 Bd, RRC 0,6 y orden de símbolos confirmados (correlación 0,99), pero la cabecera de 25 bits no cumple el código supuesto ni con aleatorizador | cabecera/aleatorizador (polinomio, orden, ámbito), sin resolver; el WAV trae I/Q intercambiados |
-| dsc | ninguna encontrada | — | — | **sin validar** |
+| vdl2 | sigidwiki "VDL-M2 IQ" (50 ráfagas, 11 tramas decodificables con `dumpvdl2`); ETSI EN 301 841-1 §5.4 | 0 tramas | **sigue en 0** por la calidad de la grabación (ISI sistemática, BER ~10 %). Confirmados: UW, D8PSK, 10 500 Bd, estructura de la cabecera (reservado + 17 + 5), e I/Q intercambiados en el WAV | **aleatorizador** (x¹⁵+x¹⁴+1, solo datos, primeros bits 010011100011111; antes estado 0x6959 y realimentación equivocada). La longitud ya no depende solo de la cabecera |
+| dsc | ninguna grabación; norma ITU-R M.493-15 (itu.int) | — | tests con la Tabla A1-1 y un acuse de socorro; sigue **sin validar con aire** | bits de comprobación MSB primero (el modulador los enviaba LSB primero); especificador de formato duplicado y EOS ×3 que faltaban; telemandos 109/110/112/113/115 mal rotulados; acuse/retransmisión de socorro llevan un solo telemando |
 
 ### Pendiente del grupo A
 

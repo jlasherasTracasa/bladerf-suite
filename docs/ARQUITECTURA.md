@@ -1,5 +1,22 @@
 # Arquitectura de BladeRF Lab
 
+## Figuras
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/arquitectura-dark.png">
+  <img src="img/arquitectura-light.png" alt="Hilos y flujo de datos de BladeRF Lab">
+</picture>
+
+*Figura 1. Hilos y flujo de datos: del bladeRF o el fichero al navegador. El hilo DSP reparte punteros y nunca espera; cada instancia de decodificador, la emisión y `tv.c` trabajan en sus propios hilos (fuentes: `src/engine.c`, `src/decoders/host.c`).*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/marco-decodificadores-dark.png">
+  <img src="img/marco-decodificadores-light.png" alt="Marco de decodificadores">
+</picture>
+
+*Figura 2. El marco de decodificadores: descriptor, host, DDC, cola de bloques refcontados, eventos y `dec_state`.*
+
+
 BladeRF Lab es un servidor SDR escrito desde cero en C11 (sin librerías de
 terceros salvo libbladeRF) para el bladeRF 2.0 micro. Un único binario captura IQ,
 calcula espectro, demodula audio por cliente, detecta señales, graba SigMF,

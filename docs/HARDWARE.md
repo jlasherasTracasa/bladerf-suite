@@ -1,5 +1,22 @@
 # Hardware (lado host): bladeRF 2.0 micro xA9
 
+## Figuras
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/fpga-lab-dark.png">
+  <img src="img/fpga-lab-light.png" alt="Imagen FPGA lab">
+</picture>
+
+*Figura. Imagen FPGA «lab»: motor de espectro en la ruta de RX y banco de registros Wishbone (detalle en [FIRMWARE.md](FIRMWARE.md); sin probar todavía en la placa).*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/arquitectura-dark.png">
+  <img src="img/arquitectura-light.png" alt="Hilos y flujo de datos">
+</picture>
+
+*Figura. Dónde encaja el hardware: solo el hilo DSP llama a las funciones de recepción de libbladeRF; la emisión usa su propio hilo.*
+
+
 Qué hace el servidor con las funciones de la FPGA 0.16 / libbladeRF 2.6.1. Código:
 `src/sdr/source.{h,c}` (fuente), `src/sdr/sweep.{h,c}` (barrido), enganches en
 `src/engine.c` y órdenes en `src/main.c`. Pruebas: `tests/test_source.c`.

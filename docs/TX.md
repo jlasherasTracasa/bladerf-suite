@@ -1,5 +1,15 @@
 # Emisión (`src/tx/`)
 
+## Figuras
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/politica-tx-dark.png">
+  <img src="img/politica-tx-light.png" alt="Política de emisión">
+</picture>
+
+*Figura. Decisión de emisión: `file`, `loopback` y `air`, con la lista blanca de bandas, el ciclo de trabajo y `air_ok`.*
+
+
 Cada decodificador tiene un **modulador** gemelo (`mod_<id>.c`, contrato en
 `src/tx/mod.h`) que produce banda base compleja centrada en 0 Hz, `|x| ≤ 0,9`, a la
 tasa nativa del protocolo. Sirve para (1) probar decodificadores sin radio, (2)

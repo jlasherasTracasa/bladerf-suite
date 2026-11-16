@@ -95,3 +95,17 @@ de los bloques no son válidas): el mapeo de dibitos de 4 niveles o el reparto d
 resuelto. (2) Direcciones largas (capcodes > 1 933 312, "LS"/"LN" en multimon-ng): se cuentan y
 no se emiten; la fórmula de la dirección larga no está confirmada. Test:
 `tests/data/flex_p2000_phase.u8` en `tests/test_flex.c`.
+
+### Alta velocidad (V1, 2026-11-16)
+
+Muestras reales a 3200/4 hay dos (sigidwiki "FLEX" y "FLEX 6400bps": ambas llevan el código A 0xDEA0 y
+`multimon-ng` las decodifica como 3200/4; la de "3200" con A = 0xB068 no la decodifica ni la referencia).
+No hay muestras de 6400/4 (código 0x4C7C) ni de 3200/2. Lo que se pudo medir en 3200/4 con
+FLEX.mp3: el Sync 1 y el FIW salen bien (`[A][puntos][~A][FIW]` con la polaridad de esa grabación),
+los datos empiezan ≈ 41 símbolos tras el FIW y dos flujos de bits —el indicador "nivel exterior"
+(|v| > 2/3) y el signo— contienen palabras BCH válidas intercaladas 8×32 en 15 de 16 palabras
+de una trama con tráfico, así que el reparto A/B con 2 bits por símbolo es del tipo implementado,
+pero el decodificador sigue sacando direcciones sin sentido (casi todo "dirección larga") por la
+tasa de error de símbolo y la falta de las direcciones largas (todos los capcodes de esa
+grabación son largos, `LS` en multimon-ng). **Sin resolver:** el mapeo exacto nivel → bits por fase y
+la fórmula de la dirección larga.

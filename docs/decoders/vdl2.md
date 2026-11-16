@@ -115,3 +115,30 @@ base, ~50 ráfagas de ~24 ms a 21 dB sobre el suelo). **Hallazgos con evidencia:
   la norma (ETSI EN 301 841-1 §5.4) o con una traza de la referencia.
 * La salida de `--gen vdl2` tampoco la decodifica `dumpvdl2` (0 tramas, con y sin ruido, escala
   ×1-×14): coherente con la cabecera/aleatorizador erróneos.
+
+### Segunda pasada (V1, 2026-11-16)
+
+* **ETSI EN 301 841-1 V1.1.1 §5.4** (pdf público de etsi.org) confirma la estructura del
+  entrenamiento: rampa de 5 símbolos, palabra única de 16 símbolos, **1 símbolo reservado**, longitud
+  de 17 bits (LSB primero; cuenta los bits que siguen a la cabecera sin el FEC) y 5 bits de FEC de
+  cabecera: la cabecera de 25 bits es la implementada. Esa edición **no** da el polinomio del FEC de
+  cabecera ni el aleatorizador (están en el Anexo 10 vol. III de la OACI, no libre).
+* **Aleatorizador, corregido con la grabación:** con 8 ráfagas cuyo primer octeto de datos es la
+  bandera 0x7E y la dirección empieza por 0x14 (trama a la estación 10981A, cuya dirección es
+  conocida por `dumpvdl2`), la secuencia de clave medida cumple g[n] = g[n−1] ⊕ g[n−15] (polinomio
+  x¹⁵+x¹⁴+1, 23 de 25 comprobaciones; las dos discrepancias vienen de bits de dato no conocidos), con
+  los 15 primeros bits **010011100011111**; la cabecera NO se aleatoriza y los datos empiezan en el
+  bit 25. El código anterior (estado inicial 0x6959, realimentación x¹⁵+x+1 en la práctica) no
+  coincidía. Corregido en `vdl2_frame.c` (el modulador usa la misma función).
+* **Longitud:** el decodificador ya no depende solo de la cabecera de 25 bits: prueba su longitud si
+  es verosímil y, si no, todas las longitudes D tales que datos + paridad RS caben en los bits
+  recibidos (±3 octetos por la rampa de bajada).
+* **Por qué sigue sin sacar tramas de esa grabación:** los incrementos de fase de la UW tienen un
+  error **sistemático** (media de ±0,5 de incremento por posición, desviación 0,2, el mismo patrón
+  en las 50 ráfagas) que no depende del filtro (RRC con β = 0,35-0,8 o caja) ni del instante de
+  muestreo: es interferencia entre símbolos del propio WAV (diezmado a 48 kHz con un filtro de
+  paso bajo que recorta el espectro de 16,8 kHz). Eso da una tasa de error de bit de ~10 %, más
+  de lo que corrigen los 2 octetos de paridad RS de las tramas cortas; `dumpvdl2` solo logra 11 de
+  ~50 ráfagas. Con ese BER tampoco se puede decir si el código de la cabecera es el correcto (solo
+  2 de 29 cabeceras pasan la paridad, justo lo que se espera con ese BER). Hace falta un
+  ecualizador entrenado con la UW, o una grabación de mejor calidad.

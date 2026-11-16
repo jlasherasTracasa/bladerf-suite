@@ -1,5 +1,15 @@
 # DSP: filtros, remuestreo y DDC
 
+## Figuras
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/canal-audio-dark.png">
+  <img src="img/canal-audio-light.png" alt="Cadena de un canal de audio">
+</picture>
+
+*Figura. Cadena de un canal de audio (`src/dsp/channel.h`): NCO, diezmado, filtro de canal, nivel y squelch, demodulador y remuestreo a 48 kHz.*
+
+
 Este documento resume lo que añade la base (A1). Los bloques anteriores (FFT,
 canal de audio, detector) están explicados en las cabeceras de `src/dsp/`.
 

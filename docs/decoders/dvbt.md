@@ -104,3 +104,54 @@ complementarias, PRBS; TPS: construir, corregir 2 errores. Sistema: 2k/8k × 4 g
   OFDM systems", IEEE Trans. Signal Process. 45(7), 1997.
 - Liu, tesis NYCU 2006 (detección ciega de modo/guarda); patentes US 7729414 y
   US 9100226 (TPS).
+
+---
+
+# Receptor completo hasta TS (TV1) — `src/tv/dvbt_rx.*`
+
+API en AGENTS.md §8c. Ficheros: `dvbt_rx.c` (sincronía, canal, TPS, demapeo), `dvbt_tab.c`
+(tablas compartidas con el modulador), `dvbt_vit.c` (Viterbi AVX2, ≈ 100 Mb/s), `dvbt_outer.c`
+(sincronía de paquete, Forney, RS(204,188), PRBS), `tx/mod_dvbt.c` (modulador TS → OFDM).
+El decodificador del catálogo `dvbt` (arriba) sigue usando su analizador por ráfagas
+(0,02–0,04 s de CPU por s); el receptor completo lo usa el decodificador `tdt` de TV2.
+
+## Constantes validadas contra GNU Radio gr-dtv
+
+gr-dtv (3.10.9) solo se EJECUTÓ como referencia (`build/tv1/ref/grgen.py`; no se leyó ni copió su código).
+Resultado de comparar `mod_dvbt.c` con su cadena `dtv.dvbt_*`:
+
+- Constelación tras aleatorizador, RS, Forney (I=12, M=17), convolucional+perforado,
+  entrelazado de bits y de símbolo: **error 0** en 9 combinaciones (QPSK/16/64 × 1/2…7/8, 2k/8k).
+- Símbolo OFDM completo (pilotos continuos 177, dispersos, TPS 68 con BCH y cell id, 2 tramas):
+  error relativo 3e-14 en el dominio del tiempo. Las tablas de pilotos y TPS "de memoria" de D8 eran
+  correctas (también se comprobó la PRBS x¹¹+x²+1 y la paridad de sincronía de TPS).
+- **Única constante corregida**: la permutación de bits R'→R del entrelazado de símbolo 2k
+  (tabla `p2` en `dvbt_tab.c`: R'₈→R₇, R'₉→R₀; las dos últimas estaban intercambiadas).
+- Receptor sobre IQ generado por gr-dtv (64-QAM 2/3, 8k, 1/4, cell id 4660): 4918 paquetes TS
+  idénticos (`build/tv1/ref/g64_iq.cs16`).
+- Contraste en el aire (C32): el CFO entero y la fase de pilotos dispersos se detectan con
+  contraste alto (4,5 frente a 1,2): confirma pilotos continuos, PRBS y posiciones dispersas.
+
+## Pruebas (`tests/test_dvbt_rx.c`)
+
+TS → modulador → canal (AWGN respecto a potencia media, CFO 0–3300 Hz, ±20 ppm, eco a 800
+muestras) → receptor: paquetes idénticos en 2k/8k, guardas 1/32…1/4, 4/16/64-QAM, tasas 1/2…7/8.
+Rendimiento (8k, 1/4, 64-QAM 2/3, 19,9 Mb/s): 0,64–0,8 núcleos (i7-13650HX, CUDA=0); 2k 1/4:
+1,4 núcleos (3,5 símbolos/ms).
+
+## Limitaciones conocidas
+
+- Jerarquía: se demapea solo el flujo HP (y0, y1); la parte LP y el mapa de demux LP del modulador
+  no se contrastaron con gr-dtv.
+- Deriva de reloj > ~50 ppm y canales con ecos > guarda/2 no están probados; el seguimiento
+  de la ventana es de ±1 muestra por símbolo.
+- El decodificador `dvbt` del catálogo no añade bitrate/servicios (se deja a TV2/`tdt`).
+
+## Señal real de Pamplona (2026-11-16, bladeRF RX1, ganancia 50, 64/7 MHz)
+
+Barrido C21–C48: CP con guarda 1/4 en 8k en C23, C32, C37, C47 (y débil C39/C26). Mejor: **C32
+(562 MHz, MPE1)**: el receptor engancha, estima CFO +821 Hz, decodifica TPS (8k, 1/4,
+64-QAM, HP 2/3) pero la SNR en banda es de **≈ −9 dB** (ρ_CP = 0,09): imposible demodular 64-QAM
+(necesita ≈ 16 dB), así que no hay TS. La antena entrega ≈ 60 dB menos de lo esperado en UHF TV;
+con la ganancia sin efecto (el ruido es del frontal). Grabación: `build/tv1/rec/c32_gain50.cs16`
+(15 s) y fragmento `c32_frag.cs8` (4,6 MB). Requiere mejor antena/LNA para TS real.

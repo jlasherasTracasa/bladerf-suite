@@ -1,5 +1,15 @@
 # ADS-B / Mode S (1090 MHz)
 
+## Figuras
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/adsb-cadena-dark.png">
+  <img src="img/adsb-cadena-light.png" alt="Cadena de ADS-B">
+</picture>
+
+*Figura. Cadena del decodificador ADS-B: del módulo a 2 Msps al estado de aeronaves.*
+
+
 Referencia: Junzi Sun, *The 1090 Megahertz Riddle*, 2ª ed., TU Delft OPEN, 2021.
 
 ## Capa física
