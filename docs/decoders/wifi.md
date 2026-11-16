@@ -97,6 +97,12 @@ Evento `dec` (campo `msg`, listas largas recortadas):
 }
 ```
 
+### En la web
+
+![WiFi en la interfaz web](../img/decoders/wifi-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando WiFi.*
+
 <!-- vision-rapida:fin -->
 
 Decodificador **wide** (20 Msps exactos, muestras Q11) que descubre redes WiFi a

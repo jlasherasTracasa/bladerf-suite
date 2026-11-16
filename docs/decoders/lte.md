@@ -88,6 +88,12 @@ Evento `dec` (campo `msg`, listas largas recortadas):
 }
 ```
 
+### En la web
+
+![LTE en la interfaz web](../img/decoders/lte-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando LTE.*
+
 <!-- vision-rapida:fin -->
 
 Búsqueda de celdas LTE en un canal de 1,92 Msps (FFT de 128, subportadoras de 15 kHz): PCI, FDD/TDD,

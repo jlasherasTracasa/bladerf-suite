@@ -44,6 +44,12 @@ Esta grabación no produce ningún evento `dec`.
 }
 ```
 
+### En la web
+
+![NR en la interfaz web](../img/decoders/nr-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando NR.*
+
 <!-- vision-rapida:fin -->
 
 Búsqueda de bloques SS/PBCH (SSB) en la rejilla GSCN que cae dentro de la captura: PSS/SSS → PCI (0–1007),

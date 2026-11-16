@@ -94,6 +94,12 @@ Evento `dec` (campo `msg`, listas largas recortadas):
 }
 ```
 
+### En la web
+
+![VDL2 en la interfaz web](../img/decoders/vdl2-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando VDL2.*
+
 <!-- vision-rapida:fin -->
 
 Ficheros: `src/decoders/vdl2.c` (demodulador y tablas), `vdl2_frame.{c,h}` (cabecera, aleatorizador,

@@ -82,6 +82,12 @@ Evento `dec` (campo `msg`, listas largas recortadas):
 }
 ```
 
+### En la web
+
+![ACARS en la interfaz web](../img/decoders/acars-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando ACARS.*
+
 <!-- vision-rapida:fin -->
 
 Ficheros: `src/decoders/acars.c`, `src/decoders/acars_blk.{c,h}` (bloque, BCS; lo reutiliza VDL2),

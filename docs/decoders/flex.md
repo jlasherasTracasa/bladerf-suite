@@ -66,6 +66,12 @@ Evento `dec` (campo `msg`, listas largas recortadas):
 }
 ```
 
+### En la web
+
+![FLEX en la interfaz web](../img/decoders/flex-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando FLEX.*
+
 <!-- vision-rapida:fin -->
 
 Decodificador `src/decoders/flex.c` (+ `flex.h`, `pocsag_fsk.h`), modulador `src/tx/mod_flex.c`, test

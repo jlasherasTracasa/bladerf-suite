@@ -81,6 +81,12 @@ Evento `dec` (campo `msg`, listas largas recortadas):
 }
 ```
 
+### En la web
+
+![ISM en la interfaz web](../img/decoders/ism-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando ISM.*
+
 <!-- vision-rapida:fin -->
 
 Decodificador estrecho (N) a 250 kHz complejos, canal de 200 kHz. Detecta ráfagas

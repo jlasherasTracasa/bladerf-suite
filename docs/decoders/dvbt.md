@@ -35,6 +35,12 @@ Procedencia: grabación real del C32 de Pamplona: con la SNR de ≈ −9 dB el r
 
 Esta grabación no produce ningún evento `dec`.
 
+### En la web
+
+![DVB-T en la interfaz web](../img/decoders/dvbt-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando DVB-T.*
+
 <!-- vision-rapida:fin -->
 
 Decodificador **narrow** a 64/7 MHz = 9 142 857,14 Hz (T = 7/64 µs, canal de

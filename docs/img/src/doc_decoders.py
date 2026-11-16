@@ -148,7 +148,7 @@ def section(pid, prefix):
     if os.path.exists(web):
         out.append("### En la web\n")
         out.append(f'![{n} en la interfaz web]({prefix}{pid}-web.png)\n')
-        out.append(f"*Captura de la interfaz con un servidor `--replay` propio mostrando {n}.*\n")
+        out.append(f"*Captura de la interfaz con un servidor `--replay` propio mostrando {n}.*" + (" El vídeo es un `.ts` de prueba reproducido con `--tv-ts` (carta de ajuste sintética), no una emisión recibida por radio.\n" if pid == "tdt" else "\n"))
     out.append(FIN)
     return "\n".join(out) + "\n"
 

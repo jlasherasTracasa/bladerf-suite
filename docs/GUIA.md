@@ -2,7 +2,7 @@
 
 Una guía paso a paso de BladeRF Lab: desde el primer arranque hasta la TDT, con tutoriales cortos, diagramas y una sección de solución de problemas. Las capturas de la interfaz son de servidores propios con señales generadas con `--gen` y, donde se indica, con **datos de demostración** (`tests/web_mock.js`), que no son radio real.
 
-> Estado de las capturas: la interfaz web se está rehaciendo. Las capturas de esta guía (`img/screens/`) se sustituirán por capturas anotadas de cada pestaña cuando termine ese trabajo; los pasos y los diagramas no dependen de ellas.
+> Las capturas (`img/guia/captura-*.png`) son de la interfaz actual a 1440 px, con recuadros numerados y una leyenda debajo. Salen de servidores propios con señales generadas con `--gen` (FM con RDS, AIS y APRS) y un TS de prueba; la única captura con **datos de demostración** (`tests/web_mock.js`, no es radio real) está rotulada como tal. Se regeneran con `node build/doc2b/shots.mjs`.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="img/arquitectura-dark.png">
@@ -50,7 +50,7 @@ Opciones útiles: `--port`, `--host`, `--serial`, `--rate`, `--freq`, `--no-gpu`
 
 ## 2. Receptor: espectro, cascada y audio
 
-<img src="img/screens/receptor.png" alt="Pestaña Receptor" width="100%">
+<img src="img/guia/captura-receptor.png" alt="Pestaña Receptor" width="100%">
 
 *Receptor con una FM generada con `--gen rds`: el espectro, la cascada y el panel RDS.*
 
@@ -83,6 +83,8 @@ Sin antena: `./build/bladerf-lab --gen rds --gen-freq 100300000 --gen-center 100
 
 La banda capturada es `centro ± tasa/2`. Si haces clic en una frecuencia que queda fuera, el canal de audio pasa a **fuera de banda** (bandera 4: el audio calla) y el decodificador de esa frecuencia queda en estado `esperando`, que no es un error.
 
+<img src="img/guia/captura-fuera-de-banda.png" alt="Frecuencia fuera de banda" width="100%">
+
 Dos formas de resolverlo:
 
 1. **Mover la banda.** En Hardware o en la barra de frecuencia, cambia el **centro** para que la frecuencia deseada quede dentro. La captura se rehace sola y se borra el perfil activo (un cambio de centro o tasa lo invalida).
@@ -92,7 +94,7 @@ Los canales no pueden caer en el pico de continua del centro; por eso los perfil
 
 ## 5. Hardware: sintonía, ganancia y grabación
 
-<img src="img/screens/hardware.png" alt="Pestaña Hardware" width="100%">
+<img src="img/guia/captura-hardware.png" alt="Pestaña Hardware" width="100%">
 
 - **Sintonía y muestreo.** Frecuencia central, tasa y ancho RF. El tamaño de banda capturada (la tasa) es lo que deja a los decodificadores ver varios canales a la vez. Con más de 61,44 Msps se activa el modo de 122,88 Msps (FPGA ≥ 0.15).
 - **Ganancia.** Automática, manual o los AGC rápido, lento e híbrido del AD9361. Si existe tabla de calibración se muestra el nivel en dBm.
@@ -110,9 +112,9 @@ La escala del espectro está calibrada: un tono complejo de amplitud 1,0 mide 0 
 
 ## 6. Usar los perfiles
 
-<img src="img/screens/protocolos.png" alt="Pestaña Protocolos" width="100%">
+<img src="img/guia/captura-protocolos.png" alt="Pestaña Protocolos" width="100%">
 
-*Perfiles agrupados por familia (captura con servidor de demostración).*
+*Perfiles agrupados por familia, con el catálogo de decodificadores debajo.*
 
 Un **perfil** ajusta de una vez el centro, la tasa, el ancho RF, el canal de audio y los decodificadores. Hay 22, por ejemplo:
 
@@ -146,9 +148,9 @@ La lista completa está en [AGENTS.md §5](../AGENTS.md) y en [PROTOCOLOS.md](PR
 
 ## 7. Decodificadores y «decodificar como…»
 
-<img src="img/screens/decodificadores.png" alt="Pestaña Decodificadores" width="100%">
+<img src="img/guia/captura-decodificadores.png" alt="Pestaña Decodificadores" width="100%">
 
-*Instancias en marcha (datos de demostración).*
+*Instancias en marcha: AIS y APRS generados con `--gen`.*
 
 **Añadir una instancia a mano**
 
@@ -156,6 +158,8 @@ La lista completa está en [AGENTS.md §5](../AGENTS.md) y en [PROTOCOLOS.md](PR
 2. Cada instancia es un hilo propio con su DDC. Mira su **estado** (`activo`, `esperando`, `error`), su **carga** (fracción de núcleo) y los **descartes**.
 
 **Decodificar como… desde una señal detectada**
+
+<img src="img/guia/captura-decodificar-como.png" alt="Menú Decodificar como" width="100%">
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="img/guia/decodificar-como-dark.png">
@@ -177,9 +181,11 @@ La figura del [marco de decodificadores](ARQUITECTURA.md) explica el recorrido i
 
 ## 8. Mapa
 
-<img src="img/screens/mapa.png" alt="Pestaña Mapa" width="100%">
+<img src="img/guia/captura-mapa.png" alt="Pestaña Mapa" width="100%">
 
-*Datos de demostración (`tests/web_mock.js`).*
+*Barcos AIS y estación APRS generados con `--gen` y decodificados por el servidor. Abajo, la misma pestaña con **datos de demostración** (`tests/web_mock.js`), que llena más capas:*
+
+<img src="img/guia/captura-mapa-demo.png" alt="Pestaña Mapa con datos de demostración" width="100%">
 
 1. Pon tu **ubicación** en la pestaña Hardware: da un punto de referencia y las distancias.
 2. Cualquier decodificador cuya tabla tenga objetos con `lat` y `lon` se dibuja en el mapa por capas (AIS, APRS, Meshtastic, ADS-B, RS41…).
@@ -188,9 +194,9 @@ La figura del [marco de decodificadores](ARQUITECTURA.md) explica el recorrido i
 
 ## 9. Mensajes y tablas
 
-<img src="img/screens/mensajes.png" alt="Pestaña Mensajes" width="100%">
+<img src="img/guia/captura-mensajes.png" alt="Pestaña Mensajes" width="100%">
 
-*Datos de demostración.*
+*AIS y APRS generados y decodificados por el servidor.*
 
 - **Mensajes.** El flujo de eventos de todos los decodificadores: texto RDS, mensajes POCSAG y FLEX, texto de Meshtastic, ACARS… Se puede filtrar por protocolo, buscar texto y pausar. Al conectar se reenvían los últimos 100 (marcados `replay`). Recuerda el [aviso legal](../README.md#aviso-legal) sobre comunicaciones no públicas.
 - **Tablas.** Cualquier `dec_state` que contenga un array de objetos se muestra como tabla sin código específico: aviones con ICAO, indicativo y altura; barcos con MMSI; celdas con PCI; redes con SSID y BSSID. Las filas caducan solas.
@@ -213,6 +219,10 @@ La figura del [marco de decodificadores](ARQUITECTURA.md) explica el recorrido i
 
 ## 11. Barrido de banda ancha
 
+<img src="img/guia/captura-barrido.png" alt="Barra de barrido" width="100%">
+
+*Con una fuente de fichero la barra se abre pero no se puede barrer; con la placa recorre todo el rango.*
+
 1. Pulsa **Barrido** bajo el espectro: aparece la barra con **Inicio** y **Fin** (por omisión de 70 MHz a 6 GHz; el equipo admite 47 MHz–6 GHz).
 2. Pulsa para empezar. El servidor recorre el rango con sintonía rápida y pinta el espectro de todo el intervalo (mensajes binarios de tipo 4) con el progreso de cada pasada.
 3. Úsalo para ver **dónde hay señal** antes de elegir un perfil; haz clic en un pico y apunta su frecuencia.
@@ -220,7 +230,7 @@ La figura del [marco de decodificadores](ARQUITECTURA.md) explica el recorrido i
 
 ## 12. Emisión en modo fichero y su política
 
-<img src="img/screens/emision.png" alt="Pestaña Emisión" width="100%">
+<img src="img/guia/captura-emision.png" alt="Pestaña Emisión" width="100%">
 
 La pestaña **Emisión** solo aparece si el servidor se arrancó con `--enable-tx` (captura con `--enable-tx --callsign EA2XXX` sobre un fichero; no se emitió nada). Muestra la política vigente (aire activado o no, indicativo, ganancia máxima, bandas permitidas).
 
@@ -249,7 +259,7 @@ Los modos `loopback` y `air` no se han probado todavía contra la placa. **Radia
 
 ## 13. TV (TDT)
 
-<img src="img/screens/tv.png" alt="Pestaña TV" width="100%">
+<img src="img/guia/captura-tv.png" alt="Pestaña TV" width="100%">
 
 *Vídeo H.264 y audio MP2 desde un TS de prueba en bucle (`--tv-ts fichero.ts`), sin radio.*
 

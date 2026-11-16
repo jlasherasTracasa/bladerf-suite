@@ -18,6 +18,8 @@ oficial (`libbladeRF 2.6.1`), copia de trabajo en `firmware/bladeRF`, rama `lab`
 | Prueba de humo | `firmware/sim/run_rx_timestamp.sh`: testbench oficial `rx_timestamp_tb` de la ruta de RX, OK |
 | Punto de enganche recomendado | Bus Wishbone del Nios (`bladerf_wishbone_master_read/write`, API pública de libbladeRF 2.6.1) para registros, y un modo nuevo del `rx_mux` para el flujo de datos. **Cero parches a libbladeRF** |
 
+**Fase 2** (imagen `lab`: banco Wishbone + motor de espectro, versión de FPGA 0.16.101): ver §9 en adelante. Resultado: temporización cumplida (setup ≥ +0,255 ns), 9 518 ALM, 512 M10K, 42 DSP, comparación al bit con el modelo en C sin diferencias, SHA-256 `0cd2913c…943c`.
+
 ## 2. Estructura de ficheros (todo bajo `firmware/`)
 
 ```
@@ -440,3 +442,404 @@ orquestador, con permiso explícito y expreso del usuario, puede cargar una imag
 5. Volver atrás: **desconectar la alimentación/USB** (la RAM de la FPGA se pierde y vuelve a cargarse la imagen
    de la flash, 0.16.0 de serie), o recargar el `.rbf` de serie (`firmware/out/hosted-xA9-stock-0.16.0.rbf`,
    equivalente a la de la flash) con `-l`. Si el Nios queda colgado, basta reenchufar.
+
+---
+
+# Fase 2: imagen "lab" (banco Wishbone + motor de espectro)
+
+## 9. Resumen de la imagen lab
+
+La revisión `lab` de `bladerf-micro` es la imagen `hosted` de serie más:
+
+1. un **banco de registros Wishbone** conectado al maestro Wishbone del Nios, accesible con la API
+   pública `bladerf_wishbone_master_read/write` de libbladeRF 2.6.1 (sin parchear libbladeRF);
+2. un **motor de espectro promediado** (ventana Blackman-Harris + FFT SDF radix-2^2 de 1024 a 8192
+   puntos + |X|² + acumulación de K tramas con ciclo de trabajo del 100 %) que sustituye al flujo del ADC
+   cuando `rx_mux = 3`, y entrega sus tramas por el flujo de muestras normal (SC16, sin metadatos);
+3. una versión de FPGA propia (**0.16.101**) y una marca de solo lectura en `config_gpio`
+   (bits 27:24 = 0xA) para detectar la imagen de forma segura.
+
+Con `rx_mux ≠ 3` la ruta de datos es la de serie (§13.2), de modo que la imagen lab sirve como imagen normal.
+Todo el HDL es propio: no se usa ninguna IP con licencia o de evaluación (ni FFT II ni FIR II de Altera);
+solo RAM, ROM, PLL y multiplicadores inferidos, y el código de Nuand ya presente en el árbol.
+
+Entregables:
+
+| Ruta | Contenido |
+|---|---|
+| `firmware/out/hosted-xA9-lab-0.16.101.rbf` (+ `.sha256`) | imagen compilada |
+| `firmware/bladeRF/hdl/fpga/platforms/bladerf-micro/vhdl/lab/` | `spec_engine`, `spec_fft`, `sdf_stage`, `sdf_mult`, `spec_acc_ram`, `lab_regs`, `lab_cdc_bus`, `rx_lab`, `lab_rom_p` (generado) |
+| `.../vhdl/bladerf-lab.vhd`, `.../bladerf-lab.qip`, `.../constraints/bladerf-lab.sdc` | tope de la revisión lab (diferencias con `hosted` marcadas `-- LAB`) y restricciones multiciclo |
+| `firmware/patches/` | parches `git format-patch` del árbol HDL sobre el commit oficial 35174c3 (+ README para reconstruir) |
+| `firmware/model/` | modelo en C exacto al bit (`spec_model.c`) y herramienta (`spec_tool`: genera la ROM, vectores y comprueba volcados) |
+| `firmware/sim/` | `run_lab_spec.sh`, `run_lab_regs.sh`, `run_rx_timestamp_lab.sh`, bancos de pruebas VHDL |
+| `firmware/build_lab.sh` | compilación reproducible de la imagen |
+| `firmware/tools/lab_probe.c` | herramienta de prueba en hardware (para el orquestador) |
+| `src/sdr/fpga_lab.{h,c}`, `tests/test_fpga_lab.c`, `tests/data/lab_spec_*.hex` | cliente del lado host y su prueba |
+
+Cambios en ficheros oficiales (rama `lab` de `firmware/bladeRF`): `platform.conf` (añade la revisión),
+`build/bladerf.tcl` (`make_revision lab`), `software/bladeRF_nios/src/fpga_version.h` y `Makefile`
+(versión 0.16.101 solo si `LAB_BUILD=1`) y `quartus/build_bladerf.sh` (pasa `LAB_BUILD=1` si `rev = lab`).
+La imagen de serie sigue compilando exactamente igual (mismos fuentes con `LAB_BUILD` sin definir).
+
+## 10. Diseño del motor de espectro
+
+### 10.1 Cadena y tiempos
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="img/fpga/fpga-motor-espectro-dark.png"><img src="img/fpga/fpga-motor-espectro-light.png" alt="Motor de espectro"></picture>
+
+*Figura. Motor de espectro (§10.1). Simplificada: no muestra los registros de segmentación (entrada de `rx_lab`, salidas de ROM, `ce` por etapa).*
+
+```
+ adc_streams(canal activo) ──► registro de entrada ──► ventana BH Q15 (ROM, 2 pasos) ──► spec_fft
+   (12 bit, 1 muestra / 2 ciclos de rx_clock)                                            (SDF radix-2^2)
+                                                                                                │ orden bit-invertido
+ FIFO de muestras ◄── 1 palabra/ciclo ◄── formato {E,M} ◄── lectura fftshift ◄── RAM x2 (ping-pong) ◄── |X|² + acumulación (K tramas)
+```
+
+Todo el camino de datos avanza con un habilitador `ce` = un pulso por muestra del canal activo; los
+registros se actualizan con `ce`, no con cada ciclo de reloj. No hay restricciones multiciclo: cada
+camino cumple 8 ns (125 MHz) en una sola etapa de registro, y el motor funciona con cualquier
+separación entre pulsos `ce` ≥ 1 ciclo. La entrada es el canal 0 si está habilitado y si no el canal 1; solo se usa **un canal**.
+
+* **Ventana**: ROM con las mitades simétricas de la ventana Blackman-Harris de 4 términos para N = 1024,
+  2048, 4096 y 8192 (7680 palabras de 16 bit), `w[i] = round(32768·BH(i/(N-1)))`; es la misma fórmula que
+  `window_blackman_harris()` de `src/dsp/fft.c`. `xw = (x·wq + 1024) >> 11` (x en cuentas Q11 de 12 bit con signo),
+  es decir x·w con 4 bits fraccionarios en 16 bits.
+* **FFT** (`spec_fft`, `sdf_stage`, `sdf_mult`): 13 etapas fijas (retardo 2^12 … 2^0); para N = 2^n la señal entra en la
+  etapa n-1. Cada etapa: línea de retardo (RAM M10K si D ≥ 16, registros si no), una mariposa con un único
+  sumador por camino y, tras las etapas de índice par (≥ 2), el multiplicador de twiddles (4 productos 25x18 en DSP,
+  ROM de twiddles en Q16, redondeo `(v + 32768) >> 16`). En radix-2² las etapas pares que no son la primera aplican la rotación
+  trivial -j en las secciones impares (se resuelve cambiando suma por resta, sin hardware extra).
+  Para n impar (N = 2048, 8192) la primera etapa es una mariposa radix-2 con su propio twiddle.
+* **Anchos**: entrada 16 bit; cada etapa añade 1 bit hasta 25 bit y a partir de la etapa E = 4 cada salida se desplaza 1 bit con redondeo
+  `(v+1)>>1` (5 desplazamientos): **X_hw = 0,5 · FFT(x·w)** para todos los N, con 25 bit con signo. Se comprobó en el modelo con
+  tramas de fondo de escala aleatorias y tonos sin desbordes y con error < −100 dB frente a una DFT en doble.
+* **Potencia y acumulación**: `|X|² = re² + im²` (exacto, 50 bit); acumulación exacta de K tramas en 64 bit por bin, en
+  una RAM M10K de 8192 x 64 por banco; **dos bancos en ping-pong** (mientras uno acumula el grupo g, el otro se lee para el grupo g-1), así que
+  no hay huecos: cada muestra de entrada entra en una trama (ciclo de trabajo del 100 %).
+* **Lectura**: al terminar el grupo se leen los N bins en orden fftshift (bin -N/2 … N/2-1) a 1 palabra por ciclo, y se rellena
+  con ceros hasta un múltiplo de 2048 palabras (opcional) para que el FX3 reciba la trama completa sin esperar a la siguiente.
+  El orden de salida de la FFT es bit-invertido: la RAM se escribe en la dirección `bitrev_n(j)`.
+* **Palabra de potencia**: `{E[5:0], M[25:0]}` con valor `M · 2^E`, `E = max(0, msb(acc) − 25)`, `M = (acc >> E)[25:0]`
+  (pseudo-coma flotante: 26 bits de mantisa, rango de 2^64).
+* **Reinicio**: si cambian N, K o el relleno con el motor activo, este se reinicia (se pierde la trama en curso). Con `rx_mux ≠ 3` o RX
+  deshabilitado el motor está en reset y no consume nada.
+
+### 10.2 Formato de la trama de salida
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="img/fpga/fpga-trama-dark.png"><img src="img/fpga/fpga-trama-light.png" alt="Formato de trama"></picture>
+
+*Figura. Formato de la trama (§10.2).*
+
+Palabras de 32 bits; en el flujo SC16_Q11 que ve el host, cada palabra es un par `(I = bits 15:0, Q = bits 31:16)`
+(`word = (uint16)I | (uint16)Q << 16`). Sin metadatos de libbladeRF (formato `SC16_Q11`, un canal).
+
+| Palabra | Contenido |
+|---|---|
+| w0 | `0x4C415031` ("LAP1") |
+| w1 | `0xB3BEAFCE` (= ~w0) |
+| w2 | `[15:0]` N (1024…8192), `[31:16]` K |
+| w3 | contador de trama (desde 0 al arrancar el motor) |
+| w4, w5 | índice (bajos, altos) de la primera muestra del grupo, contado desde el arranque del motor (al poner `rx_mux = 3`). **No** es el timestamp del AD9361: sin metadatos (`meta_en = 0`) el `time_tamer` está parado y valía siempre 0 (fallo hallado en la prueba en placa y corregido). Avanza K·N por trama |
+| w6 | `[7:0]` = 8 (palabras de cabecera), `[15:8]` = 1 (versión del formato), `[16]` = se perdió una trama antes de esta |
+| w7 | palabras totales de la trama en el flujo (con relleno) |
+| w8 … w8+N-1 | potencias, orden fftshift: la primera es el bin −N/2 (frecuencia −fs/2) y la última el bin N/2−1 |
+| resto | ceros hasta completar `ceil((8+N)/2048)·2048` palabras si PAD = 1 |
+
+La FPGA no pone marca de fin: el host sincroniza por (w0, w1) y valida con w2, w6 y w7 (lo hace `fpga_lab_parser`).
+Una trama está completa cuando llegan sus `w7` palabras; si llega un nuevo (w0, w1) antes, la anterior se descarta.
+
+### 10.3 Escala: de la palabra a dBFS
+
+Con `x` en cuentas Q11 (±2048 = fondo de escala), `w` la ventana (máximo 1) y `Σw` su suma sobre N puntos:
+
+* `X_hw[k] = 0,5 · Σ x[i]·w[i]·e^{-j2πki/N}` (en cuentas; sin factor 1/N).
+* Un tono complejo de amplitud A (cuentas) da `|X_hw| = 0,5·A·Σw`; con A = 2048 (fondo de escala) `|X_hw| = 1024·Σw`.
+* `acc[k] = Σ_{K tramas} |X_hw[k]|²` (la palabra de salida representa `acc`).
+
+Por tanto, **con el mismo criterio que `src/dsp/spectrum.c` (tono complejo de amplitud de fondo de escala = 0 dBFS)**:
+
+```
+dBFS[k] = 10·log10( acc[k] / K ) − 20·log10( 1024 · Σw )  =  10·log10( 4·acc/K ) − 20·log10( 2048 · Σw )
+```
+
+donde `Σw` = suma de la ventana cuantizada Q15 (`fpga_lab_window_sum(N)`); para el ruido blanco complejo de potencia
+σ² el nivel medio por bin es `10·log10(σ²·Σw²) − 20·log10(2048·Σw)`. Comprobado con la volcada del simulador
+(`tests/test_fpga_lab.c`): tono de amplitud 1000 → −6,47 dBFS (teórico −6,23 con la pérdida por escalón de la
+ventana), tono de 40 → −34,35 dBFS (−34,19), suelo de ruido −68,60 dBFS/bin (teórico −68,71).
+
+> Observación para quien integre: en `src/dsp/spectrum.c` (ruta CPU) las muestras se multiplican por `window/2048` **y** la constante
+> `norm_db = −20·log10(Σw·2048)` vuelve a dividir entre 2048, de modo que un tono de fondo de escala saldría a −66 dBFS. Si la ruta de GPU no
+> escala previamente, ambas rutas difieren; conviene revisarlo con la señal de prueba (tono 2048 → 0 dBFS). `fpga_lab_frame_to_dbfs()` usa la
+> convención física (fondo de escala = 0 dBFS).
+
+### 10.4 Restricciones de uso
+
+* Un solo canal de RX habilitado, formato `SC16_Q11` sin metadatos (`BLADERF_RX_X1`); no usar SC8, empaquetado de 12 bit ni modo paquete.
+* El motor trabaja a la tasa normal del AD9361 (≤ 61,44 Msps); el modo oversample de 122,88 Msps **no está soportado** en esta versión.
+* Ancho de banda de salida: (N + 8 + relleno) palabras cada K·N muestras. Con K = 1 y N = 1024 y relleno, la lectura ocupa justo el periodo de la
+  trama: puede cortarse la trama anterior (se cuenta en `CNT_LATE`); usar K ≥ 2 o PAD = 0 en ese caso.
+* Los bits 29:22 de `config_gpio` siguen libres; `rx_mux` 5…7 también.
+
+## 11. Banco de registros Wishbone
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="img/fpga/fpga-registros-dark.png"><img src="img/fpga/fpga-registros-light.png" alt="Registros Wishbone"></picture>
+
+*Figura. Mapa de registros (§11).*
+
+El maestro Wishbone del Nios (`wishbone_master`) presenta cada petición en `wb_cyc_o` durante **un ciclo** y espera **exactamente un** `ack`.
+`lab_regs` responde siempre (también a direcciones sin mapear: `0xBAD0BAD0`) detectando el flanco de `wb_cyc_o`, de modo que no puede colgar el Nios.
+El bus funciona en `sys_clock` (80 MHz, siempre presente); la configuración y los contadores cruzan al dominio `rx_clock` con el `handshake` de Nuand
+(`lab_cdc_bus`), que no bloquea si `rx_clock` no corre.
+
+**Direccionamiento**: `bladerf_wishbone_master_read/write(dev, addr, …)` → `IORD/IOWR_32DIRECT(base, addr)` → el interconnect Avalon (palabras de 32 bit, 24 bit de dirección)
+entrega `addr/4` como dirección de palabra al bus. **Índice de registro = `addr/4`; la dirección de byte que se pasa a libbladeRF es `4·índice`.**
+
+| Índice | Nombre | Acc. | Descripción |
+|---|---|---|---|
+| 0 | ID | RO | `0x4C414231` ("LAB1") |
+| 1 | VERSION | RO | `0x00010001` |
+| 2 | FEATURES | RO | bit 0 motor de espectro; [7:4] = 10 (log2 Nmin); [11:8] = 13 (log2 Nmax) → `0x0DA1` |
+| 3 | SCRATCH | RW | 32 bit |
+| 4 | SCRATCH_N | RO | `~SCRATCH` |
+| 5 | SPEC_LOG2N | RW | [3:0] log2 N, 10…13 (por defecto 12) |
+| 6 | SPEC_K | RW | [15:0] tramas promediadas, ≥ 1 (por defecto 16) |
+| 7 | SPEC_CTRL | RW | bit 0 PAD (relleno a múltiplo de 2048 palabras; por defecto 1) |
+| 8 | CNT_SAMPLES | RO | muestras RX del canal activo (módulo 2^32), en cualquier modo de `rx_mux` |
+| 9 | CNT_FIFO_OVF | RO | escrituras a la FIFO de muestras con la FIFO llena (desbordes) |
+| 10 | CNT_FFT | RO | tramas de FFT procesadas |
+| 11 | CNT_SPEC | RO | tramas de espectro entregadas (lecturas iniciadas) |
+| 12 | CNT_LATE | RO | tramas cortadas por lectura tardía |
+| 13 | CNT_WORDS | RO | palabras de espectro emitidas |
+| 14 | STATUS | RO | bit 0: motor activo (`rx_mux = 3` y RX habilitado) |
+| 15 | CLEAR | WO | cualquier escritura pone a cero los contadores 8…13 (lee el nº de borrados) |
+
+**Los registros de configuración y SCRATCH no se reinician con `sys_reset`.** `sys_reset` es `fx3_ctl(7)`, que el FX3 pulsa al preparar/arrancar un flujo; la primera versión sí los reiniciaba y la configuración escrita antes de `bladerf_sync_config`/`enable_module` volvía a los valores por defecto (N = 4096, K = 16) (hallazgo de la prueba en placa; reproducido en `run_lab_regs.sh` con un pulso de reset y corregido: solo tienen valor inicial de carga). Aun así `lab_probe --spectrum` relee la configuración tras cada paso.
+
+Los contadores llegan con retardo de unos microsegundos (cruce de reloj). Ninguna escritura de configuración bloquea; N, K o PAD nuevos reinician el motor.
+
+### 11.1 Detección segura (por qué no puede colgar la imagen de serie)
+
+En la imagen de serie el bus Wishbone está **sin conectar** (`wb_ack_i` sin driver): un `bladerf_wishbone_master_read` esperaría para siempre y dejaría el Nios colgado hasta reiniciar la placa.
+Por eso la detección se hace con dos lecturas que son seguras en cualquier imagen y solo entonces se toca el bus:
+
+1. **Versión de FPGA** (`bladerf_fpga_version`, paquete NIOS `VERSION`, no usa Wishbone): la lab es 0.16.**101** (parche ≥ 100); la de serie es 0.16.0.
+2. **Marca en `config_gpio`** (`bladerf_config_gpio_read`): los bits 27:24 valen `0xA` solo en la lab (en la de serie esos bits no están asignados).
+3. Solo si ambas coinciden: lectura Wishbone del registro ID (`0x4C414231`).
+
+Se eligió una combinación de dos comprobaciones independientes (versión y bit) porque cualquiera de ellas sola podría coincidir por
+error (otras imágenes de la comunidad con parche alto; bits no asignados). `fpga_lab_probe()` devuelve 0 (no es lab) sin haber tocado Wishbone en cuanto falla alguna.
+Esto está cubierto por `tests/test_fpga_lab.c` con una E/S simulada que cuenta los accesos Wishbone.
+
+## 12. Recursos y temporización (imagen lab, xA9)
+
+Compilación completa con Quartus 20.1.1 (semilla 1, `firmware/build_lab.sh`), **16 min 05 s** (con simulaciones en paralelo), 1 *critical warning* benigno
+(la ROM de la ventana se inicializa con 7680 palabras y Quartus la ensancha a 8192):
+
+| Recurso | Serie (hosted) | Lab | Disponible |
+|---|---|---|---|
+| ALM | 6 768 (6 %) | **9 518 (8 %)** | 113 560 |
+| Registros | 14 599 | 18 887 | — |
+| Bloques M10K | 274 (22 %) | **512 (42 %)** | 1 220 |
+| Bits de memoria | 2 209 280 | 4 033 858 (32 %) | 12 492 800 |
+| Bloques DSP | 8 (2 %) | **42 (12 %)** | 342 |
+| PLL | 3 | 3 | 8 |
+
+El motor aporta ≈ 2 750 ALM, 238 M10K y 34 DSP. Quedan ≈ 104 000 ALM, 708 M10K y 300 DSP libres.
+
+**Temporización cumplida en los 4 modelos**, TNS = 0. Peores holguras (ns), sin contar `altera_reserved_tck` (JTAG de serie, aparte):
+
+| Modelo | Setup | Hold | JTAG setup | JTAG hold |
+|---|---|---|---|---|
+| Lento 1100 mV 85 °C | **+0,255** | +0,225 | +0,157 | +0,194 |
+| Lento 1100 mV 0 °C | **+0,370** | +0,071 | +0,510 | +0,189 |
+| Rápido 1100 mV 85 °C | +2,367 | +0,102 | +6,844 | +0,020 |
+| Rápido 1100 mV 0 °C | +2,543 | **+0,034** | +7,597 | +0,005 |
+
+El setup del dominio de muestras (`rx_clock`, `pll_sclk`, 125 MHz restringido) tiene ≥ +0,255 ns en todos los modelos (la de serie era +0,512).
+El hold mínimo (+0,034 ns, modelo rápido 0 °C, entre registros del propio motor) es del orden del de la imagen de serie (+0,065 ns): el fitter lo
+cumple, pero no llega a +0,1 ns en dos modelos; el hold lo repara Quartus insertando retardo y no depende de la frecuencia de reloj.
+
+Historia del cierre de temporización: con el motor sin segmentar el peor camino estaba en −7,4 ns; se segmentó (índices y salidas de ROM registrados, un solo
+sumador por camino en las mariposas, copias de `ce` por etapa y por RAM, exponente en dos pasos, registro de entrada en `rx_lab`, ROM como RAM
+inicializada en lugar de lógica). Cuatro semillas del fitter no lo resolvían por sí solas; el cierre estructural final combina esa segmentación con
+`constraints/bladerf-lab.sdc`: **restricción multiciclo de 2 ciclos** para los registros de la cadena de datos del motor, que solo se actualizan con `ce`. La
+última versión (registro de entrada en `rx_lab`: el camino crítico era el registro de habilitación de canal de la IP de ADI → `ce`) subió el setup de
+−0,14 ns a +0,255 ns.
+
+> **Supuesto de la restricción multiciclo**: dos pulsos `ce` consecutivos (muestras del canal activo) distan **≥ 2 ciclos de `rx_clock`**. Es cierto en los modos soportados
+> (≤ 61,44 Msps; `adc_valid` alterna cada ciclo y `bladerf-hosted` lo convierte en un pulso por flanco). Con el modo oversample de 122,88 Msps esto podría dejar de ser cierto:
+> el motor no está soportado en ese modo. Si se modifica el HDL del motor hay que revisar `bladerf-lab.sdc` (la lista de registros incluidos).
+
+## 13. Verificación
+
+### 13.1 Modelo de referencia y comparación al bit
+
+`firmware/model/spec_model.c` reproduce el motor con exactamente el mismo redondeo/truncado del HDL (ver su cabecera):
+ventana Q15 con `(x·wq + 1024) >> 11`, mariposas con `(v + 1) >> 1` en las 5 últimas etapas, twiddles Q16 con `(v + 32768) >> 16`,
+potencia exacta de 64 bit, acumulación exacta y empaquetado `{E,M}`. `spec_tool selftest` comprueba que no hay desbordes con 18 tramas de
+fondo de escala aleatorias (±2047/−2048, tonos extremos, onda cuadrada) para cada N y que el error frente a una DFT en doble de las salidas es < −100 dB.
+
+`firmware/sim/run_lab_spec.sh all` simula con Questa FSE el motor **dentro de `rx_lab`** (con la FIFO real, `fifo_writer` y `dcfifo`),
+inyectando las muestras a 1 cada 2 ciclos, leyendo la FIFO como lo haría el GPIF y comparando **palabra a palabra** con el modelo:
+
+| N | K | grupos | entrada | relleno | resultado |
+|---|---|---|---|---|---|
+| 1024 | 3 | 3 | 2 tonos + ruido gaussiano | sí | 0 diferencias |
+| 2048 | 2 | 2 | 2 tonos + ruido (primera etapa sola, E par) | sí | 0 diferencias |
+| 4096 | 2 | 2 | 2 tonos + ruido | no | 0 diferencias |
+| 8192 | 2 | 2 | 2 tonos + ruido (primera etapa sola) | sí | 0 diferencias |
+| 1024 | 1 | 4 | ±fondo de escala aleatorio (estrés) | sí | 0 diferencias |
+| 4096 | 1 | 2 | tono de fondo de escala en un bin entero | sí | 0 diferencias |
+
+Todas son **exactas al bit** (incluidas cabeceras; las marcas de tiempo se comprueban aparte: incremento exacto de K·N entre grupos).
+Cubre ambos tipos de etapa inicial (E impar y E par), las ROM de ventana y twiddles de todos los N y todos los multiplicadores.
+
+### 13.2 La imagen lab con `rx_mux ≠ 3` es la de serie
+
+* `run_lab_spec.sh ident`: con `rx_mux = 0`, el banco de pruebas conectado a `rx_lab` y a `rx` de serie produce **las mismas palabras**, y son las muestras de entrada
+  empaquetadas (2048 palabras con datos aleatorios de fondo de escala).
+* `run_rx_timestamp_lab.sh`: el banco de pruebas **oficial** `rx_timestamp_tb` (ruta de RX completa con `fx3_gpif`, metadatos y marcas de tiempo) se recompila
+  sustituyendo `rx` por `rx_lab` y da **los mismos deltas de marca de tiempo** (4088, 4237 …) que con `rx` (`Timestamp Delta` idénticos).
+* `rx_lab.vhd` es una copia de `rx.vhd` en la que el único cambio funcional es el caso `RX_MUX_ENTROPY` (valor 3, "no implementado" en serie) del proceso `rx_mux`;
+  el resto son puertos y contadores de observación que no escriben en la ruta de datos.
+* Banco de registros: `run_lab_regs.sh` prueba `lab_regs` con el `wishbone_master` **real** de Nuand (el que cuelga del Nios) con accesos Avalon como los del Nios:
+  lectura de ID/VERSION/FEATURES, escritura/lectura de SCRATCH, direcciones sin mapear, configuración, cruces de reloj en ambos sentidos y borrado.
+
+### 13.3 Lado host
+
+`tests/test_fpga_lab.c` (44 comprobaciones): detección con E/S simulada, intérprete de tramas con una volcada **del simulador** del HDL (N = 1024, K = 3) comparada
+con las palabras del modelo, escala a dBFS frente a tonos y ruido teóricos, y resincronización tras perder palabras.
+
+## 14. Compilar la imagen lab y reproducir las pruebas
+
+```bash
+source firmware/env.sh
+firmware/build_lab.sh                 # ≈ 16 min; deja firmware/out/hosted-xA9-lab-0.16.101.rbf, .sha256, logs y reports_lab/
+make -C firmware/model rom            # (solo si se cambia el modelo) regenera lab_rom_p.vhd desde el modelo
+firmware/sim/run_lab_spec.sh all      # motor vs modelo, al bit (≈ 6 min)
+firmware/sim/run_lab_spec.sh ident    # identidad con rx de serie (rx_mux = 0)
+firmware/sim/run_lab_regs.sh          # banco Wishbone con el wishbone_master real
+firmware/sim/run_rx_timestamp_lab.sh  # rx_timestamp_tb oficial con rx_lab
+gcc -std=c11 -D_GNU_SOURCE -O2 -Wall -Wextra -Isrc -Itests tests/test_fpga_lab.c src/sdr/fpga_lab.c -lm -o build/f1/test_fpga_lab && build/f1/test_fpga_lab
+```
+
+Una segunda compilación completa independiente (directorio de trabajo borrado) dio el **mismo SHA-256**:
+`0cd2913cafe70d8dfd11f934afb2f27a3e92b6576140d533d43c9119cf55943c  hosted-xA9-lab-0.16.101.rbf`.
+Para reconstruir el árbol HDL desde el repositorio oficial ver `firmware/patches/README.md`.
+
+## 15. Procedimiento de prueba en hardware (para el orquestador)
+
+**Reglas**: solo con permiso expreso del usuario; la imagen se carga **solo en la RAM de la FPGA** (volátil) con `bladeRF-cli -l`; **nunca** `-L`, `-f`, `bladerf_flash_*` ni autoload.
+Los agentes no ejecutan estos pasos. No se transmite nada. Cerrar antes cualquier proceso que tenga abierta la placa (p. ej. `openwebrx`).
+
+0. **Preparación y compilación de la herramienta**
+   ```bash
+   mkdir -p build/f1
+   gcc -std=c11 -D_GNU_SOURCE -O2 -Wall -Wextra -DFPGA_LAB_WITH_LIBBLADERF -Isrc \
+       firmware/tools/lab_probe.c src/sdr/fpga_lab.c -lbladeRF -lm -o build/f1/lab_probe
+   sha256sum -c firmware/out/hosted-xA9-lab-0.16.101.rbf.sha256
+   ```
+1. **Estado inicial** (imagen de serie cargada desde la flash): `bladeRF-cli -e version` debe mostrar FPGA 0.16.0. `build/f1/lab_probe` debe decir
+   "no es la imagen lab" **sin** acceder a Wishbone (esto verifica la detección segura sobre la imagen de serie).
+2. **Referencia de la imagen de serie**: `build/f1/lab_probe --iq 100000000` (RMS y saturación de 1 s de RX normal en 100 MHz con 2 Msps); anotar el valor.
+3. **Cargar la lab en RAM**: `bladeRF-cli -l firmware/out/hosted-xA9-lab-0.16.101.rbf`. Esperar ≈ 2 s. `bladeRF-cli -e version` debe mostrar FPGA **0.16.101**.
+4. **Detección y bus**: `build/f1/lab_probe` → "IMAGEN LAB", "selftest SCRATCH: OK", `VERSION lab = 0x00010001`, `FEATURES = 0x00000da1`. Si el selftest falla o el programa se
+   queda esperando, desconectar el USB (§ vuelta atrás) y no continuar.
+5. **La lab funciona como la de serie (rx_mux = 0)**: `build/f1/lab_probe --iq 100000000` con la misma antena/ganancia que en el paso 2: el RMS debe ser del mismo orden y sin
+   saturaciones nuevas. Opcional: `bladeRF-cli -e 'set frequency rx 100M; set samplerate rx 10M; rx config file=/tmp/lab.bin format=bin n=10M; rx start; rx wait'` y comparar con una captura equivalente de la imagen de serie.
+   `lab_probe` (sin argumentos) debe mostrar `CNT_SAMPLES` avanzando.
+5b. **Diagnóstico de registros**: `build/f1/lab_probe --regs` vuelca los 16 registros y `config_gpio` (ID, VERSION, FEATURES, SCRATCH, configuración, contadores, estado).
+6. **Activar el espectro**: `build/f1/lab_probe --spectrum 12 16 20 100000000 30720000` (N = 4096, K = 16, 20 tramas, 100 MHz, 30,72 Msps): `lab_probe` escribe N/K, **relee la configuración tras cada paso** (escribir, configurar el flujo, habilitar RX) e indica si no coincide (en ese caso vuelca todos los registros); selecciona `rx_mux = 3` **antes** de habilitar el módulo (así no entran muestras normales y no se descartan palabras al sincronizar). Imprime una línea por trama con pico y
+   mediana en dBFS. Con la antena de FM conectada se espera un pico claro en el bin ≈ (frecuencia − 100 MHz)/ (30,72 MHz / 4096) (bin −N/2 … N/2−1) y una mediana (suelo) del orden de −70 a −80 dBFS;
+   el contador de trama debe crecer de 1 en 1 ("huecos de contador" = 0) y el índice de muestra (`ts`) avanzar K·N = 65 536 por trama (empieza en 0).
+   Al final se imprimen los contadores (`fifo_ovf` debe ser 0, `late` 0). El programa vuelve a `rx_mux = 0`.
+6b. **Caudal y pérdidas** (sin E/S por trama): `build/f1/lab_probe --spectrum 12 16 400 100000000 30720000 --quiet`; el resumen imprime tramas, descartadas, huecos, el caudal medido y los contadores (`fifo_ovf` debe ser 0). `--late-mux` es ahora el valor por defecto (`--early-mux` recupera el arranque anterior).
+6c. **Techo de caudal**: `--spectrum 10 2 4000 100000000 30720000 --quiet` (30,7 Mpalabras/s). Medido: techo de ≈ 5 Mpal/s con enlace USB 2.0 (§16.3); comprobar antes el enlace (`bladeRF-cli -e info`).
+7. **Variantes**: `--spectrum 10 2 50`, `--spectrum 13 8 20`. Con una señal de generador (sin TX de la placa) de nivel conocido, el pico debe leer ese nivel dBFS (± la pérdida por escalón < 1,1 dB).
+8. **Vuelta atrás a la imagen de serie**: cualquiera de las dos
+   * **desconectar la alimentación/USB** de la placa y volver a conectar (la RAM de la FPGA se pierde y se recarga la imagen de la flash, 0.16.0); o
+   * recargar la imagen de serie en RAM: `bladeRF-cli -l firmware/out/hosted-xA9-stock-0.16.0.rbf`.
+   Verificar con `bladeRF-cli -e version` (FPGA 0.16.0) y `build/f1/lab_probe` ("no es la imagen lab").
+9. Si el Nios se queda colgado o `bladeRF-cli` no responde: reenchufar el USB. La flash nunca se ha tocado.
+
+## 16. Estado, prueba en hardware y recomendaciones de uso
+
+**Probado en hardware el 2026-11-16** (RAM, siguiendo §15; la imagen de serie se restauró después), imagen `0cd2913c…943c`:
+
+* Detección segura sobre la imagen de serie sin acceso Wishbone; en la lab: ID, VERSION (`0x00010001`) y FEATURES (`0x00000da1`) correctos, selftest de SCRATCH OK, contadores en marcha.
+* `rx_mux = 0` equivale a la imagen de serie: nivel RX −26,0 dBFS (serie) frente a −26,8 dBFS (lab), sin saturaciones.
+* Espectro (100 MHz, 30,72 Msps): N y K se aplican y se conservan al releer tras cada paso; `ts` avanza exactamente K·N por trama; picos en ≈ 99,19 MHz (−37 dBFS)
+  y en 100,405 MHz (Radio Pamplona); mediana entre −68 y −77 dBFS.
+* Defectos corregidos tras la primera prueba: la configuración se borraba con `sys_reset` (§11) y `ts` valía 0 (§10.2).
+
+### 16.1 Medidas en la placa y límite de caudal
+
+Primera prueba (`lab_probe` inicial, análisis completo por trama; logs en `firmware/out/logs/hw_20261116/`):
+
+| N | K | Palabras/s | Tramas | Huecos | fifo_ovf | Descartadas |
+|---|---|---|---|---|---|---|
+| 4096 | 64 | ≈ 0,48 M | 21 | 0 | 0 | 0 |
+| 4096 | 16 | ≈ 1,9 M | 201 | 3 (un único evento) | 6137 | 6146 |
+| 4096 | 16 | ≈ 1,9 M | 20 | 1–2 | 9214 | 3073 |
+| 8192 | 8 | ≈ 3,8 M | 21 | 3 | 29 689 | 11 266 |
+| 1024 | 2 | ≈ 15 M | 403 | 1350 | 3,5 M | 987 955 |
+
+Segunda prueba (`lab_probe --quiet`, sin E/S por trama, 100 MHz, 30,72 Msps):
+
+| Prueba | Tramas | Huecos | Descartadas | fifo_ovf | Caudal recibido |
+|---|---|---|---|---|---|
+| N=4096 K=16, 400 tramas | 404 | 2 | 4097 | 8187 | 2,909 Mpal/s, 473,5 tramas/s |
+| N=4096 K=16, `--late-mux` | 405 | 0 | 33 195 | 773 281 (cuenta el tiempo con `rx_mux = 0`) | 2,871 Mpal/s |
+| N=1024 K=2, 4000 tramas | 4005 | 13 136 | 9 412 851 | 27 572 022 | 5,636 Mpal/s (22,5 MB/s), 2752 tramas/s |
+| N=4096 K=64, 200 tramas | 202 | 0 | 0 | 0 | 0,726 Mpal/s |
+
+En N=1024 K=2 los contadores de la FPGA dan palabras = 45 766 656 y muestras = 45 769 705: **el motor produce ≈ 31 Mpal/s** (tantas palabras como muestras) y llega ≈ 18 %.
+
+**Caudal máximo garantizado (medido sin pérdidas continuas, con enlace USB 2.0): ≈ 3 Mpalabras/s (12 MB/s).** Por encima de ≈ 5 Mpal/s hay un techo duro, que es el del enlace USB 2.0 (§16.3).
+
+### 16.2 Pérdida única al arrancar
+
+Es una carrera de arranque: `fifo_ovf` ≈ 6137 ≈ una trama (N = 4096). Quitar los accesos Wishbone entre `enable_module` y el primer `sync_rx` **no la elimina** (2 huecos, `fifo_ovf` ≈ 1,3 tramas); **sí la elimina `--late-mux`** (0 huecos): se habilita RX con `rx_mux = 0`, se leen unos búferes (el flujo USB queda en marcha) y solo entonces se pasa a `rx_mux = 3`. La causa es que el motor emite en cuanto arranca mientras el flujo USB/FX3 aún se está poniendo en marcha, y la FIFO de la FPGA (16 384 palabras ≈ 2,7 tramas de 6144) y los búferes del FX3 no bastan. Con
+`--late-mux` los contadores cuentan también el tiempo con `rx_mux = 0` (la FIFO desborda mientras nadie lee), por eso `set_spectrum_mode(true)` ahora **borra los contadores** al pasar a `rx_mux = 3`.
+**`--late-mux` es ahora el comportamiento por defecto de `lab_probe`** (`--early-mux` recupera el anterior) y la secuencia recomendada para `fpga_lab.c` (comentario en `fpga_lab.h`).
+
+### 16.3 Techo de ≈ 5 Mpal/s: es el enlace USB 2.0, no la FPGA
+
+**Causa encontrada por el orquestador: la placa estaba enumerada en USB 2.0 Hi-Speed** (480 Mb/s; `speed = 480` en sysfs y «USB speed: Hi-Speed» en `bladeRF-cli -e info`). **Todas las medidas de caudal de este apartado se hicieron con enlace USB 2.0** (≈ 45 MB/s útiles). Con `lab_probe --iq` y 400 búferes:
+
+| Imagen | Modo | Tasa pedida | Caudal real |
+|---|---|---|---|
+| lab | RX normal | 30,72 Msps | 11,29 Mmuestras/s (45,2 MB/s) |
+| lab | RX normal | 61,44 Msps | 11,35 Mmuestras/s (45,4 MB/s) |
+| serie 0.16.0 | RX normal | 30,72 Msps | 11,30 Mmuestras/s (45,2 MB/s) |
+| lab | espectro N=4096 K=16 | — | 2,87 Mpal/s, 0 huecos, `fifo_ovf` = 0 (con `--late-mux`, ya por defecto) |
+| lab | espectro N=1024 K=2 | — | 5,09 Mpal/s (20,4 MB/s) |
+
+La imagen lab no limita: la de serie da el mismo caudal por el mismo enlace. El techo del modo espectro (≈ 5 Mpal/s ≈ 20 MB/s, menos que los 45 MB/s del RX normal porque la salida llega a ráfagas y la FIFO de 16 384 palabras se desborda antes) es **con USB 2.0**; **queda pendiente repetirlo con USB 3** (SuperSpeed, ≈ 350 MB/s). La simulación con un lector tipo GPIF
+(`firmware/sim/run_lab_spec.sh gpif log2n k grupos hueco`) confirma que la FPGA sostiene los 30,7 Mpal/s (N = 1024, K = 2) con cualquier drenaje ≥ ≈ 31 Mpal/s y que con un drenaje de ≈ 5,6 Mpal/s reproduce la pérdida (70 % de desborde). Al llenarse la FIFO, `fifo_writer` pasa a *holdoff* y descarta muestras hasta tener un bloque DMA libre, de modo que el parser también descarta las tramas cortadas.
+
+**Comprobar el enlace antes de medir caudal**: `bladeRF-cli -e info` (línea «USB speed»: Super = USB 3, Hi-Speed = USB 2) o `grep . /sys/bus/usb/devices/*/speed` junto al `idVendor` `2cf0` (5000 = USB 3, 480 = USB 2).
+
+### 16.4 Recomendación de uso
+
+Caudal de la FPGA = `fs · total / (K·N)` palabras/s, con `total` = palabras por trama con relleno (1024 → 2048, 2048 → 4096, 4096 → 6144, 8192 → 10 240). Para no pasar de **3 Mpal/s (12 MB/s)** (caudal garantizado **medido con enlace USB 2.0**; con USB 3 el límite debería ser mucho mayor, pendiente de medir) y, aparte, para una cascada de 30 fps:
+
+| fs (Msps) | N | palabras/trama | K mínimo (≤ 3 Mpal/s) | tramas/s con ese K | K para 30 tramas/s |
+|---|---|---|---|---|---|
+| 30.72 | 1024 | 2048 | 21 | 1428.6 | 1000 |
+| 30.72 | 2048 | 4096 | 21 | 714.3 | 500 |
+| 30.72 | 4096 | 6144 | 16 | 468.8 | 250 |
+| 30.72 | 8192 | 10240 | 13 | 288.5 | 125 |
+| 61.44 | 1024 | 2048 | 41 | 1463.4 | 2000 |
+| 61.44 | 2048 | 4096 | 41 | 731.7 | 1000 |
+| 61.44 | 4096 | 6144 | 31 | 483.9 | 500 |
+| 61.44 | 8192 | 10240 | 26 | 288.5 | 250 |
+
+En la práctica, para una cascada a 30 fps basta con **K = fs/(30·N)** (p. ej. 30,72 Msps, N = 4096: K ≈ 250 → 0,18 Mpal/s). Con N = 1024 el relleno de 2048 palabras duplica el tráfico: usar `PAD = 0` o K ≥ 21 (a 30,72 Msps). El cliente debe procesar y dibujar a la tasa de pantalla, no a la de trama.
+
+### 16.5 Pendiente
+
+* Repetir las medidas de caudal con la placa en USB 3 (SuperSpeed).
+* No incluido: DDC, modo oversample de 122,88 Msps, dos canales, ventanas distintas, umbral/detección en FPGA; CRC de la trama e indicador de saturación del ADC por trama.

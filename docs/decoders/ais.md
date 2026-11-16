@@ -108,6 +108,12 @@ Evento `dec` (campo `msg`, listas largas recortadas):
 }
 ```
 
+### En la web
+
+![AIS en la interfaz web](../img/decoders/ais-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando AIS.*
+
 <!-- vision-rapida:fin -->
 
 Fuentes: ITU-R M.1371 (capa física anexo 2 §3, mensajes), tabla de campos de

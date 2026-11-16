@@ -71,6 +71,12 @@ Evento `dec` (campo `msg`, listas largas recortadas):
 }
 ```
 
+### En la web
+
+![GSM en la interfaz web](../img/decoders/gsm-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando GSM.*
+
 <!-- vision-rapida:fin -->
 
 Sincronización de una portadora BCCH: FCCH (corrección de frecuencia), SCH → BSIC (NCC, BCC) y número de trama,

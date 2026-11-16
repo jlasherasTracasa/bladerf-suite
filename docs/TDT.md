@@ -42,6 +42,12 @@ Procedencia: sin evento JSON propio: el decodificador `tdt` publica el mensaje `
 
 Esta grabación no produce ningún evento `dec`.
 
+### En la web
+
+![TDT en la interfaz web](img/decoders/tdt-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando TDT.* El vídeo es un `.ts` de prueba reproducido con `--tv-ts` (carta de ajuste sintética), no una emisión recibida por radio.
+
 <!-- vision-rapida:fin -->
 
 ## Figuras

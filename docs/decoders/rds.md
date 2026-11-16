@@ -66,6 +66,12 @@ Evento `dec` (campo `msg`, listas largas recortadas):
 }
 ```
 
+### En la web
+
+![RDS en la interfaz web](../img/decoders/rds-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando RDS.*
+
 <!-- vision-rapida:fin -->
 
 Decodificador NARROW a 250 000 S/s complejos (DDC con filtro de 200 kHz). El perfil

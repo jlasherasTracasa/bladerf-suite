@@ -91,6 +91,12 @@ Evento `dec` (campo `msg`, listas largas recortadas):
 }
 ```
 
+### En la web
+
+![DSC en la interfaz web](../img/decoders/dsc-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando DSC.*
+
 <!-- vision-rapida:fin -->
 
 Fuentes: ITU-R M.493 (formato) y M.541. **El PDF de M.493 no se pudo leer en el

@@ -548,6 +548,21 @@ Recogidos por el orquestador de los informes verificados de fase 2:
    RS), ACARS (polaridad, BCS), DSC (bits de comprobación, categorías), RS41
    (parámetros RS), DVB-T (pilotos/TPS), LoRa (tablas).
 9. AIS: mejora PLVA (Kanaan et al.) no hecha.
+10. Detector (`src/dsp/detector.c`): falsos positivos en el ~5 % de cada borde
+    de la banda y racimos de marcadores sobre una misma señal FM. La web los
+    oculta o agrupa (UX1), pero hay que corregirlo en origen: excluir los bordes y
+    fusionar las detecciones contiguas dentro del ancho ocupado.
+11. Web (pulido menor): RDS `af` se muestra en Hz crudos (pasar a MHz); «Ancho RF»
+    sale «—» con fuente de fichero (ver `docs/QA_WEB.md`).
+12. Enlace USB: el 2026-11-16 la placa estaba en USB 2.0 Hi-Speed (≈ 45 MB/s,
+    ≈ 11 Msps). Volver a medir el caudal (RX normal, 61,44 Msps y el modo espectro
+    de la imagen lab) con USB 3 SuperSpeed (`bladeRF-cli -e info`).
+13. Host + GPU: SIGSEGV al añadir, mover y quitar instancias deprisa con el DDC de
+    GPU activo (`make webtest` con CUDA; reproductor `build/orq/repro_gpu.mjs`).
+    En curso: G1. `make webtest` debe pasarse siempre también con CUDA.
+14. Imagen FPGA «lab» (0cd2913c…): probada en placa el 2026-11-16 (RAM). Falta
+    integrarla en el motor y la web (`rx_mux = 3`, secuencia «late-mux» de
+    `fpga_lab.h`) como fuente de espectro alternativa.
 
 ## 8c. TDT: ver y oír la televisión (fase 3b)
 

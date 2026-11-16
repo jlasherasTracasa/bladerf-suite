@@ -69,6 +69,12 @@ Evento `dec` (campo `msg`, listas largas recortadas):
 }
 ```
 
+### En la web
+
+![LoRa en la interfaz web](../img/decoders/lora-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando LoRa.*
+
 <!-- vision-rapida:fin -->
 
 Decodificador NARROW a 500 kS/s (`src/decoders/lora.c`, capa física en

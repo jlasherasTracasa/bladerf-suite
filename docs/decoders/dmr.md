@@ -92,6 +92,12 @@ Evento `dec` (campo `msg`, listas largas recortadas):
 }
 ```
 
+### En la web
+
+![DMR en la interfaz web](../img/decoders/dmr-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando DMR.*
+
 <!-- vision-rapida:fin -->
 
 Decodificador `src/decoders/dmr.c` (+ `dmr.h`, `dmr_fec.{h,c}`, `pocsag_fsk.h`), modulador `src/tx/mod_dmr.c`, test

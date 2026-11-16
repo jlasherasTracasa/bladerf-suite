@@ -78,6 +78,12 @@ Evento `dec` (campo `msg`, listas largas recortadas):
 }
 ```
 
+### En la web
+
+![ADS-B en la interfaz web](img/decoders/adsb-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando ADS-B.*
+
 <!-- vision-rapida:fin -->
 
 ## Figuras

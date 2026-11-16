@@ -75,6 +75,12 @@ Evento `dec` (campo `msg`, listas largas recortadas):
 }
 ```
 
+### En la web
+
+![APRS en la interfaz web](../img/decoders/aprs-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando APRS.*
+
 <!-- vision-rapida:fin -->
 
 Fuentes: APRS Protocol Reference 1.0.1 (caps. 5-11, 15-16), AX.25 v2.2, Bell 202.

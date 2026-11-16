@@ -71,6 +71,12 @@ Evento `dec` (campo `msg`, listas largas recortadas):
 }
 ```
 
+### En la web
+
+![DAB en la interfaz web](../img/decoders/dab-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando DAB.*
+
 <!-- vision-rapida:fin -->
 
 Decodificador WIDE a **2 048 000 S/s exactos** (muestras Q11 crudas). Obtiene del FIC

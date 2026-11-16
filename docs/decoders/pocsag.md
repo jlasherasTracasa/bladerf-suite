@@ -70,6 +70,12 @@ Evento `dec` (campo `msg`, listas largas recortadas):
 }
 ```
 
+### En la web
+
+![POCSAG en la interfaz web](../img/decoders/pocsag-web.png)
+
+*Captura de la interfaz con un servidor `--replay` propio mostrando POCSAG.*
+
 <!-- vision-rapida:fin -->
 
 Decodificador `src/decoders/pocsag.c` (+ `pocsag.h`, `pocsag_fsk.h`), modulador `src/tx/mod_pocsag.c`,
