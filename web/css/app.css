@@ -194,3 +194,54 @@ dialog::backdrop { background: rgba(8,6,12,.7); backdrop-filter: blur(4px); }
 @media (max-width: 520px) { .sweepbar label { flex: 1 1 40%; width: auto; } .sweepbar label:has(select) { flex: 1 1 30%; } }
 .ev .h .kind { padding: 0 6px; border-radius: 6px; background: var(--s4); font-size: 11px; }
 .ev .h .kind.emerg { background: #5c1f1f; color: var(--err); }
+
+/* ---- UX1: ajustes de ergonomía y contraste ---- */
+/* El espectro aprovecha la altura de la ventana (barra superior + controles ≈ 250 px). */
+.spec-wrap { height: clamp(300px, calc(100vh - 292px), 1000px); }
+@media (max-width: 640px) { .spec-wrap { height: clamp(260px, 46vh, 420px); } }
+/* Pestañas en una sola fila con desplazamiento: ya no se parten en dos líneas desiguales. */
+.tabs, .tabs { flex-wrap: nowrap !important; overflow-x: auto !important; scroll-snap-type: x proximity; }
+.tabs button { flex: 1 0 auto; padding: 11px 10px; scroll-snap-align: center; }
+/* Indicadores (SQL, ST, 19k, FUERA): apagados con color atenuado pero legible (sin opacity, que rebajaba el contraste). */
+.flag { opacity: 1; background: var(--s3); color: #b4aebb; border: 1px solid var(--outline-v); }
+.flag.on { background: var(--ok); color: #003919; border-color: var(--ok); }
+.flag.warn.on { background: var(--warn); color: #3b2a00; border-color: var(--warn); }
+.muted { opacity: 1; color: #b8b2c0; }
+/* Objetivos táctiles: 40 px en pantallas táctiles, 32 px con ratón. */
+.btn.small, input.num { min-height: 32px; }
+@media (pointer: coarse), (max-width: 800px) {
+  .btn.small, input.num { min-height: 40px; }
+  .btn.small { padding: 0 14px; }
+  input.num { width: 72px; }
+  .seg button { min-height: 40px; }
+  .tabs button { padding: 13px 12px; }
+  input[type=checkbox] { width: 22px; height: 22px; }
+  label.chk { min-height: 32px; }
+}
+/* Grupo de zoom y rango agrupados con lógica visual */
+.zoombar { padding-top: 2px; }
+.zoombar .sep { width: 1px; align-self: stretch; background: var(--outline-v); margin: 0 4px; }
+/* Pestañas: una sola fila desplazable (con aviso de continuación en el borde derecho). */
+.tabs button { padding: 11px 9px; }
+@media (max-width: 640px) {
+  .toasts { bottom: auto; top: 54px; }
+  .smeter { flex-wrap: nowrap; gap: 5px; } .smeter .bar { flex: 1 1 60px; } #sm-txt { min-width: 62px; font-size: 11px; }
+  .flag { padding: 2px 4px; font-size: 10px; }
+}
+
+/* Móvil: cabecera de una sola fila (se ocultan los chips secundarios) y márgenes de desplazamiento bajo la cabecera fija. */
+html { scroll-padding-top: 56px; }
+#tabs, .tunebar { scroll-margin-top: 56px; }
+@media (max-width: 640px) {
+  .stats { flex-wrap: nowrap; max-height: none; gap: 4px; }
+  #st-load, #st-dev, #st-temp, #st-clients { display: none; }
+  .topbar { gap: 6px; }
+  .chip { padding: 3px 8px; }
+}
+
+/* Escritorio: panel lateral lo bastante ancho para que las 8 pestañas quepan en una fila sin desplazar. */
+@media (min-width: 1280px) {
+  .layout { grid-template-columns: minmax(0, 1fr) 500px; }
+  .tabs button { padding: 11px 6px; font-size: 12.5px; }
+}
+@media (min-width: 1500px) { .layout { grid-template-columns: minmax(0, 1fr) 540px; } }

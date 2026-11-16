@@ -53,6 +53,18 @@ run_one() {
 }
 
 # Identidad con rx_mux = 0: rx_lab y rx de serie dan las mismas palabras, iguales a las muestras
+# Prueba de caudal: lector tipo GPIF con pausa entre transacciones; imprime los contadores de la FPGA
+run_gpif() {
+    local l=$1 k=$2 g=$3 gap=$4 n=$((1<<$1))
+    local d="$W/gpif_${l}_${k}_${gap}"; mkdir -p "$d"
+    "$MODEL/spec_tool" vec "$l" "$k" "$g" 0 7 1 "$d/in.txt" "$d/exp.txt"
+    cd "$W"
+    timeout 3000 vsim -c -t 1ps -GLOG2N=$l -GK=$k -GPAD=1 -GNSAMP=$((g*k*n)) -GEXTRA=$((2*n+256)) -GRDGAP=$gap \
+        -GINFILE="$d/in.txt" -GOUTFILE="$d/out.txt" nuand.tb_rx_lab -do "run -all; quit -f" > "$d/sim.log" 2>&1 < /dev/null || true
+    echo "N=$n K=$k hueco GPIF=$gap: $(grep FIN: "$d/sim.log" | sed 's/.*FIN: //')"
+    "$MODEL/spec_tool" check "$l" "$k" 1 "$d/exp.txt" "$d/out.txt" | tail -1
+}
+
 run_identity() {
     local l=10 n=1024 d="$W/ident"; mkdir -p "$d"
     "$MODEL/spec_tool" vec "$l" 1 2 1 5 1 "$d/in.txt" "$d/exp.txt"
@@ -77,7 +89,9 @@ PY
 
 [ -d "$W/nuand" ] && [ -z "${RECOMPILE:-}" ] || compile
 rc=0
-if [ "${1:-}" = "ident" ]; then
+if [ "${1:-}" = "gpif" ]; then
+    run_gpif "${2:-10}" "${3:-2}" "${4:-8}" "${5:-1280}"
+elif [ "${1:-}" = "ident" ]; then
     run_identity || rc=1
 elif [ "${1:-}" = "all" ]; then
     run_one 10 3 3 0 1 || rc=1

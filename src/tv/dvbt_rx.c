@@ -488,8 +488,6 @@ static bool search_cp(dvbt_rx_t *r)
             mean = bm / bc;
             double sd = sqrt(MAX(b2 / bc - mean * mean, 1e-18));
             double z = (mx - mean) / sd;
-            if (getenv("DVBT_DEBUG2"))
-                fprintf(stderr, "  N=%d g=%d nl=%d M=%d mx=%.3f mean=%.3f sd=%.4f z=%.1f\n", N, gd[gi], nl, M, mx, mean, sd, z);
             if (z > best_z) {
                 best_z = z;
                 best_peak = mx;
@@ -1179,10 +1177,6 @@ static bool track_symbol(dvbt_rx_t *r)
         e += dr * dr + di * di;
         hp += (double)r->Hbar[i].re * r->Hbar[i].re + (double)r->Hbar[i].im * r->Hbar[i].im;
     }
-    if (getenv("DVBT_DEBUG4") && r->symbols == 5) {
-        for (int i = 0; i < m->ncp; i += 6)
-            fprintf(stderr, "cp %d k=%d Hs=(%.3f,%.3f) Hb=(%.3f,%.3f)\n", i, m->cp[i], Hs[i].re, Hs[i].im, r->Hbar[i].re, r->Hbar[i].im);
-    }
     e /= m->ncp;
     hp /= m->ncp;
     /* Hs = Y/P → el ruido de Y es e·P² (|P|² = 16/9); H̄ ruidosa suma ~ (α/(2−α)) */
@@ -1193,8 +1187,6 @@ static bool track_symbol(dvbt_rx_t *r)
     r->info_snr_pilot = 10 * log10(snrp * 9.0 / 16.0 + 1e-18);   /* respecto a potencia de dato = 1 */
     r->snr_db = (float)r->info_snr_pilot;
     r->pilot_q = r->pilot_q * 0.95 + q * 0.05;
-    if (getenv("DVBT_DEBUG3") && r->symbols < 60)
-        fprintf(stderr, "sym %.0f a=%.4f b=%.5f(n=%.2f) q=%.3f e/hp=%.4g fnco=%.3g\n", r->symbols, a, b, -b * r->N / (2 * M_PI), q, e / (hp + 1e-18), r->f_nco);
     /* actualización de H̄ */
     for (int i = 0; i < m->ncp; i++) {
         r->Hbar[i].re += 0.0625f * (Hs[i].re - r->Hbar[i].re);
@@ -1237,8 +1229,6 @@ static bool track_symbol(dvbt_rx_t *r)
                 den += (double)r->tps_prev[i][0] * r->tps_prev[i][0] + (double)r->tps_prev[i][1] * r->tps_prev[i][1];
             }
             r->hist[r->hj % HMAX] = (float)(num / den);
-            if (getenv("DVBT_DEBUG5") && r->hj < 40)
-                fprintf(stderr, "soft %lld %.3f (num %.3g den %.3g)\n", (long long)r->hj, num / den, num, den);
         } else {
             r->hist[r->hj % HMAX] = 0;
         }

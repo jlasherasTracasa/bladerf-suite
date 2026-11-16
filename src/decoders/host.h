@@ -52,6 +52,11 @@ void dec_host_set_location(dec_host_t *h, bool valid, double lat, double lon);
  * now = hora Unix de la primera muestra del bloque. */
 void dec_host_feed(dec_host_t *h, const int16_t *iq, const cf32 *buf, unsigned n, double fs, int64_t center,
                    double now);
+/* ¿Hay alguna instancia que vaya a leer el bloque float normalizado (buf)? Es verdadero solo si
+ * existe una instancia NARROW elegible que no lleva su DDC la GPU. Barato (un cerrojo y un
+ * recorrido de las instancias): el motor puede llamarlo cada bloque o cada ~0,25 s y pasar
+ * buf = NULL a dec_host_feed() cuando devuelve false. */
+bool dec_host_needs_float(dec_host_t *h);
 void dec_host_periodic(dec_host_t *h, double now);      /* dec_state ~1 Hz, dec_list */
 void dec_host_list_json(dec_host_t *h, sb_t *sb);       /* mensaje "dec_list" */
 void dec_host_catalog_json(sb_t *sb);                   /* mensaje "decoders" */

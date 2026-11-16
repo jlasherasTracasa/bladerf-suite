@@ -13,6 +13,14 @@ const mhz = (r) => (r / 1e6).toFixed(r % 1e5 ? 3 : 1).replace(/\.0$/, '') + ' Ms
 function applyProfile(p) {
   if (!send({ cmd: 'profile', id: p.id })) { toast('Sin conexión con el servidor', 'err'); return; }
   const lo = p.center - p.rate / 2, hi = p.center + p.rate / 2;
+  const st = S.status;
+  if (st && st.device && st.device.can_tune === false) {
+    // Fuente de fichero: el centro y la tasa no cambian, así que el canal de audio no se toca si el perfil cae fuera de la banda.
+    const inBand = p.chan_freq && p.chan_freq >= st.center - st.rate / 2 && p.chan_freq <= st.center + st.rate / 2;
+    if (inBand && p.mode) setChannel({ freq: p.chan_freq, mode: p.mode, ...(p.bw ? { bw: p.bw } : {}) });
+    toast(`Perfil «${p.name}»: la fuente es un fichero y no se puede mover el centro (${fmtHz(st.center, 3)}). Solo se aplican sus decodificadores; los que caen fuera de la banda quedan «esperando».`, 'err');
+    return;
+  }
   if (p.chan_freq && p.mode) setChannel({ freq: p.chan_freq, mode: p.mode, ...(p.bw ? { bw: p.bw } : {}) });
   else if (S.chan.freq < lo || S.chan.freq > hi) setChannel({ freq: Math.round(p.center / 1000) * 1000 });   // perfil sin audio: el centro
   toast(`Perfil «${p.name}» aplicado`, 'ok');

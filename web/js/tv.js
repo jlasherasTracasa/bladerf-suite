@@ -210,7 +210,9 @@ function fillChannels() {
   const sel = $('#tv-ch');
   if (sel.options.length) return;
   for (let ch = CH_LO; ch <= CH_HI; ch++) sel.append(h('option', { value: chFreq(ch), text: `Canal ${ch} · ${chFreq(ch) / 1e6} MHz` }));
-  sel.value = chFreq(34);
+  // Último múltiplex usado (o C32, el mejor de la zona de pruebas, si no hay ninguno).
+  let last = 32; try { last = +localStorage.getItem('tvch') || 32; } catch { /* sin almacenamiento */ }
+  sel.value = chFreq(Math.min(CH_HI, Math.max(CH_LO, last)));
 }
 
 function fmtBer(x) { return x == null ? '—' : x === 0 ? '0' : x.toExponential(1); }
@@ -366,7 +368,7 @@ export function initTv() {
       }
     }).catch(() => { /* nada */ });
   }
-  $('#tv-tune').addEventListener('click', () => tuneMux(parseFloat($('#tv-ch').value)));
+  $('#tv-tune').addEventListener('click', () => { const f = parseFloat($('#tv-ch').value); try { localStorage.setItem('tvch', String(Math.round((f / 1e6 - 474) / 8 + 21))); } catch { /* nada */ } tuneMux(f); });
   $('#tv-scan').addEventListener('click', () => { send({ cmd: 'tv_scan' }); $('#tv-scan').disabled = true; });
   $('#tv-stop').addEventListener('click', () => { send({ cmd: 'tv_stop' }); pause(); wantAuto = false; });
   $('#tv-play').addEventListener('click', () => (playing ? pause() : play()));
@@ -388,6 +390,7 @@ export function initTv() {
     if (!m.scanning) $('#tv-scan').disabled = !!m.file;
     $('#tv-tune').disabled = !!m.file;
     $('#tv-ch').disabled = !!m.file;
+    const fn = $('#tv-filenote'); if (fn) fn.hidden = !m.file;
   });
   bus.on('msg:tv_scan', renderScan);
   bus.on('tab', (id) => { if (id === 'tv') { renderStats(); renderServices(); } });

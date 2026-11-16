@@ -196,5 +196,38 @@ int main(void)
     test_symbols();
     test_sim();
     test_noise();
+
+    /* Vectores de la norma: ITU-R M.493-15, Anexo 1, Tabla A1-1 (código de 10 bits, B = 0, Y = 1,
+     * bit 1 el primero en transmitirse; fuente ITU, https://www.itu.int/rec/R-REC-M.493, uso
+     * como dato de prueba). Fijó el orden de los bits de comprobación (más significativo primero). */
+    {
+        static const struct { int sym; const char *yb; } t[] = {
+            {0, "BBBBBBBYYY"},   {1, "YBBBBBBYYB"},   {2, "BYBBBBBYYB"},   {43, "YYBYBYBBYY"},
+            {57, "YBBYYYBBYY"},  {99, "YYBBBYYBYY"},  {100, "BBYBBYYYBB"}, {104, "BBBYBYYYBB"},
+            {111, "YYYYBYYBBY"}, {112, "BBBBYYYYBB"}, {117, "YBYBYYYBYB"}, {122, "BYBYYYYBYB"},
+            {125, "YBYYYYYBBY"}, {126, "BYYYYYYBBY"}, {127, "YYYYYYYBBB"},
+        };
+        for (unsigned k = 0; k < sizeof t / sizeof t[0]; k++) {
+            uint8_t bits[10], enc[10];
+            for (int j = 0; j < 10; j++)
+                bits[j] = t[k].yb[j] == 'Y';
+            CHECK_EQ(dsc_sym_decode(bits), t[k].sym);
+            dsc_sym_encode(t[k].sym, enc);
+            CHECK(memcmp(bits, enc, 10) == 0);
+        }
+    }
+    /* Acuse de socorro (Tabla A1-4.2): 116, categoría 112, MMSI propio, UN telemando 110, MMSI en
+     * peligro, naturaleza, posición, hora, comunicación posterior, EOS 122. */
+    {
+        int m[] = {116, 112, 22, 41, 23, 45, 60, 110, 22, 41, 23, 45, 60, 107, 4, 32, 10, 8, 24, 12, 34, 126, 122};
+        int n = (int)(sizeof m / sizeof m[0]);
+        dsc_msg_t d;
+        CHECK_EQ(dsc_parse_message(m, n + 1, &d), 0);
+        CHECK_EQ(d.tc1, 110);
+        CHECK_EQ(d.tc2, -1);
+        CHECK(strcmp(d.dist_mmsi, "224123456") == 0);
+        CHECK_EQ(d.nature, 107);
+        CHECK(d.pos_valid && fabs(d.lat - (43 + 21.0 / 60)) < 1e-6);
+    }
     return TEST_SUMMARY();
 }

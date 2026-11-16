@@ -59,11 +59,13 @@
       <button class="btn small" id="z-in" aria-label="Acercar">+</button>
       <button class="btn small" id="z-reset">Todo</button>
       <button class="btn small" id="z-chan">Centrar en canal</button>
+      <span class="sep" aria-hidden="true"></span>
       <label class="chk"><input type="checkbox" id="rng-auto" checked><span>Rango auto</span></label>
       <input class="num" id="rng-min" type="number" step="5" value="-110" aria-label="Mínimo dB" disabled>
       <input class="num" id="rng-max" type="number" step="5" value="-20" aria-label="Máximo dB" disabled>
       <label class="chk"><input type="checkbox" id="peak-hold"><span>Máx.</span></label>
       <label class="chk" hidden><input type="checkbox" id="dbm-on"><span>dBm</span></label>
+      <span class="sep" aria-hidden="true"></span>
       <button class="btn small" id="sw-toggle" aria-pressed="false" aria-controls="sweepbar" title="Barrido rápido de espectro por toda la banda">Barrido</button>
       <span class="muted hide-sm" id="spec-info"></span>
     </div>
@@ -139,7 +141,7 @@
         <div id="cat-groups"></div>
       </div>
 
-      <div class="panel" id="p-decoders" role="tabpanel" data-title="Decodificadores" data-key="4">
+      <div class="panel" id="p-decoders" role="tabpanel" data-title="Decodificadores" data-short="Decod." data-key="4">
         <div class="card"><h2>Añadir instancia</h2>
           <div class="grid2">
             <label>Protocolo<select id="da-proto"></select></label>
@@ -240,6 +242,7 @@
             <button class="btn" id="tv-scan" title="Recorre los canales 21–48 y lista los que enganchan">Explorar canales 21–48</button>
             <button class="btn danger" id="tv-stop">Detener TV</button>
           </div>
+          <p class="muted" id="tv-filenote" hidden>Reproduciendo un fichero .ts: no hay radio que sintonizar ni canales que explorar.</p>
           <div class="muted" id="tv-scanbar" hidden></div>
           <div id="tv-scanres"></div>
         </div>

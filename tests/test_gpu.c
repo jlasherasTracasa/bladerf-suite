@@ -482,8 +482,67 @@ static void test_spectrum_async(void)
     free(q);
 }
 
+/* ---- Calibración absoluta del espectro: tono de amplitud A → 20·log10(A) dBFS ---- */
+static float cal_peak;
+static void on_cal(void *ctx, const float *db, int n, int navg)
+{
+    (void)ctx;
+    (void)navg;
+    float pk = -999.f;
+    for (int i = 0; i < n; i++)
+        pk = fmaxf(pk, db[i]);
+    cal_peak = pk;
+}
+
+static void test_spectrum_calibration(void)
+{
+    const double fs = 2.4e6;
+    const int sizes[] = {1024, 4096, 16384, 65536};
+    const double levels[] = {0, -6, -20, -60};
+    double worst = 0;
+    for (int e = 0; e < 4; e++)
+        for (int l = 0; l < 4; l++) {
+            const int n = sizes[e];
+            const long total = 3L * 120000;
+            int16_t *q = malloc(sizeof(int16_t) * 2 * (size_t)total);
+            uint32_t seed = 7u + (uint32_t)(e * 4 + l);
+            const double a = 2048.0 * pow(10.0, levels[l] / 20.0);
+            for (long i = 0; i < total; i++) { /* tono en el bin n/8 (exacto: sin festoneo) + 0,3 cuentas de ruido */
+                double ph = 2.0 * M_PI * (double)(i % 8) / 8.0;
+                q[2 * i] = (int16_t)lrint(fmin(2047.0, a * cos(ph)) + 0.3 * tu_gauss(&seed));
+                q[2 * i + 1] = (int16_t)lrint(fmin(2047.0, a * sin(ph)) + 0.3 * tu_gauss(&seed));
+            }
+            for (int gpu = 0; gpu < 2; gpu++) {
+                spectrum_t *sp = spectrum_create(n, fs, 20, gpu != 0);
+                if (!sp)
+                    continue;
+                if (gpu && !spectrum_using_gpu(sp)) {
+                    spectrum_destroy(sp);
+                    continue;
+                }
+                cal_peak = -999.f;
+                for (long off = 0; off < total; off += 40000) {
+                    spectrum_feed(sp, q + 2 * off, (int)fmin(40000, (double)(total - off)), on_cal, NULL);
+                    usleep(3000);
+                }
+                usleep(60000);
+                spectrum_feed(sp, q, 1, on_cal, NULL);
+                /* con 0 dBFS el tono se recorta a 2047/2048 (−0,004 dB) */
+                double err = fabs((double)cal_peak - levels[l]);
+                worst = fmax(worst, err);
+                if (err >= 0.5)
+                    printf("  FFT %d, %s, %.0f dBFS: mide %.2f dBFS\n", n, gpu ? "GPU" : "CPU", levels[l], cal_peak);
+                CHECK(err < 0.5);
+                spectrum_destroy(sp);
+            }
+            free(q);
+        }
+    printf("  calibración del espectro (0, −6, −20, −60 dBFS; FFT 1024…65536; CPU y GPU): error máximo %.3f dB\n", worst);
+}
+
 int main(void)
 {
+    test_spectrum_calibration();
     test_spectrum_async();
     test_ddc_vs_cpu();
     printf("Rendimiento del DDC en GPU\n");

@@ -117,7 +117,10 @@ int fpga_lab_set_spectrum_mode(const fpga_lab_t *lab, bool on)
     if (lab->io.gpio_read(lab->io.ctx, &g) < 0) return -1;
     g &= ~FPGA_LAB_GPIO_RXMUX_MASK;
     if (on) g |= FPGA_LAB_RXMUX_SPECTRUM << 8;
-    return lab->io.gpio_write(lab->io.ctx, g);
+    if (lab->io.gpio_write(lab->io.ctx, g) < 0) return -1;
+    /* Al pasar a rx_mux = 3 se ponen a cero los contadores: así fifo_ovf, fft, etc. solo cuentan
+     * lo ocurrido en modo espectro (con rx_mux = 0 la FIFO desborda mientras nadie lee). */
+    return on ? fpga_lab_clear_counters(lab) : 0;
 }
 
 int fpga_lab_read_counters(const fpga_lab_t *lab, fpga_lab_counters_t *c)

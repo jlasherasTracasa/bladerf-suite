@@ -31,8 +31,12 @@
 
 #define MAX_SLOTS 32
 #define MAX_SIGNALS 96
-#define DB_MIN -140.0f   /* escala de cuantificación del espectro: 0 → −140 dBFS */
-#define DB_STEP 0.5f     /*                                    255 → −12,5 dBFS */
+/* Cuantificación del espectro (1 byte por bin): v = (dBFS − DB_MIN)/DB_STEP, 0…255.
+ * Rango −145 … +8 dBFS: el techo deja margen sobre 0 dBFS (un tono recortado o I y Q a fondo
+ * de escala llegan a ≈ +3 dBFS por bin) y el suelo queda por debajo del ruido de cuantificación
+ * del ADC en la FFT más fina (≈ −119 dBFS por bin a 65536 con 12 bits). Paso 0,6 dB. */
+#define DB_MIN -145.0f
+#define DB_STEP 0.6f
 
 /* Tipos de mensajes binarios (primer byte). Ver docs/PROTOCOLO.md. */
 enum { BIN_SPECTRUM = 1, BIN_AUDIO = 2, BIN_METER = 3 };

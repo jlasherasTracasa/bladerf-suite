@@ -3,6 +3,7 @@
 // módulos lo cambian con setChannel().
 import { S, bus, $, h, clamp, fmtHz, parseHz, throttle, editing, dispOff, dispUnit } from './util.js';
 import { send } from './ws.js';
+import { toast } from './util.js';
 import { startAudio, stopAudio, audioOn } from './audio.js';
 
 export const MODES = [['wfm', 'WFM'], ['nfm', 'NFM'], ['am', 'AM'], ['usb', 'USB'], ['lsb', 'LSB'], ['cw', 'CW']];
@@ -29,8 +30,29 @@ const sendChan = throttle(() => {
 }, 60);
 
 /** Cambia parámetros del canal. opts.user=true marca que viene de una acción del usuario (activa "follow"). */
+let pendingCenter = null, pendingT = 0;   // retuneo en curso: adopt() no debe deshacerlo
+
+/** Si el canal (con su filtro) cae fuera de la banda capturada, retunea el hardware: centro con el canal a +rate/4. */
+function retuneIfNeeded() {
+  const st = S.status, c = S.chan;
+  if (!st || !st.rate || st.center == null) return true;
+  const [elo, ehi] = filterEdges(c), half = 0.45 * st.rate;   // 0,45·rate: margen por el filtro anti-alias
+  if (elo >= st.center - half && ehi <= st.center + half) return true;
+  const d = st.device || {};
+  if (d.can_tune === false) { toast(`${fmtHz(c.freq, 3)} queda fuera de la banda capturada (${fmtHz(st.center - st.rate / 2, 1)} – ${fmtHz(st.center + st.rate / 2, 1)}) y una fuente de fichero no se puede sintonizar`, 'err'); return false; }
+  let off = st.rate / 4;
+  const edge = Math.max(Math.abs(c.freq - elo), Math.abs(ehi - c.freq));
+  if (off + edge > half) off = Math.max(0, half - edge);
+  let C = Math.round(c.freq - off);
+  if (d.freq_min != null) C = Math.max(d.freq_min, C);
+  if (d.freq_max != null) C = Math.min(d.freq_max, C);
+  pendingCenter = C; pendingT = performance.now();
+  send({ cmd: 'config', center: C });
+  return true;
+}
+
 export function setChannel(patch, opts = {}) {
-  const c = S.chan, oldMode = c.mode;
+  const c = S.chan, oldMode = c.mode, oldFreq = c.freq;
   Object.assign(c, patch);
   if (patch.mode && patch.mode !== oldMode && patch.bw == null) c.bw = BW_DEF[c.mode];
   if (patch.mode && patch.mode !== oldMode) {
@@ -39,6 +61,8 @@ export function setChannel(patch, opts = {}) {
   }
   c.bw = clamp(Math.round(c.bw), BW_MIN, BW_MAX[c.mode]);
   c.freq = Math.round(c.freq);
+  // Si no se puede retunear el hardware (fichero), el canal no se mueve: la frecuencia vuelve a la anterior.
+  if (opts.user && (patch.freq != null || patch.mode != null) && !retuneIfNeeded() && patch.freq != null) c.freq = oldFreq;
   sendChan();
   render();
   bus.emit('chan', { user: !!opts.user, patch });
@@ -103,7 +127,8 @@ export function initReceiver() {
   fi.addEventListener('focus', () => fi.select());
   fi.addEventListener('blur', () => {
     const v = parseHz(fi.value);
-    if (v != null && v > 0) setChannel({ freq: v }, { user: true }); else render();
+    if (v != null && v > 0) setChannel({ freq: v }, { user: true });
+    else { if (fi.value.trim()) toast('Frecuencia no válida: prueba «100.4», «433,92 MHz» o «162k»', 'err'); render(); }
   });
   fi.addEventListener('wheel', (e) => { e.preventDefault(); tuneBy(Math.sign(-e.deltaY) * step); }, { passive: false });
 
@@ -116,6 +141,25 @@ export function initReceiver() {
   bus.on('audio:error', () => { import('./util.js').then((u) => u.toast('No se pudo iniciar el audio', 'err')); });
 
   bus.on('bin:audio', onLevel);
+  // Estado inicial sensato: si el perfil activo no fija frecuencia de audio y la persona aún no ha tocado nada,
+  // el canal se coloca sobre la señal detectada más fuerte (la emisora, no un 100,3 MHz fijo).
+  let autoDone = false, touched = false;
+  bus.on('chan', ({ user }) => { if (user) touched = true; });
+  bus.on('ws', (up) => { if (up) { autoDone = false; } });
+  bus.on('msg:signals', (m) => {
+    if (autoDone || touched || !m.list || !m.list.length || !S.status || S.status.sweep) return;
+    const p = S.status.profile && S.profiles.find((x) => x.id === S.status.profile);
+    if (p && p.chan_freq && p.mode) { autoDone = true; return; }
+    const edge = 0.10 * S.status.rate, inner = m.list.filter((s) => Math.abs(m.center + s[0] - S.status.center) < S.status.rate / 2 - edge);   // sin falsos positivos de los bordes
+    if (!inner.length) return;
+    const best = inner.reduce((a, b) => (b[3] > a[3] ? b : a));
+    const f = m.center + best[0], wide = best[1] >= 100000, g = wide ? 100000 : 5000;
+    const lo = S.status.center - S.status.rate / 2, hi = S.status.center + S.status.rate / 2, fr = Math.round(f / g) * g;
+    autoDone = true;
+    if (fr < lo || fr > hi || best[3] < 6) return;
+    setChannel(wide ? { freq: fr, mode: 'wfm' } : { freq: fr });
+    toast(`Sintonizado en la señal más fuerte: ${fmtHz(fr, 3)}`, 'ok');
+  });
   // Reenvía el canal al reconectar (el servidor crea un canal nuevo por conexión)
   bus.on('ws', (up) => { if (up) { sendChan(); } });
   // Adopción de banda: tras conectar, y cada vez que cambia el centro o la tasa (perfil, config de
@@ -123,6 +167,10 @@ export function initReceiver() {
   // frecuencia de audio del perfil activo o, si no la tiene (ADS-B, DAB…), al centro. Si está dentro se respeta.
   let lastBand = '';
   const adopt = (m, first) => {
+    if (pendingCenter != null) {
+      if (m.center === pendingCenter || performance.now() - pendingT > 5000 || (S.chan.freq >= m.center - m.rate / 2 && S.chan.freq <= m.center + m.rate / 2)) pendingCenter = null;
+      else return;   // status anterior al retuneo: no mover el canal
+    }
     const lo = m.center - m.rate / 2, hi = m.center + m.rate / 2;
     if (S.chan.freq >= lo && S.chan.freq <= hi) { if (first) sendChan(); return; }
     const p = m.profile && S.profiles.find((x) => x.id === m.profile);

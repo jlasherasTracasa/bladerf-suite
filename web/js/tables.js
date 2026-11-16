@@ -39,7 +39,7 @@ const cmp = (a, b) => {
  * isSel(fila, i) -> bool, rowKey. Devuelve un div.table-wrap.
  */
 export function autoTable(rows, opts = {}) {
-  const id = opts.id || 'tbl', limit = opts.limit || 200;
+  const id = opts.id || 'tbl', limit = opts.limit || 100;
   const cols = columnsOf(rows);
   const st = sortState.get(id) || { key: null, dir: 1 };
   const idx = rows.map((r, i) => [r, i]);

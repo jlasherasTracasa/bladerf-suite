@@ -93,7 +93,11 @@ export function initTx() {
     if (mode === 'air' && !confirm(`Vas a RADIAR por la antena en ${fmtHz(freq, 4)}. Comprueba que tienes autorización y que la antena es adecuada. ¿Emitir?`)) return;
     const m = { cmd: 'tx', proto: d.id, mode, freq, gain: +$('#tx-gain').value, repeat: Math.max(1, +$('#tx-repeat').value || 1) };
     const c = parseHz($('#tx-center').value), r = parseHz($('#tx-rate').value);
-    if (mode === 'file') { if (c) m.center = c; if (r) m.rate = r; }
+    if (mode === 'file') {
+      // Si la frecuencia no cabe en la banda indicada (por defecto la capturada ahora), se centra la captura sintética en ella.
+      const rr = r || (S.status && S.status.rate) || 2e6;
+      m.rate = rr; m.center = c && Math.abs(freq - c) < 0.4 * rr ? c : freq;
+    }
     if (params) m.params = params;
     result(true, 'Enviando orden…');
     if (!send(m)) result(false, 'Sin conexión con el servidor');

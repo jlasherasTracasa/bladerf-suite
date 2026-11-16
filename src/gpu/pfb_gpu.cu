@@ -34,7 +34,7 @@ struct pfb_gpu {
     cudaStream_t st;
     cudaEvent_t e0, e1;
     double last_ms;
-    char name[128];
+    char name[256];
 };
 
 __global__ void k_pfb(const short2 *__restrict__ x, const float *__restrict__ h, const float2 *__restrict__ tw_g,

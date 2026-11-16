@@ -16,6 +16,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = +(process.argv[2] || process.env.PORT || 8099);
+const RICH = process.argv.includes('--rich') || !!process.env.MOCK_RICH;   // muchos aviones, barcos y eventos (pruebas de carga de la web)
 const WEB = path.join(__dirname, '..', 'web');
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const CSP = "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ws: wss:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:";
@@ -80,7 +81,7 @@ const profiles = [
 // (banda ancha en 1090 MHz) cae fuera de la captura de FM y sirve para probar que la web no la pinta.
 let decList = [
   { inst: 1, proto: 'rds', freq: 100300000, rate: 250000, owner: 1, state: 'ok', err: '', events: 14, drops: 0, load: 0.04 },
-  { inst: 2, proto: 'adsb', freq: 1090000000, rate: 2000000, owner: 0, state: 'waiting', err: '', events: 0, drops: 0, load: 0 },
+  { inst: 2, proto: 'adsb', freq: 1090000000, rate: 2000000, owner: 0, state: RICH ? 'ok' : 'waiting', err: '', events: 0, drops: 0, load: 0 },
   { inst: 3, proto: 'pocsag', freq: 466075000, rate: 48000, owner: 0, state: 'ok', err: '', events: 0, drops: 0, load: 0 },
   { inst: 4, proto: 'ais', freq: 100100000, rate: 48000, owner: 0, state: 'ok', err: '', events: 0, drops: 0, load: 0.01 },
   { inst: 5, proto: 'aprs', freq: 100500000, rate: 48000, owner: 0, state: 'ok', err: '', events: 0, drops: 0, load: 0.01 },
@@ -96,8 +97,8 @@ let rec = { type: 'recording', on: false, name: '', bytes: 0, seconds: 0, droppe
 const recent = [];                       // últimos eventos dec
 
 /* ---------------- ADS-B simulado ---------------- */
-const planes = Array.from({ length: 9 }, (_, i) => ({
-  icao: (0x34a000 + i * 4097).toString(16).toUpperCase().padStart(6, '0'), cs: ['IBE', 'RYR', 'VLG', 'AEA', 'EZY', 'TAP', 'AFR', 'DLH', 'BAW'][i] + (100 + i * 37),
+const planes = Array.from({ length: RICH ? 80 : 9 }, (_, i) => ({
+  icao: (0x34a000 + i * 4099).toString(16).toUpperCase().padStart(6, '0'), cs: ['IBE', 'RYR', 'VLG', 'AEA', 'EZY', 'TAP', 'AFR', 'DLH', 'BAW'][i % 9] + (100 + i * 37),
   lat: 40.4 + (Math.random() - 0.5) * 2.2, lon: -3.7 + (Math.random() - 0.5) * 3, alt: 8000 + Math.random() * 30000, gs: 250 + Math.random() * 250, trk: Math.random() * 360,
   vr: Math.round((Math.random() - 0.5) * 3000), sq: String(1000 + Math.floor(Math.random() * 6000)), msgs: 10,
 }));
@@ -117,7 +118,7 @@ function adsbState() {
 /* ---------------- estados con tablas de otros protocolos ---------------- */
 // Objetos con lat/lon (+ rumbo y nombre) bajo claves distintas por protocolo: la web no debe depender de ellas.
 const mover = (n, lat0, lon0, spread, names, speed) => Array.from({ length: n }, (_, i) => ({ id: i, nm: names[i % names.length] + (i + 1), lat: lat0 + (Math.random() - 0.5) * spread, lon: lon0 + (Math.random() - 0.5) * spread, hd: Math.random() * 360, sp: speed * (0.5 + Math.random()) }));
-const fleets = { ais: mover(6, 40.2, -3.3, 0.6, ['MV ', 'SS '], 12), aprs: mover(5, 40.4, -3.7, 0.5, ['EA4', 'EC4'], 30), meshtastic: mover(4, 40.45, -3.6, 0.2, ['!a1b2c', '!d4e5f'], 0), rs41: mover(2, 40.3, -3.9, 0.3, ['T1230', 'S4567'], 20) };
+const fleets = { ais: mover(RICH ? 60 : 6, 40.2, -3.3, 0.6, ['MV ', 'SS '], 12), aprs: mover(5, 40.4, -3.7, 0.5, ['EA4', 'EC4'], 30), meshtastic: mover(4, 40.45, -3.6, 0.2, ['!a1b2c', '!d4e5f'], 0), rs41: mover(2, 40.3, -3.9, 0.3, ['T1230', 'S4567'], 20) };
 function stepFleet(f) {
   const R = Math.PI / 180;
   for (const o of f) { const d = (o.sp * 1.852 / 3600) / 111; o.lat += Math.cos(o.hd * R) * d; o.lon += Math.sin(o.hd * R) * d / Math.cos(o.lat * R); o.hd = (o.hd + (Math.random() - 0.5) * 6 + 360) % 360; }
@@ -237,6 +238,11 @@ function onCommand(c, m) {
       setTimeout(() => sendText(c, { type: 'tx_result', ok: m.mode !== 'air' || m.gain <= txPolicy.max_gain, msg: m.mode === 'air' && m.gain > txPolicy.max_gain ? 'ganancia por encima del máximo' : `modo ${m.mode}: ${m.proto} generado (simulado)`,
         file: m.mode === 'file' ? `recordings/tx_${m.proto}_mock.sigmf-data` : null, seconds: 1.234 }), 300);
       break;
+    case 'sweep': {
+      status.sweep = { start: m.start, stop: m.stop, fft: m.fft || 1024, hops: Math.ceil((m.stop - m.start) / 20e6), rate: 20e6, mode: 'quick', sweeps: 0, restarts: 0 };
+      sweepPos = 0; broadcastJson(status); break;
+    }
+    case 'sweep_stop': delete status.sweep; broadcastJson(status); break;
     case 'tx_stop': sendText(c, { type: 'tx_result', ok: true, msg: 'emisión detenida', file: null, seconds: 0 }); break;
   }
 }
@@ -246,7 +252,7 @@ const SIGS = [[-0.8e6, 180e3, -45], [-0.3e6, 15e3, -62], [0.15e6, 200e3, -40], [
 const sigList = () => SIGS.map(([off, bw, p]) => [off, bw, p + (Math.random() - 0.5), +(p + 96).toFixed(1)]);
 let tick = 0;
 function spectrumFrame() {
-  const n = status.fft, buf = Buffer.alloc(32 + n), rate = status.rate, dbmin = -130, dbstep = 0.5;
+  const n = status.fft, buf = Buffer.alloc(32 + n), rate = status.rate, dbmin = -145, dbstep = 0.6;
   buf[0] = 1; buf.writeUInt32LE(n, 4); buf.writeDoubleLE(status.center, 8); buf.writeDoubleLE(rate, 16); buf.writeFloatLE(dbmin, 24); buf.writeFloatLE(dbstep, 28);
   const fade = 1 + Math.sin(tick / 15) * 0.15;
   for (let i = 0; i < n; i++) {
@@ -279,13 +285,26 @@ function meterFrame(c) {
   const b = Buffer.alloc(8); b[0] = 3; b[1] = 0; b[2] = 1; b.writeFloatLE(-85 + Math.random() * 20, 4); sendBin(c, b);
 }
 
+let sweepPos = 0;
+// Barrido simulado: espectro de [start, stop] con 4096 bins y varias portadoras; cada trama es una pasada.
+function sweepFrame() {
+  const sw = status.sweep, n = 4096, buf = Buffer.alloc(32 + n), span = sw.stop - sw.start;
+  buf[0] = 4; buf[2] = 1; buf[3] = 100; buf.writeUInt32LE(n, 4); buf.writeDoubleLE(sw.start + span / 2, 8); buf.writeDoubleLE(span, 16); buf.writeFloatLE(-140, 24); buf.writeFloatLE(0.5, 28);
+  for (let i = 0; i < n; i++) {
+    let p = -100 + (Math.random() - 0.5) * 6;
+    for (const k of [0.1, 0.33, 0.5, 0.71]) p = Math.max(p, -50 - Math.abs(i / n - k) * 3000 + (Math.random() - 0.5) * 3);
+    buf[32 + i] = Math.max(0, Math.min(255, Math.round((p + 140) / 0.5)));
+  }
+  sw.sweeps++;
+  return buf;
+}
 let specTimer = null;
 function schedule() {
   clearInterval(specTimer);
   specTimer = setInterval(() => {
     tick++;
     if (!clients.size) return;
-    const sp = spectrumFrame();
+    const sp = status.sweep ? sweepFrame() : spectrumFrame();
     for (const c of clients) { sendBin(c, sp); }
     if (rec.on) { rec.bytes += status.rate * 4 / status.fps; rec.seconds += 1 / status.fps; }
   }, 1000 / (status.fps || 20));
@@ -304,7 +323,7 @@ setInterval(() => {
   for (const i of decList) { const m = stateMsg(i); if (m) broadcastJson(m); }
   if (rec.on) broadcastJson(rec);
 }, 1000);
-setInterval(() => { if (clients.size) emitDec(); }, 1800);
+setInterval(() => { if (clients.size) emitDec(); }, RICH ? 120 : 1800);
 setInterval(schedule, 5000);
 
 /* ---------------- HTTP ---------------- */

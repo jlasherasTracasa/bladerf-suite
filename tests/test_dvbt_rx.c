@@ -164,5 +164,5 @@ int main(void)
     double cpu = 0;
     run_case("rendimiento 8k 1/4 64-QAM 2/3", 8192, 3, 2, 1, 35, 0, 0, 8, false, 3500, &cpu);
     CHECK(cpu < 1.5);
-    TEST_SUMMARY();
+    return TEST_SUMMARY();
 }

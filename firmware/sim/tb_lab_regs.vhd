@@ -36,10 +36,19 @@ architecture sim of tb_lab_regs is
     signal rx_counter : unsigned(31 downto 0) := (others => '0');
 
     signal fails : natural := 0;
+    signal rst_pulse : std_logic := '0';
 begin
     clk   <= not clk after 6.25 ns;   -- 80 MHz
     rxclk <= not rxclk after 4 ns;    -- 125 MHz
-    rst <= '1', '0' after 100 ns;
+    process begin
+        rst <= '1'; wait for 100 ns; rst <= '0';
+        loop
+            wait until rst_pulse = '1';
+            rst <= '1';
+            wait until rst_pulse = '0';
+            rst <= '0';
+        end loop;
+    end process;
 
     u_wbm : entity work.wishbone_master
         generic map (ADDR_BITS => 32, DATA_BITS => 32)
@@ -141,6 +150,11 @@ begin
         wait for 2 us;
         assert rx_log2n = 11 and rx_k = 64 and rx_pad = '0' report "FALLO cruce de configuracion a rx" severity error;
         if not (rx_log2n = 11 and rx_k = 64 and rx_pad = '0') then fails <= fails + 1; end if;
+        -- El FX3 pulsa sys_reset (fx3_ctl(7)) al arrancar/parar un flujo: la configuración debe sobrevivir
+        rst_pulse <= '1'; wait for 300 ns; rst_pulse <= '0'; wait for 300 ns;
+        avread(5, r);  expect("LOG2N tras reset", r, x"0000000B");
+        avread(6, r);  expect("K tras reset", r, x"00000040");
+        avread(3, r);  expect("SCRATCH tras reset", r, x"A5C3F00D");
         avwrite(15, x"00000001");
         avread(15, r); expect("CLEAR gen", r, x"00000001");
         wait for 2 us;

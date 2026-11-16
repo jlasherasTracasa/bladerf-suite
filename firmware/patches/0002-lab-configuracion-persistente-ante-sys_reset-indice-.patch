@@ -1,0 +1,193 @@
+From 70b75622dc1886e0120ebd0fa22e9ffb2ddb3f7e Mon Sep 17 00:00:00 2001
+From: F1 FPGA <f1@bladerf-lab.local>
+Date: Mon, 16 Nov 2026 09:02:16 +0100
+Subject: [PATCH 2/2] lab: configuracion persistente ante sys_reset, indice de
+ muestra en la cabecera, registro de entrada del motor
+
+---
+ .../bladerf-micro/vhdl/lab/lab_regs.vhd       | 11 ++---
+ .../bladerf-micro/vhdl/lab/rx_lab.vhd         | 18 ++++++--
+ .../bladerf-micro/vhdl/lab/spec_engine.vhd    | 42 +++++++++++++++----
+ 3 files changed, 52 insertions(+), 19 deletions(-)
+
+diff --git a/hdl/fpga/platforms/bladerf-micro/vhdl/lab/lab_regs.vhd b/hdl/fpga/platforms/bladerf-micro/vhdl/lab/lab_regs.vhd
+index cfda057..40f3568 100644
+--- a/hdl/fpga/platforms/bladerf-micro/vhdl/lab/lab_regs.vhd
++++ b/hdl/fpga/platforms/bladerf-micro/vhdl/lab/lab_regs.vhd
+@@ -79,13 +79,10 @@ begin
+         if rising_edge(clk) then
+             wb_ack <= '0';
+             cyc_d  <= wb_cyc;
+-            if rst = '1' then
+-                scratch <= (others => '0');
+-                r_log2n <= to_unsigned(12, 4);
+-                r_k     <= to_unsigned(16, 16);
+-                r_pad   <= '1';
+-                r_clear <= (others => '0');
+-            elsif wb_cyc = '1' and cyc_d = '0' then
++            -- OJO: estos registros NO se reinician con 'rst' (sys_reset = fx3_ctl(7), que el FX3 activa
++            -- al arrancar/parar un flujo y borraba la configuración escrita antes de habilitar RX).
++            -- Solo tienen valor inicial de carga de la FPGA.
++            if wb_cyc = '1' and cyc_d = '0' then
+                 idx := to_integer(unsigned(wb_adr(7 downto 0)));
+                 case idx is
+                     when 0  => rv := ID_VALUE;
+diff --git a/hdl/fpga/platforms/bladerf-micro/vhdl/lab/rx_lab.vhd b/hdl/fpga/platforms/bladerf-micro/vhdl/lab/rx_lab.vhd
+index 00e1544..ef1320d 100644
+--- a/hdl/fpga/platforms/bladerf-micro/vhdl/lab/rx_lab.vhd
++++ b/hdl/fpga/platforms/bladerf-micro/vhdl/lab/rx_lab.vhd
+@@ -155,6 +155,8 @@ architecture arch of rx_lab is
+     signal spec_rst      : std_logic;
+     signal sel_ch        : natural range 0 to NUM_STREAMS-1 := 0;
+     signal spec_ce       : std_logic;
++    signal spec_ce_r     : std_logic := '0';
++    signal din_re_r, din_im_r : signed(11 downto 0) := (others => '0');
+     signal spec_word     : std_logic_vector(31 downto 0);
+     signal spec_valid    : std_logic;
+     signal spec_streams  : sample_streams_t(adc_streams'range) := (others => ZERO_SAMPLE);
+@@ -443,15 +445,25 @@ begin
+     spec_rst    <= not spec_run;
+     spec_active <= spec_run;
+     sel_ch      <= 0 when adc_controls(0).enable = '1' else NUM_STREAMS-1;
+-    spec_ce     <= spec_run and adc_streams(sel_ch).data_v;
++    -- Etapa de registro de entrada: sel_ch, data_v y las muestras llegan con lógica combinacional
++    -- desde la IP de ADI (registros de control, valid/last_v); se registran antes del motor.
++    in_reg_proc : process(rx_clock)
++    begin
++        if rising_edge(rx_clock) then
++            spec_ce_r <= spec_run and adc_streams(sel_ch).data_v;
++            din_re_r  <= adc_streams(sel_ch).data_i(11 downto 0);
++            din_im_r  <= adc_streams(sel_ch).data_q(11 downto 0);
++        end if;
++    end process;
++    spec_ce <= spec_ce_r;
+ 
+     U_spec_engine : entity work.spec_engine
+         port map (
+             clk        => rx_clock,
+             rst        => spec_rst,
+             ce         => spec_ce,
+-            din_re     => adc_streams(sel_ch).data_i(11 downto 0),
+-            din_im     => adc_streams(sel_ch).data_q(11 downto 0),
++            din_re     => din_re_r,
++            din_im     => din_im_r,
+             ts         => rx_timestamp,
+             cfg_log2n  => spec_cfg_log2n,
+             cfg_k      => spec_cfg_k,
+diff --git a/hdl/fpga/platforms/bladerf-micro/vhdl/lab/spec_engine.vhd b/hdl/fpga/platforms/bladerf-micro/vhdl/lab/spec_engine.vhd
+index 7a69559..f2ea7ba 100644
+--- a/hdl/fpga/platforms/bladerf-micro/vhdl/lab/spec_engine.vhd
++++ b/hdl/fpga/platforms/bladerf-micro/vhdl/lab/spec_engine.vhd
+@@ -9,8 +9,8 @@
+ -- Trama de salida (palabras de 32 bits; bits [15:0] = I y [31:16] = Q del par que
+ -- ve el host con SC16_Q11):
+ --   w0 = 0x4C415031 ("LAP1"), w1 = 0xB3BEAFCE (~w0), w2 = {K[15:0], N[15:0]},
+---   w3 = contador de trama, w4/w5 = marca de tiempo de la primera muestra del grupo
+---   (bajos/altos), w6 = {15'b0, perdida, 8'h01 (versión), 8'h08 (palabras de cabecera)},
++--   w3 = contador de trama, w4/w5 = índice de la primera muestra del grupo (contado desde el arranque del motor;
++--   NO es el timestamp del AD9361: con meta_en = 0 el time_tamer está parado) (bajos/altos), w6 = {15'b0, perdida, 8'h01 (versión), 8'h08 (palabras de cabecera)},
+ --   w7 = palabras totales de la trama (con relleno), luego N potencias (bin -N/2 ... N/2-1)
+ --   y relleno de ceros hasta múltiplo de 2048 palabras si pad = 1.
+ -- Potencia: valor = M * 2^E donde M = (acc >> E)[25:0], E = max(0, msb(acc) - 25).
+@@ -74,11 +74,14 @@ architecture rtl of spec_engine is
+     signal ce_f    : std_logic_vector(12 downto 0) := (others => '0');   -- copias de ce_i para la FFT
+     attribute preserve : boolean;
+     attribute preserve of ce_f : signal is true;
++    signal ce_w    : std_logic_vector(1 downto 0) := (others => '0');   -- copias de ce_i para los puertos de las RAM de acumulación
++    attribute preserve of ce_w : signal is true;
+     signal win_q2  : std_logic_vector(15 downto 0) := (others => '0');
+     signal ro_lim  : unsigned(13 downto 0) := (others => '0');
+     signal abort_c : std_logic := '0';
+     signal din_re_i, din_im_i : signed(11 downto 0) := (others => '0');
+     signal ts_i    : unsigned(63 downto 0) := (others => '0');
++    signal ts_c    : unsigned(63 downto 0) := (others => '0');   -- muestras aceptadas desde el arranque del motor
+     signal xr_a, xq_a : signed(11 downto 0) := (others => '0');
+     signal va      : std_logic := '0';
+     signal vb      : std_logic := '0';
+@@ -152,6 +155,11 @@ architecture rtl of spec_engine is
+     signal r2_kind : unsigned(1 downto 0) := "00";
+     signal r2_hw : std_logic_vector(31 downto 0) := (others => '0');
+     signal r2_acc : unsigned(63 downto 0) := (others => '0');
++    signal rb_v : std_logic := '0';
++    signal rb_kind : unsigned(1 downto 0) := "00";
++    signal rb_hw : std_logic_vector(31 downto 0) := (others => '0');
++    signal rb_acc : unsigned(63 downto 0) := (others => '0');
++    signal rb_nz : std_logic_vector(7 downto 0) := (others => '0');
+     signal r3_v : std_logic := '0';
+     signal r3_kind : unsigned(1 downto 0) := "00";
+     signal r3_hw : std_logic_vector(31 downto 0) := (others => '0');
+@@ -194,6 +202,7 @@ begin
+         if rising_edge(clk) then
+             ce_i     <= ce;
+             ce_f     <= (others => ce);
++            ce_w     <= (others => ce);
+             din_re_i <= din_re;
+             din_im_i <= din_im;
+             ts_i     <= ts;
+@@ -261,8 +270,10 @@ begin
+                 i_cnt <= (others => '0');
+                 f_cnt <= (others => '0');
+                 gi_in <= (others => '0');
++                ts_c <= (others => '0');
+                 va <= '0'; vb <= '0'; v0 <= '0'; v1 <= '0'; v2 <= '0';
+             elsif ce_i = '1' then
++                ts_c <= ts_c + 1;
+                 -- paso A: se registra la muestra y la dirección de la ventana
+                 wa_r <= win_addr_s;
+                 xr_a <= din_re_i;
+@@ -279,7 +290,7 @@ begin
+                 xq0 <= xq_b;
+                 v0 <= vb;
+                 if i_cnt = 0 and f_cnt = 0 then
+-                    ts_par(to_integer(gi_in)) <= ts_i;
++                    ts_par(to_integer(gi_in)) <= ts_c;
+                 end if;
+                 if i_cnt = n_mask then
+                     i_cnt <= (others => '0');
+@@ -387,15 +398,15 @@ begin
+     evt_new_group <= (ce_i and f_v) when (j_cnt = 0 and fo_cnt = 0) else '0';
+ 
+     -- Bancos
+-    wr_en0 <= ce_i and s4_v when s4_bk = '0' else '0';
+-    wr_en1 <= ce_i and s4_v when s4_bk = '1' else '0';
++    wr_en0 <= ce_w(0) and s4_v when s4_bk = '0' else '0';
++    wr_en1 <= ce_w(1) and s4_v when s4_bk = '1' else '0';
+     ro_addr <= to_unsigned(0, 13) when ro_busy = '0' else
+                resize(ro_idx - 8, 13) + resize(n_total / 2, 13);
+ 
+     ra0 <= ro_addr and n_mask when (ro_busy = '1' and ro_bank = '0') else s0_k;
+     ra1 <= ro_addr and n_mask when (ro_busy = '1' and ro_bank = '1') else s0_k;
+-    rd0 <= '1' when (ro_busy = '1' and ro_bank = '0') else ce_i;
+-    rd1 <= '1' when (ro_busy = '1' and ro_bank = '1') else ce_i;
++    rd0 <= '1' when (ro_busy = '1' and ro_bank = '0') else ce_w(0);
++    rd1 <= '1' when (ro_busy = '1' and ro_bank = '1') else ce_w(1);
+ 
+     u_bank0 : entity work.spec_acc_ram
+         port map (clk => clk, we => wr_en0, waddr => s4_k, wdata => s4_acc,
+@@ -486,8 +497,21 @@ begin
+                 -- R2: dato de la RAM
+                 r2_v <= r1_v; r2_kind <= r1_kind; r2_hw <= r1_hw; r2_acc <= q_sel;
+                 -- R3: exponente
+-                r3_v <= r2_v; r3_kind <= r2_kind; r3_hw <= r2_hw; r3_acc <= r2_acc;
+-                e := msb_pos(r2_acc);
++                -- Rb: bytes distintos de cero
++                rb_v <= r2_v; rb_kind <= r2_kind; rb_hw <= r2_hw; rb_acc <= r2_acc;
++                for bb in 0 to 7 loop
++                    if r2_acc(8*bb+7 downto 8*bb) /= 0 then rb_nz(bb) <= '1'; else rb_nz(bb) <= '0'; end if;
++                end loop;
++                r3_v <= rb_v; r3_kind <= rb_kind; r3_hw <= rb_hw; r3_acc <= rb_acc;
++                e := 0;
++                for bb in 7 downto 0 loop
++                    if rb_nz(bb) = '1' then
++                        for bi in 7 downto 0 loop
++                            if rb_acc(8*bb+bi) = '1' then e := 8*bb+bi; exit; end if;
++                        end loop;
++                        exit;
++                    end if;
++                end loop;
+                 if e > 25 then r3_e <= to_unsigned(e - 25, 6); else r3_e <= (others => '0'); end if;
+             end if;
+         if clr = '1' then
+-- 
+2.43.0
+

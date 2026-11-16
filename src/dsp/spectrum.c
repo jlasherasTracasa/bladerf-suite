@@ -66,9 +66,10 @@ spectrum_t *spectrum_create(int n, double rate, int fps, bool try_gpu)
     double wsum = 0;
     for (int i = 0; i < n; i++)
         wsum += s->window[i];
-    /* |X| de un tono de amplitud 1 = Σw. Las muestras Q11 se dividen entre
-     * 2048 para normalizar. Todo se agrupa en una constante en dB. */
-    s->norm_db = -20.0 * log10(wsum * 2048.0);
+    /* |X| de un tono complejo de amplitud 1 = Σw (las muestras ya llegan normalizadas: en la CPU se
+     * multiplican por w/2048 al rellenar la FFT y en la GPU k_load hace lo mismo). Por tanto solo
+     * falta dividir por Σw; el 2048 NO se vuelve a aplicar aquí (estaba duplicado: −66,2 dB). */
+    s->norm_db = -20.0 * log10(wsum);
 
     long kmax_frame = s->frame_len / n;
     if (try_gpu) {

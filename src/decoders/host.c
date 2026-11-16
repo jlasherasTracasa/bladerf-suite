@@ -42,6 +42,13 @@ typedef struct block {
     unsigned n;
     double fs, now;
     int64_t center;
+    /* Qué datos son válidos en ESTE uso del bloque. Los bloques se reciclan en un
+     * pool y conservan punteros (y capacidades) del uso anterior: un 'buf' rancho
+     * de una salida 'mid' (pocas muestras) leído con n = 8192 es un desbordamiento.
+     * Si el motor llamó a dec_host_feed sin float (needs_float() se evaluó antes de
+     * que una instancia pasara a elegible) b->buf no se rellena: sin esta marca el
+     * consumidor leía el residuo del pool. */
+    bool has_iq, has_buf;
     bool mid; /* buf = salidas del DDC de GPU a tasa intermedia (no la captura) */
 } block_t;
 
@@ -157,6 +164,7 @@ static block_t *block_get(dec_host_t *h, unsigned n, bool need_iq, bool need_buf
         b->buf = malloc(sizeof(cf32) * (size_t)n);
         b->buf_cap = b->buf ? n : 0;
     }
+    b->has_iq = b->has_buf = false;
     atomic_store(&b->refs, 1);
     return b;
 }
@@ -274,6 +282,7 @@ static void gpu_deliver(void *ctx, const cf32 *y, int n, double now, double fs, 
     if (!b)
         return;
     memcpy(b->buf, y, sizeof(cf32) * (size_t)n);
+    b->has_buf = true;
     b->n = (unsigned)n;
     b->fs = fs;
     b->center = center;
@@ -499,13 +508,13 @@ static void process_block(inst_t *in, const block_t *b)
     if (!in->st)
         return;
     if (d->kind == DEC_WIDE) {
-        if (d->process_raw && b->iq)
+        if (d->process_raw && b->has_iq)
             d->process_raw(in->st, b->iq, (int)b->n, b->now, inst_emit, in);
         return;
     }
     if (b->mid) {
         /* Salidas del DDC de GPU a tasa intermedia: solo falta la etapa fina */
-        if (!in->fine || !d->process || !b->buf)
+        if (!in->fine || !d->process || !b->has_buf)
             return;
         size_t nd = ddc_fine_max_out(in->fine, (int)b->n);
         if (nd > in->ddc_cap) {
@@ -520,7 +529,7 @@ static void process_block(inst_t *in, const block_t *b)
             d->process(in->st, in->ddc_out, k, b->now, inst_emit, in);
         return;
     }
-    if (!in->ddc || !d->process || !b->buf)
+    if (!in->ddc || !d->process || !b->has_buf)
         return;
     size_t need = ddc_max_out(in->ddc, (int)b->n);
     if (need > in->ddc_cap) {
@@ -878,6 +887,24 @@ void dec_host_set_location(dec_host_t *h, bool valid, double lat, double lon)
     pthread_mutex_unlock(&h->lock);
 }
 
+bool dec_host_needs_float(dec_host_t *h)
+{
+    /* Mismo criterio que dec_host_feed(): solo las instancias NARROW que reciben el bloque
+     * float (no las que lleva la GPU ni las WIDE, que usan el Q11 crudo) y que están elegibles. */
+    bool need = false;
+    pthread_mutex_lock(&h->lock);
+    for (int i = 0; i < MAX_INST && !need; i++) {
+        inst_t *in = h->inst[i];
+        if (!in)
+            continue;
+        pthread_mutex_lock(&in->m);
+        need = !in->on_gpu && in->d->kind == DEC_NARROW && (in->state == ST_OK || in->cfg_dirty);
+        pthread_mutex_unlock(&in->m);
+    }
+    pthread_mutex_unlock(&h->lock);
+    return need;
+}
+
 void dec_host_feed(dec_host_t *h, const int16_t *iq, const cf32 *buf, unsigned n, double fs, int64_t center,
                    double now)
 {
@@ -930,10 +957,14 @@ void dec_host_feed(dec_host_t *h, const int16_t *iq, const cf32 *buf, unsigned n
     b->fs = fs;
     b->center = center;
     b->now = now;
-    if (need_iq && iq)
+    if (need_iq && iq) {
         memcpy(b->iq, iq, sizeof(int16_t) * 2 * (size_t)n);
-    if (need_buf && buf)
+        b->has_iq = true;
+    }
+    if (need_buf && buf) {
         memcpy(b->buf, buf, sizeof(cf32) * (size_t)n);
+        b->has_buf = true;
+    }
     for (int k = 0; k < nw; k++) {
         inst_t *in = h->inst[want[k]];
         pthread_mutex_lock(&in->m);

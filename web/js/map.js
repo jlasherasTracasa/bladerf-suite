@@ -25,7 +25,8 @@ const hidden = new Set();                         // capas ocultas
 const trails = new Map();                         // clave de objeto -> [[lat,lon],…]
 const view = { dx: 0, dy: 0, range: 0 };         // desplazamiento (km) y radio visible (km); 0 = auto
 let selected = null;                              // {layer, k}
-let hits = [];                                    // puntos pintados para el clic
+let hits = [];
+let labelSlots = new Map();                       // casillas de etiqueta ocupadas en este dibujo                                    // puntos pintados para el clic
 
 const pos = (o) => { const la = num(first(o, LAT)), lo = num(first(o, LON)); return la != null && lo != null && Math.abs(la) <= 90 && Math.abs(lo) <= 180 ? [la, lo] : null; };
 const rowKey = (o, i) => { const k = first(o, KEY); return k != null ? String(k) : '#' + i; };
@@ -74,7 +75,7 @@ function drawMap() {
   c.fillStyle = '#0b0a0e'; c.fillRect(0, 0, W, H);
   const o = origin();
   c.font = '11px ui-monospace, monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
-  hits = [];
+  hits = []; labelSlots = new Map();
   if (!o) {
     c.fillStyle = 'rgba(255,255,255,.55)'; c.fillText('Sin posiciones todavía: ningún decodificador ha publicado lat/lon', W / 2, H / 2); return;
   }
@@ -109,7 +110,12 @@ function drawMap() {
       if (sel) { c.strokeStyle = '#fff'; c.lineWidth = 1.5; c.stroke(); }
       c.restore();
       const nm = label(r);
-      if (nm && (sel || R < 150 || layers.length === 1)) { c.fillStyle = sel ? '#fff' : '#e6e0e9'; c.textAlign = 'left'; c.fillText(nm, x + 8, y - 6); }
+      if (nm && (sel || R < 150 || layers.length === 1)) {
+        // Objetos en la misma posición: las etiquetas se apilan hacia abajo (y se marca «+n» en el primero).
+        const key = Math.round(x / 10) + ',' + Math.round(y / 10), n = (labelSlots.get(key) || 0);
+        labelSlots.set(key, n + 1);
+        c.fillStyle = sel ? '#fff' : '#e6e0e9'; c.textAlign = 'left'; c.fillText(nm, x + 8, y - 6 + n * 12);
+      }
       hits.push({ x, y, layer: l.id, k, row: r });
     });
   }
@@ -169,7 +175,9 @@ function refresh() {
   $('#mp-note').textContent = loc ? '' : 'Sin ubicación del receptor: el mapa se centra en los objetos. Indícala en Hardware para ver distancias.';
   renderLegend(); renderSelected(); renderTables(); drawMap();
 }
-const throttledRefresh = throttle(refresh, 800);
+// Con el panel oculto no se redibuja nada (tablas de cientos de filas cada segundo): se recalcula al abrirlo.
+const mapVisible = () => { const p = document.getElementById('p-mapa'); return !p || p.style.display !== 'none'; };
+const throttledRefresh = throttle(() => { if (mapVisible()) refresh(); }, 800);
 
 function layout() {
   const r = cv.parentElement.getBoundingClientRect();

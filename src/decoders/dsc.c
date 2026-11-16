@@ -68,9 +68,12 @@ int dsc_sym_decode(const uint8_t *b)
         ones += b[i] & 1;
     }
     int zeros = 7 - ones;
-    int lsb = (b[7] & 1) | ((b[8] & 1) << 1) | ((b[9] & 1) << 2);
+    /* M.493 Anexo 1 §1.1.1: los bits 8-10 son el nº de elementos B (ceros) de los 7 de
+     * información, en binario y con el bit más significativo PRIMERO (p. ej. 6 ceros =
+     * YYB). Antes se aceptaba también el orden inverso; con la tabla A1-1 se comprobó que
+     * solo vale este. */
     int msb = ((b[7] & 1) << 2) | ((b[8] & 1) << 1) | (b[9] & 1);
-    return (lsb == zeros || msb == zeros) ? v : -1;
+    return msb == zeros ? v : -1;
 }
 
 void dsc_sym_encode(int v, uint8_t *b)
@@ -81,9 +84,9 @@ void dsc_sym_encode(int v, uint8_t *b)
         ones += b[i];
     }
     int zeros = 7 - ones;
-    b[7] = (uint8_t)(zeros & 1);
+    b[7] = (uint8_t)((zeros >> 2) & 1); /* MSB primero (M.493 §1.1.1) */
     b[8] = (uint8_t)((zeros >> 1) & 1);
-    b[9] = (uint8_t)((zeros >> 2) & 1);
+    b[9] = (uint8_t)(zeros & 1);
 }
 
 int dsc_ecc(const int *sym, int n)
@@ -135,13 +138,13 @@ const char *dsc_telecommand_name(int t)
     case 104: return "imposible cumplir";
     case 105: return "fin de llamada";
     case 106: return "datos";
-    case 107: return "J3E telefonía";
-    case 109: return "acuse de socorro";
-    case 110: return "retransmisión de socorro";
-    case 111: return "TTY-FEC";
-    case 113: return "TTY-ARQ";
+    case 109: return "J3E telefonía";
+    case 110: return "acuse de socorro";
+    case 112: return "retransmisión de socorro";
+    case 113: return "F1B/J2B TTY-FEC";
+    case 115: return "F1B/J2B TTY-ARQ";
     case 118: return "prueba";
-    case 121: return "petición de posición";
+    case 121: return "posición del buque";
     case 126: return "sin información";
     }
     return "";
@@ -232,10 +235,13 @@ int dsc_parse_message(const int *s, int n, dsc_msg_t *m)
             return -1;
         snprintf(m->from, sizeof m->from, "%.9s", d);
         p += 5;
+        /* Tablas A1-4.2/A1-4.3: el acuse (telemando 110) y la retransmisión (112) de socorro llevan UN
+         * solo telemando y después identidad, naturaleza, posición, hora y comunicación; el resto de
+         * llamadas llevan dos (primero y segundo). */
+        bool dist = m->category == 112 && (s[p] == 110 || s[p] == 112);
         m->tc1 = s[p++];
-        m->tc2 = s[p++];
-        /* socorro retransmitido o acusado: MMSI, naturaleza, posición, hora, comunicación */
-        if ((m->tc1 == 109 || m->tc1 == 110) && end - p >= 5 + 1 + 5 + 2 && digits10(s + p, d)) {
+        m->tc2 = dist ? -1 : s[p++];
+        if (dist && end - p >= 5 + 1 + 5 + 2 && digits10(s + p, d)) {
             snprintf(m->dist_mmsi, sizeof m->dist_mmsi, "%.9s", d);
             p += 5;
             m->nature = s[p++];
@@ -397,7 +403,19 @@ static int assemble(dsc_t *d, tracker_t *t)
     }
     if (e < 0)
         return -1;
-    /* carácter de control ECC (hueco e+1) con su copia RX */
+    /* M.493 Fig. 1 y Tablas A1-4.x: el especificador de formato va DOS veces seguidas ("2
+     * identical characters"); el ECC solo cuenta uno. Se comprobó con la tabla de la norma (no
+     * hay grabación real); se tolera también el caso de un solo especificador. */
+    int ec = e; /* índice del EOS en la secuencia compactada */
+    if (e >= 2 && sym[1] == sym[0]) {
+        for (int j = 1; j <= e; j++) {
+            sym[j] = sym[j + 1];
+            alt[j] = alt[j + 1];
+        }
+        ec = e - 1;
+    }
+    /* carácter de control ECC (hueco e+1 del flujo bruto; el EOS se envía 3 veces en DX y el ECC
+     * va justo detrás del primero, con una sola copia RX del EOS: M.493 §9 y Fig. 1b) */
     long dx = t->s0 + 2 * (e + 1), rx = dx + 5;
     if (dx > k || (rx > k))
         return 0;
@@ -409,22 +427,22 @@ static int assemble(dsc_t *d, tracker_t *t)
         return -1;
     /* ambigüedades DX≠RX: se prueban combinaciones hasta que el ECC cuadre */
     int amb[8], na = 0;
-    for (int i = 0; i <= e && na < 8; i++)
+    for (int i = 0; i <= ec && na < 8; i++)
         if (alt[i] >= 0)
             amb[na++] = i;
     for (int mask = 0; mask < (1 << na); mask++) {
         int tmp[DSC_MAX_SYM + 2];
-        memcpy(tmp, sym, sizeof(int) * (size_t)(e + 1));
+        memcpy(tmp, sym, sizeof(int) * (size_t)(ec + 1));
         for (int j = 0; j < na; j++)
             if (mask & (1 << j))
                 tmp[amb[j]] = alt[amb[j]];
-        int ecc = dsc_ecc(tmp, e + 1);
+        int ecc = dsc_ecc(tmp, ec + 1);
         for (int q = 0; q < necc; q++)
             if (eccs[q] == ecc) {
-                tmp[e + 1] = ecc;
+                tmp[ec + 1] = ecc;
                 dsc_msg_t m;
-                if (dsc_parse_message(tmp, e + 2, &m) == 0) {
-                    emit_call(d, &m, tmp, e + 2);
+                if (dsc_parse_message(tmp, ec + 2, &m) == 0) {
+                    emit_call(d, &m, tmp, ec + 2);
                     return 1;
                 }
                 return -1;

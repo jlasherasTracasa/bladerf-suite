@@ -6,6 +6,7 @@ import { S, bus, $, h, clamp } from './util.js';
 
 let ctx = null, node = null, gain = null, on = false;
 let stats = { fillMs: 0, under: 0, over: 0 };
+let muted = false, dropUntil = 0;
 let vol = 0.8, targetMs = 120;
 try { vol = parseFloat(localStorage.getItem('vol') ?? '0.8') || 0.8; targetMs = +localStorage.getItem('abuf') || 120; } catch { /* sin almacenamiento */ }
 
@@ -42,15 +43,32 @@ export function stopAudio() {
   if (!on) return;
   on = false;
   try { node.disconnect(); ctx.close(); } catch { /* nada */ }
-  ctx = node = gain = null;
+  ctx = node = gain = null; muted = false;
   bus.emit('audio', false);
   renderInfo();
+}
+
+/** Vacía el búfer anti-jitter (cambio de frecuencia/modo): el worklet funde a silencio y se descarta audio en vuelo ~150 ms. */
+export function flushAudio() {
+  dropUntil = performance.now() + 150;
+  if (node) node.port.postMessage({ t: 'flush' });
+}
+function setMuted(m) {
+  if (m === muted || !node) return;
+  muted = m;
+  node.port.postMessage({ t: 'mute', on: m });
 }
 
 function onFrame(buf) {
   if (!on || !node) return;
   const dv = new DataView(buf);
-  if (dv.getUint8(0) !== 2 || buf.byteLength <= 8) return;
+  const ty = dv.getUint8(0);
+  if (ty === 2 || ty === 3) {
+    // flag 4 = fuera de banda; squelch activo y bit 0 apagado = cerrado: en ambos casos silencio
+    const fl = dv.getUint8(1);
+    setMuted(!!(fl & 4) || (S.chan.squelch != null && !(fl & 1)));
+  }
+  if (ty !== 2 || buf.byteLength <= 8 || muted || performance.now() < dropUntil) return;
   const ch = dv.getUint8(2) === 2 ? 2 : 1;
   const frames = ((buf.byteLength - 8) >> 1) / ch | 0;
   if (!frames) return;
@@ -88,5 +106,6 @@ export function initAudio() {
   });
   $('#au-kv').before(h('label', {}, 'Búfer anti-jitter', sel));
   bus.on('bin:audio', onFrame);
+  bus.on('chan', (e) => { if (e.patch && (e.patch.freq != null || e.patch.mode != null)) flushAudio(); });
   renderInfo();
 }

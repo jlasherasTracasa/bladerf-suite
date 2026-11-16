@@ -22,7 +22,9 @@
 import { S, bus, $, clamp, fmtHz, fmtAxis, throttle, dispOff, dispUnit } from './util.js';
 import { setChannel, filterEdges, getStep, BW_MAX, BW_MIN } from './receiver.js';
 
-const QMIN = -140, QSTEP = 0.5, WF_ROWS = 1024, MAX_2D_W = 4096, WF_MAX_SWEEP = 4096;
+// Codificación interna de la cascada (1 byte): cubre de -160 a +18 dBFS, más que cualquier cabecera (tipo 1: -145..+8; barrido: -140..-12,5).
+// Cada trama se convierte con SU dbmin/dbstep (lut), no con constantes del servidor.
+const QMIN = -160, QSTEP = 0.7, WF_ROWS = 1024, MAX_2D_W = 4096, WF_MAX_SWEEP = 4096;
 const AXIS_H = 18;
 
 let wrap, plotC, wfC, ovC, px, ox;
@@ -197,6 +199,7 @@ export function zoomAt(frac, factor) {
   view.start = clamp(frac - (frac - view.start) * (ns / view.span), 0, 1 - ns); view.span = ns; dirty = true;
 }
 export const zoomBy = (f) => zoomAt(view.start + view.span / 2, f);
+export const getView = () => ({ start: view.start, span: view.span });
 export function zoomReset() { view.start = 0; view.span = 1; dirty = true; }
 export function zoomToChan() {
   const [lo, hi] = filterEdges(), rate = S.spec.rate || 1;
@@ -282,9 +285,9 @@ function drawPlot() {
   c.strokeStyle = 'rgba(255,255,255,.07)'; c.fillStyle = 'rgba(255,255,255,.4)'; c.lineWidth = 1; c.textAlign = 'left';
   // la rejilla se calcula en la unidad que se muestra (dBm = dBFS + off) para que caiga en cifras redondas
   for (let d = Math.ceil((rangeLo + off) / dstep) * dstep; d < rangeHi + off; d += dstep) {
-    const y = Math.round(dbY(d - off)) + .5; c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); c.fillText(d.toFixed(0), 3, y - 6);
+    const y = Math.round(dbY(d - off)) + .5; c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); if (y > 30 && y < plotH - AXIS_H - 4) c.fillText(d.toFixed(0), 3, y - 6);   // sin pisar la franja de señales ni el eje
   }
-  c.textAlign = 'right'; c.fillText(dispUnit(), W - 4, 8); c.textAlign = 'left';
+  c.textAlign = 'right'; c.fillText(dispUnit(), W - 4, 30); c.textAlign = 'left';
   if (sweeping()) { c.fillStyle = 'rgba(255,211,125,.9)'; c.fillText('BARRIDO' + (S.sweepPct != null ? ` ${S.sweepPct} %` : ''), 3, plotH - AXIS_H - 8); }
   if (!rate || !n) { c.fillStyle = 'rgba(255,255,255,.5)'; c.textAlign = 'center'; c.fillText(S.connected ? 'Esperando espectro…' : 'Sin conexión con el servidor', W / 2, plotH / 2); return; }
   // eje de frecuencia
@@ -296,6 +299,7 @@ function drawPlot() {
     c.beginPath(); c.moveTo(x, 0); c.lineTo(x, plotH - AXIS_H); c.stroke();
     if (x > 16 && x < W - 16) { c.fillStyle = 'rgba(255,255,255,.55)'; c.fillText(fmtAxis(f, fstep), x, plotH - AXIS_H / 2); }
   }
+  c.textAlign = 'right'; c.fillStyle = 'rgba(255,255,255,.4)'; c.fillText(Math.abs(f1) >= 1e6 ? 'MHz' : 'kHz', W - 4, plotH - AXIS_H - 8);   // unidad del eje
   // curva: máximo por columna si hay más bins que píxeles
   const bpp = (n * view.span) / W, b0 = view.start * n;
   const trace = (arr, close) => {
@@ -316,7 +320,16 @@ function drawPlot() {
   trace(avg, false); c.strokeStyle = '#d0bcff'; c.lineWidth = 1.3; c.stroke();
 }
 
-const sigList = () => (sweeping() ? [] : S.signals.list.map(([off, bw, peak, snr]) => ({ freq: S.signals.center + off, bw, peak, snr })));
+// Marcadores: se descarta el 5 % de cada borde (caída del filtro anti-alias del AD9361: falsos positivos) y los que
+// quedan a menos de 12 px unos de otros se agrupan en el más fuerte, para no amontonar flechas sobre el ruido.
+const sigList = () => {
+  if (sweeping() || !S.spec.rate) return [];
+  const lo = fLo() + 0.05 * S.spec.rate, hi = fLo() + 0.95 * S.spec.rate;
+  const all = S.signals.list.map(([off, bw, peak, snr]) => ({ freq: S.signals.center + off, bw, peak, snr })).filter((s) => s.freq >= lo && s.freq <= hi).sort((a, b) => b.snr - a.snr);
+  const out = [];
+  for (const s of all) if (!out.some((o) => Math.abs(freqToX(o.freq) - freqToX(s.freq)) < 12 && W > 0)) out.push(s);
+  return out;
+};
 
 function drawSweepOverlay(c) {
   // sin canal ni decodificadores: solo el punto elegido con un clic y la lectura bajo el cursor
@@ -344,7 +357,7 @@ function drawOverlay() {
     if (x + w < 0 || x - w > W) continue;
     c.fillStyle = 'rgba(255,211,125,.85)'; c.fillRect(x - w / 2, 1, w, 6);
     c.beginPath(); c.moveTo(x - 4, 8); c.lineTo(x + 4, 8); c.lineTo(x, 14); c.closePath(); c.fill();
-    if (W / view.span > 0 && w > 28) { c.fillStyle = '#ffd37d'; c.fillText(s.snr.toFixed(0) + ' dB', x, 16); }
+    if (w > 28) { c.fillStyle = '#ffd37d'; c.fillText(s.snr.toFixed(0) + ' dB', Math.min(Math.max(x + w / 2 + 14, 16), W - 16), 2); }   // etiqueta al lado: no tapa el pico
   }
   // Instancias de decodificador. Narrow: línea discontinua en su frecuencia. Wide: la instancia ocupa
   // toda su banda de captura (rate), así que se pinta como banda sombreada recortada a la captura, y solo

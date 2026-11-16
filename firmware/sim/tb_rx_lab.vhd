@@ -23,6 +23,7 @@ entity tb_rx_lab is
         NSAMP   : natural := 8192;     -- muestras del fichero de entrada
         EXTRA   : natural := 4096;     -- muestras a cero tras el fichero (vaciado)
         MUX     : natural := 3;        -- valor de rx_mux_sel
+        RDGAP   : natural := 0;        -- 0: lectura continua; >0: como el GPIF: transacciones de 2048 palabras con RDGAP ciclos (100 MHz) de pausa
         STOCK   : natural := 0         -- 1: instancia rx.vhd de serie en lugar de rx_lab (solo MUX /= 3)
     );
 end entity;
@@ -55,6 +56,7 @@ architecture sim of tb_rx_lab is
     signal c_samples, c_ovf, c_fft, c_spec, c_late, c_words : unsigned(31 downto 0);
     signal spec_active : std_logic;
     signal done : boolean := false;
+    signal s_rreq_g : std_logic := '0';
     function pad_bit(p : natural) return std_logic is begin if p = 1 then return '1'; else return '0'; end if; end function;
     constant pad_s : std_logic := pad_bit(PAD);
 begin
@@ -118,7 +120,7 @@ begin
     end generate;
 
     -- Lector de la FIFO (como el GPIF: showahead, rdreq = not empty)
-    s_rreq <= not s_rempty;
+    s_rreq <= not s_rempty when RDGAP = 0 else s_rreq_g;
     reader : process(rd_clock)
         file f : text open write_mode is OUTFILE;
         variable l : line;
@@ -129,6 +131,22 @@ begin
                 writeline(f, l);
             end if;
         end if;
+    end process;
+
+    -- Lector tipo GPIF (solo si RDGAP > 0): espera usedw >= 2048 y lee 2048 palabras seguidas
+    gpif_reader : process
+    begin
+        if RDGAP = 0 then wait; end if;
+        s_rreq_g <= '0';
+        loop
+            wait until rising_edge(rd_clock) and rx_enable = '1' and unsigned(s_rused) >= 2048;
+            for i in 0 to 2047 loop
+                s_rreq_g <= '1';
+                wait until rising_edge(rd_clock);
+            end loop;
+            s_rreq_g <= '0';
+            for i in 1 to RDGAP loop wait until rising_edge(rd_clock); end loop;
+        end loop;
     end process;
 
     -- Marca de tiempo: un tick por muestra (cada 2 ciclos), como el time_tamer

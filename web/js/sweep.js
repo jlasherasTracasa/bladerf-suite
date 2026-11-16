@@ -17,11 +17,12 @@ function render() {
   if (!st) return;
   const d = st.device, on = isSweeping(), sw = st.sweep;
   const tg = $('#sw-toggle');
-  tg.disabled = !d.can_tune;
-  tg.title = d.can_tune ? 'Barrido rápido de espectro por toda la banda' : 'Una fuente de fichero no se puede barrer';
+  tg.disabled = false;   // se puede abrir para leer por qué no está disponible
+  $('#sw-go').disabled = !d.can_tune;
+  tg.title = d.can_tune ? 'Barrido rápido de espectro por toda la banda' : 'No disponible: una fuente de fichero no se puede barrer (necesita un bladeRF)';
   if (on && $('#sweepbar').hidden) setOpen(true);
   tg.classList.toggle('primary', on);
-  $('#sw-go').textContent = on ? 'Reiniciar' : 'Iniciar';
+  $('#sw-go').textContent = on ? 'Reiniciar' : 'Iniciar'; if (!d.can_tune) $('#sw-go').title = 'No disponible con una fuente de fichero';
   $('#sw-stop').disabled = !on;
   if (!touched && !on) {
     $('#sw-start').value = fmtHz(Math.max(d.freq_min, 70e6), 3);
@@ -32,7 +33,7 @@ function render() {
     const pct = S.sweepPct != null ? ` · ${S.sweepPct} % de la pasada` : '';
     $('#sw-info').textContent = `Barriendo: ${sw.hops} saltos a ${(sw.rate / 1e6).toFixed(2)} Msps, ${fmtHz(sw.rate / sw.fft, 1)}/bin, modo ${sw.mode === 'quick' ? 'rápido' : 'lento'}, ${sw.sweeps} pasadas${sw.restarts ? `, ${sw.restarts} resincronizaciones` : ''}${pct}. Sin audio ni decodificadores mientras tanto.`;
   } else {
-    $('#sw-info').textContent = d.can_tune ? 'Parado. Recorre la banda saltando de frecuencia (pocos segundos por pasada).' : 'No disponible con una fuente de fichero.';
+    $('#sw-info').textContent = d.can_tune ? 'Parado. Recorre la banda saltando de frecuencia (pocos segundos por pasada).' : 'No disponible con una fuente de fichero: el barrido necesita un bladeRF que pueda saltar de frecuencia.';
   }
   const t = $('#sw-tune');
   t.hidden = picked == null;

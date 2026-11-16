@@ -94,7 +94,13 @@ int fpga_lab_selftest(const fpga_lab_t *lab, char *err, size_t errlen);
 int fpga_lab_config_spectrum(const fpga_lab_t *lab, int log2n, int k, bool pad);
 
 /* Activa (true) o desactiva (false) el modo espectro: rx_mux = 3 o 0 en config_gpio
- * (lectura-modificación-escritura, no toca el resto de bits). */
+ * (lectura-modificación-escritura, no toca el resto de bits). Al activarlo también borra los contadores.
+ *
+ * SECUENCIA RECOMENDADA DE ARRANQUE (medida en hardware, ver docs/FIRMWARE.md §16): configurar N/K,
+ * habilitar RX CON rx_mux = 0, leer unos búferes (el flujo USB ya está en marcha) y SOLO ENTONCES llamar
+ * a esta función con true; no hacer accesos de control entre `enable_module` y las primeras lecturas.
+ * Si se activa el modo antes de habilitar RX, la FIFO de la FPGA se llena durante el arranque del flujo
+ * USB y se pierde una trama (y el parser descarta palabras hasta resincronizar). */
 int fpga_lab_set_spectrum_mode(const fpga_lab_t *lab, bool on);
 
 int fpga_lab_read_counters(const fpga_lab_t *lab, fpga_lab_counters_t *c);
@@ -106,7 +112,7 @@ typedef struct {
     int n;               /* puntos de la FFT */
     int k;               /* tramas promediadas */
     uint32_t group;      /* contador de trama de la FPGA */
-    uint64_t ts;         /* marca de tiempo de la primera muestra del grupo (ticks de muestra del AD9361) */
+    uint64_t ts;         /* índice de la primera muestra del grupo desde el arranque del motor (avanza K*N por trama); no es el timestamp del AD9361 */
     bool dropped;        /* la FPGA perdió una trama antes de esta */
     uint32_t total_words;/* palabras de la trama en el flujo, con relleno */
     uint32_t power[FPGA_SPEC_NMAX]; /* palabras {E[5:0], M[25:0]}, orden fftshift (bin -N/2 ... N/2-1) */

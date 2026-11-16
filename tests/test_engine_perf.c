@@ -87,29 +87,6 @@ static void spectrum_of(const cf32 *x, long n, double fs, int fft, frame_t *fr)
     spectrum_destroy(sp);
 }
 
-/* Error de escala absoluta de spectrum.c: un tono de amplitud 0,5 centrado en un bin
- * debe dar un pico de −6,02 dBFS (spectrum.h: "tono de amplitud 1,0 = 0 dBFS"). Se
- * devuelve la diferencia medida − esperada. La comparación del S-meter se hace sobre
- * la trama corregida con este valor, para medir solo la lógica del medidor; si no es
- * ~0 dB, el defecto es de spectrum.c (se avisa, no es de este test). */
-static double spectrum_scale_error(double fs, int fft)
-{
-    long n = (long)fft * 64;
-    cf32 *x = malloc(sizeof(cf32) * (size_t)n);
-    for (long i = 0; i < n; i++) { /* tono en el bin fft/4 (múltiplo exacto de fs/fft) */
-        double ph = 2.0 * M_PI * (double)(i % 4) / 4.0;
-        x[i] = (cf32){(float)(0.5 * cos(ph)), (float)(0.5 * sin(ph))};
-    }
-    frame_t fr = {0};
-    spectrum_of(x, n, fs, fft, &fr);
-    float pk = -999.f;
-    for (int i = 0; i < fr.n; i++)
-        pk = MAX(pk, fr.db[i]);
-    free(fr.db);
-    free(x);
-    return (double)pk - 20.0 * log10(0.5);
-}
-
 /* Nivel (dBFS) por muestras: channel_process() durante todo x. */
 static float level_by_samples(const cf32 *x, long n, double fs, int64_t center, const chan_params_t *p)
 {
@@ -174,11 +151,6 @@ static void test_meter(void)
     printf("A) S-meter: por espectro frente a por muestras (dBFS)\n");
     printf("   %-40s  muestras  espectro  dif.   bins del canal\n", "caso");
     uint32_t seed = 12345;
-    double scale_err = spectrum_scale_error(2.4e6, 4096);
-    if (fabs(scale_err) > 0.5)
-        printf("   AVISO: la escala absoluta de spectrum.c está %+.1f dB fuera (tono 0,5 → %.1f dBFS en vez de −6,0);\n"
-               "          las comparaciones usan la trama corregida. Defecto ajeno a channel/engine.\n",
-               scale_err, scale_err - 6.02);
     for (unsigned k = 0; k < sizeof cases / sizeof cases[0]; k++) {
         const meter_case_t *m = &cases[k];
         long n = (long)(m->fs * 0.12);                  /* 120 ms: ≥ 2 constantes de tiempo */
@@ -189,8 +161,6 @@ static void test_meter(void)
         frame_t fr = {0};
         spectrum_of(x, n, m->fs, m->fft, &fr);
         CHECK(fr.have);
-        for (int i = 0; i < fr.n; i++)
-            fr.db[i] -= (float)scale_err;
         const int64_t center = 100000000;
         chan_params_t p = {.mode = m->mode, .freq_hz = center + (int64_t)m->ch_off, .bw_hz = m->bw,
                            .squelch_db = NAN, .deemph_us = 50, .stereo = false, .audio_on = false};

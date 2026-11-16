@@ -237,10 +237,53 @@ static void test_limit(void)
     evs_free(&g_ev);
 }
 
+/* Regresión (G1): con el DDC de GPU activo, los bloques 'mid' (pocas muestras) vuelven
+ * al pool y se reutilizaban como bloque de captura sin marcar qué datos eran válidos;
+ * si el motor llamaba a dec_host_feed sin float (necesidad evaluada un instante antes),
+ * el DDC de CPU leía n muestras de un búfer pequeño y rancio → SIGSEGV en nco_mix.
+ * Aquí se añaden, mueven y quitan instancias a toda prisa alimentando con y sin float.
+ * Sin GPU solo ejercita el pool y las colas (no debe fallar). */
+static void test_stress_gpu(void)
+{
+    printf("Estrés: añadir/mover/quitar con alimentación con y sin float\n");
+    static const char *const P[] = {"rds", "ais", "dsc", "aprs", "pocsag", "flex", "dmr", "acars", "ism"};
+    const int N = 8192;
+    cf32 *x = calloc((size_t)N, sizeof *x);
+    int16_t *q = calloc(2 * (size_t)N, sizeof *q);
+    for (int i = 0; i < N; i++) {
+        x[i].re = 0.3f * cosf(0.05f * (float)i);
+        x[i].im = 0.3f * sinf(0.05f * (float)i);
+    }
+    cf32_to_q11(x, N, 1.0, q);
+    dec_host_t *h = dec_host_create(NULL);
+    int ids[64], ni = 0, ok = 1;
+    char err[200];
+    for (int r = 0; r < 60 && ok; r++) {
+        for (int k = 0; k < 9 && ni < 64; k++) {
+            int id = dec_host_add(h, P[k], 100300000, NULL, 0, err, sizeof err);
+            if (id > 0)
+                ids[ni++] = id;
+        }
+        for (int f = 0; f < 6; f++) {
+            dec_host_feed(h, q, (f & 1) ? NULL : x, N, 2.4e6, 100000000, now_wall());
+            if (f == 2)
+                for (int k = 0; k < ni; k++)
+                    dec_host_retune(h, ids[k], 100300000 + 1000 * (r + k));
+        }
+        while (ni > 0)
+            dec_host_remove(h, ids[--ni]);
+    }
+    dec_host_destroy(h);
+    free(x);
+    free(q);
+    CHECK(ok);
+}
+
 int main(void)
 {
     test_adsb_via_host();
     test_states();
     test_limit();
+    test_stress_gpu();
     return TEST_SUMMARY();
 }

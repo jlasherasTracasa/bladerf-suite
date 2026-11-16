@@ -38,7 +38,7 @@ export const S = {
   decList: [],         // instancias
   decState: {},        // inst -> {proto,t,state}
   txPolicy: null,
-  spec: { n: 0, center: 0, rate: 0, dbmin: -130, dbstep: 0.5, gpu: false },
+  spec: { n: 0, center: 0, rate: 0, dbmin: -145, dbstep: 0.6, gpu: false },
   // canal de audio de ESTE navegador (lo gestiona receiver.js)
   chan: { freq: 100300000, mode: 'wfm', bw: 180000, squelch: null, deemph: 50, stereo: true, audio: false },
   level: { db: -120, flags: 0 },
@@ -70,7 +70,7 @@ export function fmtAxis(hz, step) {
  *  Un número sin unidad: <10000 se toma como MHz; si no, como Hz. */
 export function parseHz(txt) {
   if (txt == null) return null;
-  const m = String(txt).trim().replace(',', '.').match(/^(-?\d*\.?\d+(?:e[+-]?\d+)?)\s*([kmg]?)(?:hz)?$/i);
+  const m = String(txt).trim().replace(/[\s\u00a0_]+(?=\d)/g, '').replace(',', '.').match(/^(-?\d*\.?\d+(?:e[+-]?\d+)?)\s*([kmg]?)(?:hz)?$/i);
   if (!m) return null;
   let v = parseFloat(m[1]);
   const u = m[2].toLowerCase();
@@ -89,6 +89,7 @@ export function fmtBytes(n) {
 export function toast(msg, kind = '') {
   const box = $('#toasts');
   if (!box) return;
+  if ([...box.children].some((x) => x.textContent === msg)) return;   // no repetir un aviso idéntico al que ya está visible
   const t = h('div', { class: 'toast ' + kind, role: 'status', text: msg });
   box.append(t);
   setTimeout(() => t.remove(), kind === 'err' ? 7000 : 3500);

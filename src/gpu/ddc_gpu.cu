@@ -67,7 +67,7 @@ struct ddc_gpu {
     cudaStream_t st;
     cudaEvent_t e0, e1;
     double last_ms, busy_s;
-    char name[128];
+    char name[256];
 };
 
 /* ---------------------------------------------------------------- kernels */

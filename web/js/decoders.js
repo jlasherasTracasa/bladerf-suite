@@ -5,7 +5,7 @@ import { send } from './ws.js';
 import { setChannel } from './receiver.js';
 import { stateView } from './tables.js';
 
-const MAX_EV = 500, MAX_ROWS = 300;
+const MAX_EV = 500, MAX_ROWS = 150;
 const events = [];
 let evPaused = false;
 
@@ -86,6 +86,7 @@ function renderAllEvents() {
 function onDec(ev) {
   events.push(ev); if (events.length > MAX_EV) events.shift();
   if (evPaused || !passes(ev)) return;
+  if (!decVisible()) return;   // la lista se reconstruye al abrir la pestaña
   const box = $('#ev-list');
   box.prepend(renderEvent(ev));
   while (box.childElementCount > MAX_ROWS) box.lastElementChild.remove();
@@ -105,7 +106,9 @@ function adsbSummary(st) {
 
 /* ---------- vista genérica de dec_state ---------- */
 const stateBoxes = new Map();
+const decVisible = () => { const p = document.getElementById('p-decoders'); return !p || p.style.display !== 'none'; };
 function renderStates() {
+  if (!decVisible()) return;   // se repinta al abrir la pestaña
   const box = $('#ds-list');
   const items = Object.values(S.decState);
   if (!items.length) { box.className = 'muted'; box.replaceChildren('Sin datos todavía.'); stateBoxes.clear(); return; }
@@ -162,6 +165,7 @@ export function initDecoders() {
   bus.on('msg:dec_state', renderStates);
   bus.on('msg:dec_list', renderStates);
   bus.on('sig-menu', showSignalMenu);
+  bus.on('tab', (t) => { if (t === 'decoders') { renderStates(); renderAllEvents(); } });
   document.addEventListener('pointerdown', (e) => { if (menuOpen && !e.target.closest('#sig-menu')) closeMenu(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && menuOpen) closeMenu(); });
   window.addEventListener('scroll', () => { if (menuOpen) closeMenu(); }, true);

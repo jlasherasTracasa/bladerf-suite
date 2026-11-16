@@ -198,7 +198,7 @@ static int one_call(const params_t *p, const char *type, iqbuf_t *out, double *p
         snprintf(err, errlen, "tipo DSC '%s' no válido", type);
         return -1;
     }
-    int ns = 2 * n + 16;
+    int ns = 2 * n + 16 + 12;
     int slot[2 * MAX_SYM + 20];
     for (int i = 0; i < ns; i++)
         slot[i] = 126;
@@ -206,9 +206,20 @@ static int one_call(const params_t *p, const char *type, iqbuf_t *out, double *p
         slot[2 * k] = 125; /* secuencia de fase, posiciones DX */
     for (int k = 0; k < 8; k++)
         slot[2 * k + 1] = 111 - k; /* posiciones RX: 111 … 104 */
-    for (int i = 0; i < n; i++) {
-        slot[12 + 2 * i] = msg[i];
-        slot[17 + 2 * i] = msg[i];
+    /* M.493: el especificador de formato va dos veces seguidas en DX; después de la secuencia, el
+     * EOS se envía 3 veces en DX (el ECC va detrás del primero) y solo el primero y el ECC tienen
+     * copia RX (Fig. 1b, §9). msg[] trae un FS, ..., EOS, ECC. */
+    int ex[MAX_SYM + 4], nx = 0, last_rx;
+    ex[nx++] = msg[0];
+    ex[nx++] = msg[0];
+    for (int i = 1; i < n; i++)
+        ex[nx++] = msg[i];
+    last_rx = nx - 1; /* ECC */
+    ex[nx++] = msg[n - 2]; /* 2.º EOS */
+    ex[nx++] = msg[n - 2]; /* 3.er EOS */
+    for (int i = 0; i < nx; i++) {
+        if (12 + 2 * i < ns) slot[12 + 2 * i] = ex[i];
+        if (i <= last_rx && 17 + 2 * i < ns) slot[17 + 2 * i] = ex[i];
     }
     static uint8_t bits[200 + 10 * (2 * MAX_SYM + 20)];
     int nb = 0;
