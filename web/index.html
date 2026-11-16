@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#141218">
+<title>BladeRF Lab</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f378b'/%3E%3Cpath d='M3 20h5l3-10 4 16 4-20 3 14h7' fill='none' stroke='%23d0bcff' stroke-width='2.4' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/tv.css">
+</head>
+<body>
+<a class="skip" href="#tabs">Saltar al panel de control</a>
+
+<header class="topbar" role="banner">
+  <div class="brand"><svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true"><path d="M3 20h5l3-10 4 16 4-20 3 14h7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></svg><span>BladeRF Lab</span></div>
+  <div class="stats" id="topstats" role="status" aria-live="off">
+    <span class="chip" id="st-conn" title="Conexión con el servidor"><i class="dot off"></i><b>Sin conexión</b></span>
+    <span class="chip hide-sm" id="st-dev" title="Equipo">—</span>
+    <span class="chip" id="st-rate" title="Tasa de muestreo medida">— Msps</span>
+    <span class="chip" id="st-load" title="Carga del hilo DSP">DSP —</span>
+    <span class="chip hide-sm" id="st-temp" title="Temperatura">— °C</span>
+    <span class="chip hide-sm" id="st-clients" title="Clientes conectados">— cli.</span>
+    <span class="chip" id="st-over" title="Desbordamientos (muestras perdidas)">OVR 0</span>
+  </div>
+  <button class="icon-btn" id="btn-help" aria-label="Atajos de teclado" title="Atajos de teclado (?)">?</button>
+</header>
+
+<main class="layout">
+  <section class="scope" aria-label="Espectro y cascada">
+    <div class="tunebar">
+      <label class="freq-field"><span class="sr">Frecuencia de escucha</span>
+        <input id="freq-input" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="100.300 MHz" aria-label="Frecuencia de escucha"></label>
+      <div class="seg" id="mode-seg" role="radiogroup" aria-label="Modo de demodulación"></div>
+      <button class="btn primary" id="btn-listen" aria-pressed="false"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4z"/></svg><span>Escuchar</span></button>
+      <label class="vol"><span class="sr">Volumen</span><input id="vol" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="Volumen"></label>
+    </div>
+    <div class="smeter" aria-label="Nivel de señal">
+      <div class="bar"><i id="sm-fill"></i><u id="sm-peak"></u></div>
+      <span id="sm-txt" class="mono">— dBFS</span>
+      <span class="flag" id="fl-sql" title="Squelch abierto">SQL</span>
+      <span class="flag" id="fl-st" title="Estéreo">ST</span>
+      <span class="flag" id="fl-pil" title="Piloto 19 kHz">19k</span>
+      <span class="flag warn" id="fl-oob" title="Frecuencia fuera de la banda capturada">FUERA</span>
+    </div>
+    <div class="sweepbar" id="sweepbar" hidden role="group" aria-label="Barrido de espectro">
+      <label>Inicio<input id="sw-start" type="text" inputmode="decimal" autocomplete="off" value="70 MHz" aria-label="Frecuencia inicial del barrido"></label>
+      <label>Fin<input id="sw-end" type="text" inputmode="decimal" autocomplete="off" value="6 GHz" aria-label="Frecuencia final del barrido"></label>
+      <label>FFT<select id="sw-fft" aria-label="Tamaño de FFT por salto"></select></label>
+      <button class="btn primary small" id="sw-go">Iniciar</button>
+      <button class="btn danger small" id="sw-stop" disabled>Parar</button>
+      <button class="btn small" id="sw-tune" hidden>Sintonizar aquí</button>
+      <span class="muted" id="sw-info" role="status"></span>
+    </div>
+    <div class="spec-wrap" id="spec-wrap"></div>
+    <div class="zoombar">
+      <button class="btn small" id="z-out" aria-label="Alejar">−</button>
+      <button class="btn small" id="z-in" aria-label="Acercar">+</button>
+      <button class="btn small" id="z-reset">Todo</button>
+      <button class="btn small" id="z-chan">Centrar en canal</button>
+      <label class="chk"><input type="checkbox" id="rng-auto" checked><span>Rango auto</span></label>
+      <input class="num" id="rng-min" type="number" step="5" value="-110" aria-label="Mínimo dB" disabled>
+      <input class="num" id="rng-max" type="number" step="5" value="-20" aria-label="Máximo dB" disabled>
+      <label class="chk"><input type="checkbox" id="peak-hold"><span>Máx.</span></label>
+      <label class="chk" hidden><input type="checkbox" id="dbm-on"><span>dBm</span></label>
+      <button class="btn small" id="sw-toggle" aria-pressed="false" aria-controls="sweepbar" title="Barrido rápido de espectro por toda la banda">Barrido</button>
+      <span class="muted hide-sm" id="spec-info"></span>
+    </div>
+  </section>
+
+  <section class="side">
+    <div class="tabs" id="tabs" role="tablist" aria-label="Paneles"></div>
+    <div class="panels" id="panels">
+
+      <div class="panel" id="p-receptor" role="tabpanel" data-title="Receptor" data-key="1">
+        <div class="card">
+          <h2>Canal de audio</h2>
+          <div class="grid2">
+            <label>Anchura del filtro (Hz)<input id="rx-bw" type="number" min="100" step="100"></label>
+            <label>Paso de sintonía<select id="rx-step"></select></label>
+            <label>Squelch (dBFS)<input id="rx-sql" type="range" min="-120" max="0" step="1" value="-120"><output id="rx-sql-o">apagado</output></label>
+            <label>Deénfasis<select id="rx-deemph"><option value="50">50 µs (Europa)</option><option value="75">75 µs (América)</option><option value="0">Sin deénfasis</option></select></label>
+          </div>
+          <label class="chk"><input type="checkbox" id="rx-stereo" checked><span>Estéreo (FM de radiodifusión)</span></label>
+          <label class="chk"><input type="checkbox" id="rx-sql-on"><span>Squelch activo</span></label>
+        </div>
+        <div class="card" id="rds-card" hidden>
+          <h2>RDS <span class="muted" id="rds-inst"></span></h2>
+          <div id="rds-body"></div>
+        </div>
+        <div class="card">
+          <h2>Audio del navegador</h2>
+          <p class="muted" id="au-info">Pulsa «Escuchar» para activar el audio.</p>
+          <div class="kv" id="au-kv"></div>
+        </div>
+      </div>
+
+      <div class="panel" id="p-hardware" role="tabpanel" data-title="Hardware" data-key="2">
+        <div class="card"><h2>Sintonía y muestreo</h2>
+          <div class="grid2">
+            <label>Frecuencia central<input id="hw-center" type="text" inputmode="decimal" autocomplete="off"></label>
+            <label>Tasa de muestreo<select id="hw-rate"></select></label>
+            <label>Ancho RF (Hz)<input id="hw-rfbw" type="text" inputmode="decimal" autocomplete="off"></label>
+            <label>Ganancia<select id="hw-gmode"><option value="auto">Automática</option><option value="manual">Manual</option><option value="fast">AGC rápida (fast)</option><option value="slow">AGC lenta (slow)</option><option value="hybrid">AGC híbrida (hybrid)</option></select></label>
+          </div>
+          <p class="muted" id="hw-ovs-note" hidden></p>
+          <label id="hw-gain-l">Ganancia manual <output id="hw-gain-o"></output><input id="hw-gain" type="range" min="0" max="60" step="1"></label>
+          <label class="chk" id="hw-bias-l"><input type="checkbox" id="hw-bias"><span>Bias-tee (alimenta antena activa; ¡cuidado!)</span></label>
+        </div>
+        <div class="card"><h2>Espectro y detector</h2>
+          <div class="grid2">
+            <label>Tamaño FFT<select id="hw-fft"></select></label>
+            <label>Imágenes por segundo<input id="hw-fps" type="number" min="1" max="60" step="1"></label>
+            <label>Umbral del detector (dB SNR)<input id="hw-det" type="number" min="3" max="40" step="0.5"></label>
+          </div>
+        </div>
+        <div class="card"><h2>Ubicación del receptor</h2>
+          <div class="grid2">
+            <label>Latitud<input id="hw-lat" type="text" inputmode="decimal" autocomplete="off" placeholder="40.4168"></label>
+            <label>Longitud<input id="hw-lon" type="text" inputmode="decimal" autocomplete="off" placeholder="-3.7038"></label>
+          </div>
+          <div class="row"><button class="btn" id="hw-geo">Usar mi ubicación</button><button class="btn" id="hw-loc-set">Guardar</button><button class="btn" id="hw-loc-clear">Borrar</button></div>
+          <p class="muted">Se usa para el mapa y para calcular distancias.</p>
+        </div>
+        <div class="card"><h2>Grabación IQ (SigMF)</h2>
+          <div class="row"><button class="btn" id="rec-btn" aria-pressed="false">Grabar</button><span id="rec-info" class="muted">Parada</span></div>
+          <ul class="files" id="rec-list" aria-label="Grabaciones"></ul>
+          <button class="btn small" id="rec-refresh">Actualizar lista</button>
+        </div>
+        <div class="card"><h2>Equipo</h2><div class="kv" id="hw-info"></div></div>
+      </div>
+
+      <div class="panel" id="p-protocolos" role="tabpanel" data-title="Protocolos" data-key="3">
+        <h2 class="sec">Perfiles</h2>
+        <p class="muted">Un perfil ajusta centro, tasa, audio y decodificadores de una vez.</p>
+        <div id="prof-groups"></div>
+        <h2 class="sec">Catálogo de decodificadores</h2>
+        <div id="cat-groups"></div>
+      </div>
+
+      <div class="panel" id="p-decoders" role="tabpanel" data-title="Decodificadores" data-key="4">
+        <div class="card"><h2>Añadir instancia</h2>
+          <div class="grid2">
+            <label>Protocolo<select id="da-proto"></select></label>
+            <label>Frecuencia<input id="da-freq" type="text" inputmode="decimal" autocomplete="off"></label>
+          </div>
+          <details><summary>Opciones (JSON)</summary><textarea id="da-opts" rows="3" spellcheck="false" placeholder="{}" aria-label="Opciones JSON"></textarea></details>
+          <div class="row"><button class="btn primary" id="da-add">Añadir</button><span class="muted" id="da-hint"></span></div>
+        </div>
+        <div class="card"><h2>Instancias <span class="badge" id="di-count">0</span></h2>
+          <div id="di-list" class="inst-list"></div></div>
+        <div class="card"><h2>Estado de las tablas</h2><div id="ds-list" class="muted">Sin datos todavía.</div></div>
+        <div class="card"><h2>Eventos</h2>
+          <div class="row wrap">
+            <label class="inl">Protocolo <select id="ev-filter"><option value="">Todos</option></select></label>
+            <label class="inl">Buscar <input id="ev-search" type="search" placeholder="texto…"></label>
+            <label class="chk"><input type="checkbox" id="ev-pause"><span>Pausa</span></label>
+            <button class="btn small" id="ev-clear">Limpiar</button>
+          </div>
+          <div class="events" id="ev-list" role="log" aria-live="off" aria-label="Registro de eventos"></div>
+        </div>
+      </div>
+
+      <div class="panel" id="p-mapa" role="tabpanel" data-title="Mapa" data-key="5">
+        <div class="card"><h2>Mapa <span class="muted" id="mp-sum"></span></h2>
+          <div class="layers" id="mp-layers" role="group" aria-label="Capas del mapa"></div>
+          <div class="map-wrap"><canvas id="mp-map" tabindex="0" aria-label="Mapa de objetos con posición: aeronaves, barcos, estaciones, nodos, sondas"></canvas></div>
+          <p class="muted" id="mp-note"></p></div>
+        <div class="card"><h2>Objeto seleccionado</h2><div id="mp-sel"></div></div>
+        <div class="card"><h2>Tablas por capa</h2><div id="mp-tables"></div></div>
+      </div>
+
+      <div class="panel" id="p-mensajes" role="tabpanel" data-title="Mensajes" data-key="6">
+        <div class="card"><h2>Mensajes <span class="badge" id="ms-count">0</span></h2>
+          <div class="row wrap">
+            <label class="inl">Protocolo <select id="ms-filter"><option value="">Todos</option></select></label>
+            <label class="inl">Buscar <input id="ms-search" type="search" placeholder="texto…"></label>
+            <label class="chk"><input type="checkbox" id="ms-pause"><span>Pausa</span></label>
+            <button class="btn small" id="ms-clear">Limpiar</button>
+          </div>
+          <div class="msgs" id="ms-list" role="log" aria-live="off" aria-label="Mensajes de texto"></div>
+        </div>
+      </div>
+
+      <div class="panel" id="p-tx" role="tabpanel" data-title="Emisión" data-key="7" hidden>
+        <div class="card"><h2>Emisión</h2>
+          <p class="muted" id="tx-pol"></p>
+          <div class="grid2">
+            <label>Protocolo<select id="tx-proto"></select></label>
+            <label>Modo<select id="tx-mode"></select></label>
+            <label>Frecuencia<input id="tx-freq" type="text" inputmode="decimal" autocomplete="off"></label>
+            <label>Ganancia TX (dB)<input id="tx-gain" type="number" step="1" value="-30"></label>
+            <label>Centro (solo modo fichero)<input id="tx-center" type="text" inputmode="decimal" autocomplete="off"></label>
+            <label>Tasa (solo modo fichero)<input id="tx-rate" type="text" inputmode="decimal" autocomplete="off"></label>
+            <label>Repeticiones<input id="tx-repeat" type="number" min="1" max="100" value="1"></label>
+          </div>
+          <label>Parámetros (JSON)<textarea id="tx-params" rows="6" spellcheck="false" placeholder="{}"></textarea></label>
+          <div class="row"><button class="btn primary" id="tx-send">Emitir</button><button class="btn" id="tx-stop">Detener</button></div>
+          <div class="result" id="tx-result" role="status"></div>
+        </div>
+        <div class="card"><h2>Reproducir una grabación</h2>
+          <p class="muted">Solo «fichero» (escribe una copia) y «bucle interno» (sin antena). Nunca por aire: una grabación radiada sería un ataque de repetición.</p>
+          <div class="grid2">
+            <label>Grabación<select id="tp-name"></select></label>
+            <label>Modo<select id="tp-mode"><option value="file">Fichero SigMF (seguro)</option><option value="loopback">Bucle interno (sin antena)</option></select></label>
+            <label>Repeticiones<input id="tp-repeat" type="number" min="1" max="1000" value="1"></label>
+          </div>
+          <div class="row"><button class="btn primary" id="tp-send">Reproducir</button><button class="btn small" id="tp-refresh">Actualizar lista</button></div>
+        </div>
+        <div class="card"><h2>Calibración del TX</h2>
+          <p class="muted">Mide y corrige el desequilibrio IQ y la fuga de LO en el bucle interno (nunca radia). El bucle RFIC_BIST es digital y no pasa por el LO del TX: una calibración real exige cable TX→RX con atenuador de al menos 30 dB. Se sintoniza el receptor durante la medida.</p>
+          <div class="grid2">
+            <label>Frecuencia<input id="tc-freq" type="text" inputmode="decimal" autocomplete="off" value="433.92 MHz"></label>
+            <label>Tasa<input id="tc-rate" type="text" inputmode="decimal" autocomplete="off" value="1 MHz"></label>
+          </div>
+          <div class="row"><button class="btn" id="tc-run">Calibrar</button></div>
+          <div class="result" id="tc-result" role="status"></div>
+        </div>
+      </div>
+
+      <div class="panel" id="p-tv" role="tabpanel" data-title="TV" data-key="8">
+        <div class="tv-warn" id="tv-nowc" hidden role="alert"></div>
+        <div class="card">
+          <h2>Televisión digital (DVB-T)</h2>
+          <div id="tv-stage"><canvas id="tv-canvas" width="1280" height="720" aria-label="Imagen de televisión"></canvas></div>
+          <div id="tv-info" class="muted" role="status" aria-live="off"></div>
+          <div class="tvbar">
+            <button class="btn primary" id="tv-play" aria-pressed="false">Ver</button>
+            <button class="btn" id="tv-fs" title="Pantalla completa (doble clic en la imagen)">Pantalla completa</button>
+            <button class="btn small" id="tv-mute" aria-pressed="false" title="Silenciar">Silencio</button>
+            <input id="tv-vol" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="Volumen de TV">
+          </div>
+        </div>
+        <div class="card">
+          <h2>Múltiplex <span class="chip" id="tv-lock">Sin sintonizar</span></h2>
+          <div class="row wrap">
+            <label>Canal<select id="tv-ch"></select></label>
+            <button class="btn" id="tv-tune">Sintonizar</button>
+            <button class="btn" id="tv-scan" title="Recorre los canales 21–48 y lista los que enganchan">Explorar canales 21–48</button>
+            <button class="btn danger" id="tv-stop">Detener TV</button>
+          </div>
+          <div class="muted" id="tv-scanbar" hidden></div>
+          <div id="tv-scanres"></div>
+        </div>
+        <div class="card"><h2>Servicios</h2><div id="tv-svcs"></div></div>
+        <div class="card"><h2>Recepción</h2><div id="tv-stats"></div></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="menu" id="sig-menu" role="menu" hidden></div>
+<dialog id="help-dlg" aria-labelledby="help-t"><h2 id="help-t">Atajos de teclado</h2>
+  <table class="tbl keys"><tbody>
+  <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Sintonía fina (paso actual)</td></tr>
+  <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Sintonía ×10</td></tr>
+  <tr><td><kbd>Espacio</kbd></td><td>Activar / silenciar audio</td></tr>
+  <tr><td><kbd>M</kbd></td><td>Cambiar de modo</td></tr>
+  <tr><td><kbd>+</kbd> <kbd>−</kbd> <kbd>0</kbd></td><td>Acercar, alejar, ver todo</td></tr>
+  <tr><td><kbd>F</kbd></td><td>Editar la frecuencia</td></tr>
+  <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>Cambiar de panel</td></tr>
+  <tr><td><kbd>R</kbd></td><td>Iniciar / parar grabación</td></tr>
+  <tr><td><kbd>?</kbd></td><td>Esta ayuda</td></tr>
+  </tbody></table>
+  <p class="muted">En el espectro: clic para sintonizar, arrastrar para desplazar, arrastrar los bordes del filtro para cambiar la anchura, rueda o pellizco para el zoom, clic en una señal marcada para «decodificar como…».</p>
+  <form method="dialog"><button class="btn primary">Cerrar</button></form>
+</dialog>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

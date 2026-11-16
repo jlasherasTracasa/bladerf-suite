@@ -1,0 +1,36 @@
+{
+  "version": 8,
+  "receiver_name": "BladeRF Lab",
+  "receiver_location": "Local",
+  "receiver_admin": "local@example.com",
+  "sdrs": {
+    "bladerf": {
+      "name": "BladeRF 2.0 micro",
+      "type": "bladerf",
+      "device": "serial=4082a5d0f4044f028598bbef4f219023",
+      "rf_gain": "auto",
+      "profiles": {
+        "fm_broadcast": {"name": "FM Broadcast", "center_freq": 100000000, "samp_rate": 8000000, "start_freq": 100000000, "start_mod": "wfm", "tuning_step": 100000},
+        "airband": {"name": "Airband AM", "center_freq": 127500000, "samp_rate": 2400000, "start_freq": 127500000, "start_mod": "am", "tuning_step": 25000},
+        "adsb": {"name": "ADS-B 1090 MHz", "center_freq": 1090000000, "samp_rate": 2400000, "start_freq": 1090000000, "start_mod": "adsb", "tuning_step": 1000000},
+        "ais": {"name": "AIS Marine", "center_freq": 161975000, "samp_rate": 2400000, "start_freq": 161975000, "start_mod": "ais", "tuning_step": 25000},
+        "acars": {"name": "ACARS", "center_freq": 131550000, "samp_rate": 2400000, "start_freq": 131550000, "start_mod": "acars", "tuning_step": 25000},
+        "vdl2": {"name": "VDL2", "center_freq": 136975000, "samp_rate": 2400000, "start_freq": 136975000, "start_mod": "vdl2", "tuning_step": 25000},
+        "dab": {"name": "DAB / DAB+", "center_freq": 227360000, "samp_rate": 2048000, "start_freq": 227360000, "start_mod": "dab", "tuning_step": 1712000},
+        "pager": {"name": "Pager POCSAG / FLEX", "center_freq": 466075000, "samp_rate": 2400000, "start_freq": 466075000, "start_mod": "page", "tuning_step": 25000},
+        "ism433": {"name": "ISM 433 MHz", "center_freq": 433920000, "samp_rate": 2400000, "start_freq": 433920000, "start_mod": "ism", "tuning_step": 25000},
+        "ism868": {"name": "ISM 868 MHz", "center_freq": 868300000, "samp_rate": 2400000, "start_freq": 868300000, "start_mod": "ism", "tuning_step": 25000},
+        "lora": {"name": "LoRa / LoRaWAN", "center_freq": 868100000, "samp_rate": 2400000, "start_freq": 868100000, "start_mod": "lora-wan", "tuning_step": 200000},
+        "meshtastic": {"name": "Meshtastic", "center_freq": 869525000, "samp_rate": 2400000, "start_freq": 869525000, "start_mod": "meshtastic", "tuning_step": 200000},
+        "sonde": {"name": "Radiosonda RS41", "center_freq": 403000000, "samp_rate": 2400000, "start_freq": 403000000, "start_mod": "sonde-rs41", "tuning_step": 100000},
+        "ham2m": {"name": "2m Ham FM", "center_freq": 145500000, "samp_rate": 2400000, "start_freq": 145500000, "start_mod": "nfm", "tuning_step": 12500},
+        "ham70cm": {"name": "70cm Ham FM", "center_freq": 433500000, "samp_rate": 2400000, "start_freq": 433500000, "start_mod": "nfm", "tuning_step": 12500},
+        "dvbt": {"name": "DVB-T (spectrum)", "center_freq": 474000000, "samp_rate": 8000000, "start_freq": 474000000, "start_mod": "empty", "tuning_step": 1000000},
+        "gsm900": {"name": "GSM 900 (spectrum)", "center_freq": 942500000, "samp_rate": 20000000, "start_freq": 942500000, "start_mod": "empty", "tuning_step": 200000},
+        "lte1800": {"name": "LTE 1800 (spectrum)", "center_freq": 1842500000, "samp_rate": 20000000, "start_freq": 1842500000, "start_mod": "empty", "tuning_step": 200000},
+        "wifi24": {"name": "WiFi 2.4 GHz (spectrum)", "center_freq": 2437000000, "samp_rate": 20000000, "start_freq": 2437000000, "start_mod": "empty", "tuning_step": 5000000},
+        "nr3500": {"name": "5G 3.5 GHz (spectrum)", "center_freq": 3500000000, "samp_rate": 20000000, "start_freq": 3500000000, "start_mod": "empty", "tuning_step": 5000000}
+      }
+    }
+  }
+}

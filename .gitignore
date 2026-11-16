@@ -1,0 +1,21 @@
+build/
+recordings/
+*.o
+*.d
+
+# Datos pesados o descargados (no se versionan)
+*.sigmf-data
+*.cs16
+*.cs8
+*.cu8
+__pycache__/
+
+# Firmware: la copia del árbol oficial de Nuand y los productos de compilación
+# se regeneran con firmware/build_*.sh; aquí solo van scripts, modelo y testbench.
+firmware/bladeRF/
+firmware/sim/work_*/
+firmware/sim/*.log
+firmware/out/*.rbf
+firmware/out/logs/
+firmware/out/reports*/
+firmware/model/spec_tool

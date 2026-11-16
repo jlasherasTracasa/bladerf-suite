@@ -1,0 +1,20 @@
+/* Pestaña TV (web/js/tv.js) */
+#tv-stage { position: relative; background: #000; border-radius: 10px; overflow: hidden; aspect-ratio: 16 / 9; width: 100%; display: flex; align-items: center; justify-content: center; }
+#tv-stage:fullscreen { border-radius: 0; aspect-ratio: auto; height: 100%; }
+#tv-canvas { width: 100%; height: 100%; object-fit: contain; background: #000; display: block; }
+#tv-stage::after { content: "Elige un servicio y pulsa «Ver»"; position: absolute; color: var(--on-var); font-size: 13px; pointer-events: none; }
+#tv-stage.live::after { display: none; }
+#tv-info { margin-top: 6px; min-height: 18px; }
+.tv-warn { background: #4a3a10; color: var(--warn); border-radius: 10px; padding: 10px 12px; margin-bottom: var(--gut); font-size: 12.5px; }
+#tv-svcs { display: flex; flex-direction: column; gap: 4px; max-height: 340px; overflow-y: auto; }
+#tv-svcs .svc { display: grid; grid-template-columns: 2.4em 1fr; grid-template-rows: auto auto; column-gap: 8px; text-align: left; background: var(--s1); color: var(--on); border: 1px solid var(--outline-v); border-radius: 10px; padding: 6px 10px; cursor: pointer; font: inherit; }
+#tv-svcs .svc:hover { background: var(--s3); }
+#tv-svcs .svc.on { border-color: var(--primary); background: var(--primary-c); color: var(--on-primary-c); }
+#tv-svcs .lcn { grid-row: 1 / span 2; align-self: center; color: var(--primary); font-weight: 700; text-align: right; }
+#tv-svcs .nm { font-weight: 600; }
+#tv-svcs .sub { grid-column: 2; font-size: 11.5px; }
+#tv-scanres { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+#tv-stats { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; font-size: 12.5px; }
+#tv-stats .k { color: var(--on-var); }
+.tvbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.tvbar input[type=range] { flex: 1 1 80px; min-width: 70px; }
