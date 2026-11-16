@@ -1,5 +1,78 @@
 # Decodificador GSM (`gsm`)
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/gsm-cadena-dark.png">
+  <img src="../img/decoders/gsm-cadena-light.png" alt="Cadena de procesado de GSM">
+</picture>
+
+*Figura. Cadena de procesado de GSM, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/gsm-fcch-dark.png">
+  <img src="../img/decoders/gsm-fcch-light.png" alt="Cascada y detector de FCCH sobre la grabación real.">
+</picture>
+
+*Figura. Cascada y detector de FCCH sobre la grabación real.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/gsm-estructura-dark.png">
+  <img src="../img/decoders/gsm-estructura-light.png" alt="Multitrama de 51 y ráfaga normal.">
+</picture>
+
+*Figura. Multitrama de 51 y ráfaga normal.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: grabación IQ real (sigidwiki «GSM downlink BCCH»). Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay gsm.sigmf-meta --decode gsm@947000000 --print`).
+
+Evento `dec` (campo `msg`, listas largas recortadas):
+
+```json
+{
+  "text": "GSM BSIC 2-7 (NCC 2, BCC 7), FN 2161595, CFO -0.1 kHz, nivel -31.0 dBFS",
+  "kind": "sch",
+  "bsic": 23,
+  "ncc": 2,
+  "bcc": 7,
+  "fn": 2161595,
+  "cfo_hz": -127,
+  "level_dbfs": -31.0,
+  "hits": 1
+}
+```
+
+Último `dec_state` recibido por WebSocket (`state`, listas recortadas):
+
+```json
+{
+  "fcch": 313,
+  "sch_ok": 310,
+  "bcch_ok": 0,
+  "cells": [
+    {
+      "bsic": 23,
+      "ncc": 2,
+      "bcc": 7,
+      "fn": 2162615,
+      "cfo_hz": -137,
+      "level_dbfs": -30.9,
+      "hits": 310,
+      "age": 0.0
+    }
+  ]
+}
+```
+
+<!-- vision-rapida:fin -->
+
 Sincronización de una portadora BCCH: FCCH (corrección de frecuencia), SCH → BSIC (NCC, BCC) y número de trama,
 y System Information 3/4 del BCCH → MCC, MNC, LAC y Cell ID (SI3). Código: `src/decoders/gsm.c`, estructura de
 ráfagas y codificación en `gsm_phy.{h,c}` (compartidas con `src/tx/mod_gsm.c`), test `tests/test_gsm.c`.

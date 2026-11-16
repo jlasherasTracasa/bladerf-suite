@@ -153,3 +153,21 @@ uno de los dos factores.
 
 ## 7. Barrido a modo lento (no medido)
 No se midió la latencia de retuneo frente al tiempo de asentamiento: `src/sdr/sweep.c` no es de P1 y no quedó tiempo. Propuesta: medir en `sweep.c` el intervalo entre `source_retune_at` y la marca de tiempo real del primer bloque tras el salto, y fijar el adelanto de programación a (p95 de esa latencia + asentamiento) en vez de un valor fijo.
+
+## Figuras
+
+Las barras usan solo las cifras de las tablas de este documento.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/rendimiento/rendimiento-ficheros-dark.png">
+  <img src="img/rendimiento/rendimiento-ficheros-light.png" alt="Motor DSP antes y después con ficheros">
+</picture>
+
+*Figura 1. §3: tasa sostenida y CPU del proceso antes y después, con fuentes de fichero. «n/d»: la medida «antes» no sostuvo la tasa y no dio cifra de núcleos.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/rendimiento/rendimiento-bladerf-dark.png">
+  <img src="img/rendimiento/rendimiento-bladerf-light.png" alt="Rendimiento con el bladeRF real">
+</picture>
+
+*Figura 2. §4: con el bladeRF real. Los overruns de 122,88 Msps se midieron con la máquina a carga 56; con el equipo libre fueron 22 en 25 s (tabla de repetición).*

@@ -1,5 +1,77 @@
 # POCSAG
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/pocsag-cadena-dark.png">
+  <img src="../img/decoders/pocsag-cadena-light.png" alt="Cadena de procesado de POCSAG">
+</picture>
+
+*Figura. Cadena de procesado de POCSAG, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/pocsag-senal-dark.png">
+  <img src="../img/decoders/pocsag-senal-light.png" alt="Cascada y diagrama de ojo FSK a 1200 bd (audio real remodulado).">
+</picture>
+
+*Figura. Cascada y diagrama de ojo FSK a 1200 bd (audio real remodulado).*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/pocsag-estructura-dark.png">
+  <img src="../img/decoders/pocsag-estructura-light.png" alt="Transmisión, lote y palabra POCSAG.">
+</picture>
+
+*Figura. Transmisión, lote y palabra POCSAG.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: audio FM real de multimon-ng (POCSAG 1200 bps) remodulado en FM. Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay pocsag.sigmf-meta --decode pocsag@466075000 --print`).
+
+Evento `dec` (campo `msg`, listas largas recortadas):
+
+```json
+{
+  "ric": 273040,
+  "func": 3,
+  "kind": "alpha",
+  "msg": "+++TIME=0008300324+++TIME=0008300324",
+  "baud": 1200,
+  "corrected": 0,
+  "text": "POCSAG 1200 RIC 273040 F3 alpha: +++TIME=0008300324+++TIME=0008300324"
+}
+```
+
+Último `dec_state` recibido por WebSocket (`state`, listas recortadas):
+
+```json
+{
+  "msgs": 4,
+  "batches": 4,
+  "bad_words": 0,
+  "dropped": 0,
+  "baud": 1200,
+  "pages": [
+    {
+      "ric": 273040,
+      "func": 3,
+      "kind": "alpha",
+      "baud": 1200,
+      "count": 4,
+      "seen": 1.6,
+      "msg": "+++TIME=0008300324+++TIME=0008300324"
+    }
+  ]
+}
+```
+
+<!-- vision-rapida:fin -->
+
 Decodificador `src/decoders/pocsag.c` (+ `pocsag.h`, `pocsag_fsk.h`), modulador `src/tx/mod_pocsag.c`,
 test `tests/test_pocsag.c`. Narrow, 48 000 Hz, canal de 12,5 kHz.
 

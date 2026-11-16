@@ -1,5 +1,82 @@
 # APRS / AX.25 (AFSK 1200)
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/aprs-cadena-dark.png">
+  <img src="../img/decoders/aprs-cadena-light.png" alt="Cadena de procesado de APRS">
+</picture>
+
+*Figura. Cadena de procesado de APRS, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/aprs-senal-dark.png">
+  <img src="../img/decoders/aprs-senal-light.png" alt="Cascada y audio con los tonos Bell 202. Señal sintética.">
+</picture>
+
+*Figura. Cascada y audio con los tonos Bell 202. Señal sintética.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/aprs-estructura-dark.png">
+  <img src="../img/decoders/aprs-estructura-light.png" alt="Trama AX.25 UI e información de posición.">
+</picture>
+
+*Figura. Trama AX.25 UI e información de posición.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: señal sintética de `--gen aprs`. Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay aprs.sigmf-meta --decode aprs@144800000 --print`).
+
+Evento `dec` (campo `msg`, listas largas recortadas):
+
+```json
+{
+  "src": "N0CALL",
+  "dst": "APZBLF",
+  "path": "WIDE1-1",
+  "kind": "position",
+  "lat": 49.058333,
+  "lon": -72.029167,
+  "symbol": "/>",
+  "comment": "BladeRF Lab",
+  "info": "!4903.50N/07201.75W>BladeRF Lab",
+  "text": "APRS N0CALL>APZBLF [position] 49.0583,-72.0292 BladeRF Lab"
+}
+```
+
+Último `dec_state` recibido por WebSocket (`state`, listas recortadas):
+
+```json
+{
+  "packets": 25,
+  "count": 1,
+  "stations": [
+    {
+      "call": "N0CALL",
+      "kind": "status",
+      "lat": 49.05833,
+      "lon": -72.02917,
+      "symbol": "/>",
+      "speed": 36,
+      "course": 88,
+      "alt": 0,
+      "comment": "BladeRF Lab",
+      "path": "WIDE1-1",
+      "pkts": 25,
+      "age": 1
+    }
+  ]
+}
+```
+
+<!-- vision-rapida:fin -->
+
 Fuentes: APRS Protocol Reference 1.0.1 (caps. 5-11, 15-16), AX.25 v2.2, Bell 202.
 Vectores: ejemplos de APRS101 tal como los recoge el crate `aprs-decode`
 (https://docs.rs/crate/aprs-decode/0.1.1/source/tests/integration.rs).

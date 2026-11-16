@@ -1,5 +1,42 @@
 # DVB-T (TDT) — `dvbt`
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/dvbt-cadena-dark.png">
+  <img src="../img/decoders/dvbt-cadena-light.png" alt="Cadena de procesado de DVB-T">
+</picture>
+
+*Figura. Cadena de procesado de DVB-T, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/dvbt-senal-dark.png">
+  <img src="../img/decoders/dvbt-senal-light.png" alt="Espectro y correlación del prefijo cíclico reales del C32, y por qué 64-QAM a −9 dB no demodula (simulada).">
+</picture>
+
+*Figura. Espectro y correlación del prefijo cíclico reales del C32, y por qué 64-QAM a −9 dB no demodula (simulada).*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/dvbt-estructura-dark.png">
+  <img src="../img/decoders/dvbt-estructura-light.png" alt="Símbolo OFDM 8k y bits TPS.">
+</picture>
+
+*Figura. Símbolo OFDM 8k y bits TPS.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: grabación real del C32 de Pamplona: con la SNR de ≈ −9 dB el receptor engancha pero en el `--replay` del fragmento no se emite evento. Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay c32_frag.cs8 --rate 9142857.142857 --freq 562000000 --decode dvbt@562000000 --print`).
+
+Esta grabación no produce ningún evento `dec`.
+
+<!-- vision-rapida:fin -->
+
 Decodificador **narrow** a 64/7 MHz = 9 142 857,14 Hz (T = 7/64 µs, canal de
 8 MHz; el DDC entrega 7,61 MHz de ancho). Solo lee la **información de sistema**
 (modo, guarda y señalización TPS); no decodifica el transporte MPEG.

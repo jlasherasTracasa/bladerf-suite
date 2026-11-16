@@ -1,5 +1,95 @@
 # Decodificador LTE (`lte`)
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/lte-cadena-dark.png">
+  <img src="../img/decoders/lte-cadena-light.png" alt="Cadena de procesado de LTE">
+</picture>
+
+*Figura. Cadena de procesado de LTE, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/lte-pss-dark.png">
+  <img src="../img/decoders/lte-pss-light.png" alt="Espectro y picos de correlación con la PSS cada 5 ms (grabación real).">
+</picture>
+
+*Figura. Espectro y picos de correlación con la PSS cada 5 ms (grabación real).*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/lte-estructura-dark.png">
+  <img src="../img/decoders/lte-estructura-light.png" alt="Posición de PSS, SSS y PBCH.">
+</picture>
+
+*Figura. Posición de PSS, SSS y PBCH.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: grabación IQ real (sigidwiki «LTE 1,4 MHz»). Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay lte.sigmf-meta --decode lte@800000000 --print`).
+
+Evento `dec` (campo `msg`, listas largas recortadas):
+
+```json
+{
+  "text": "LTE PCI 65 (N_ID1 21, N_ID2 2) FDD CP normal, 1 puerto, CFO -0.01 kHz, RSRP -57.0 dBFS, SI…",
+  "pci": 65,
+  "n_id1": 21,
+  "n_id2": 2,
+  "duplex": "FDD",
+  "cp": "normal",
+  "ports": 1,
+  "cfo_hz": -13,
+  "rsrp_dbfs": -57.0,
+  "sinr_db": 3.5,
+  "rho": 0.39,
+  "mib": true,
+  "bw_rb": 6,
+  "phich_duration": "normal",
+  "phich_resource": 2,
+  "sfn": 113,
+  "bw_mhz": 1.4,
+  "hits": 1
+}
+```
+
+Último `dec_state` recibido por WebSocket (`state`, listas recortadas):
+
+```json
+{
+  "windows": 14,
+  "cells": [
+    {
+      "pci": 65,
+      "n_id1": 21,
+      "n_id2": 2,
+      "duplex": "FDD",
+      "cp": "normal",
+      "ports": 1,
+      "cfo_hz": -75,
+      "rsrp_dbfs": -56.3,
+      "sinr_db": -0.7,
+      "rho": 0.44,
+      "mib": true,
+      "bw_rb": 6,
+      "phich_duration": "normal",
+      "phich_resource": 2,
+      "sfn": 477,
+      "bw_mhz": 1.4,
+      "hits": 10,
+      "age": 1.0
+    }
+  ]
+}
+```
+
+<!-- vision-rapida:fin -->
+
 Búsqueda de celdas LTE en un canal de 1,92 Msps (FFT de 128, subportadoras de 15 kHz): PCI, FDD/TDD,
 prefijo cíclico, CFO, RSRP y SINR aproximadas, nº de puertos y MIB del PBCH (ancho de banda, PHICH y SFN).
 Solo difusión: PSS, SSS, CRS y PBCH. Código: `src/decoders/lte.c`, secuencias y codificación del PBCH en

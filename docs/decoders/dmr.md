@@ -1,5 +1,99 @@
 # DMR (solo metadatos)
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/dmr-cadena-dark.png">
+  <img src="../img/decoders/dmr-cadena-light.png" alt="Cadena de procesado de DMR">
+</picture>
+
+*Figura. Cadena de procesado de DMR, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/dmr-senal-dark.png">
+  <img src="../img/decoders/dmr-senal-light.png" alt="Cascada de la grabación real y niveles 4FSK de una señal generada.">
+</picture>
+
+*Figura. Cascada de la grabación real y niveles 4FSK de una señal generada.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/dmr-estructura-dark.png">
+  <img src="../img/decoders/dmr-estructura-light.png" alt="Ráfaga TDMA y metadatos.">
+</picture>
+
+*Figura. Ráfaga TDMA y metadatos.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: señal sintética de `--gen dmr` (la grabación real de sigidwiki no se valida). Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay dmr.sigmf-meta --decode dmr@438500000 --print`).
+
+Evento `dec` (campo `msg`, listas largas recortadas):
+
+```json
+{
+  "burst": "voice_header",
+  "slot": 1,
+  "cc": 1,
+  "pf": 0,
+  "flco": 0,
+  "fid": 0,
+  "call": "group",
+  "dst": 91,
+  "src": 2001234,
+  "svc": 0,
+  "emergency": false,
+  "privacy": false,
+  "corrected": 0,
+  "text": "DMR TS1 CC1 grupo TG 91 <- 2001234 (inicio)"
+}
+```
+
+Último `dec_state` recibido por WebSocket (`state`, listas recortadas):
+
+```json
+{
+  "bursts": 298,
+  "syncs": 298,
+  "bad_slot": 0,
+  "lc_ok": 70,
+  "lc_bad": 0,
+  "csbk": 10,
+  "data_headers": 10,
+  "emb": 150,
+  "cc": 1,
+  "calls": [],
+  "recent": [
+    {
+      "slot": 1,
+      "cc": 1,
+      "call": "group",
+      "dst": 91,
+      "src": 2001234,
+      "dur": 0.8,
+      "seen": 0.7
+    },
+    {
+      "slot": 2,
+      "cc": 1,
+      "call": "private",
+      "dst": 4321,
+      "src": 1234567,
+      "dur": 0.4,
+      "seen": 0.9
+    },
+    "… (18 más)"
+  ]
+}
+```
+
+<!-- vision-rapida:fin -->
+
 Decodificador `src/decoders/dmr.c` (+ `dmr.h`, `dmr_fec.{h,c}`, `pocsag_fsk.h`), modulador `src/tx/mod_dmr.c`, test
 `tests/test_dmr.c`. Narrow, 48 000 Hz. Fuente: **ETSI TS 102 361-1 V2.5.1 (2017-10)**; las matrices,
 polinomios, máscaras y el entrelazado se han tomado del texto de la norma (anexo B, 9.1, 9.2, 10.2), no de

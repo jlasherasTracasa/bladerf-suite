@@ -1,0 +1,69 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Sesión WebSocket</title><style>
+:root{
+  --bg:#FEF7FF; --card:#F3EDF7; --card2:#ECE6F0; --card3:#E6E0E9;
+  --on:#1D1B20; --var:#49454F; --outline:#CAC4D0; --outlv:#E0D9E3;
+  --pri:#6750A4; --onpri:#FFFFFF; --pric:#EADDFF; --onpric:#21005D;
+  --sec:#625B71; --secc:#E8DEF8; --terc:#FFD8E4; --ter:#7D5260;
+  --arrow:#6F6A78; --sh:.16; --ok:#26702B; --warn:#8A5700; --err:#B3261E;
+  --w0:#F3EDF7; --w1:#E8DEF8; --w2:#D9C9F3; --w3:#C4B0EA; --w4:#A58BDB; --w5:#8467C8; --w6:#6750A4; --w7:#4F378B;
+  --bc:#6A4FB3;
+  --av:#0A6AA6;
+  --mar:#08695B;
+  --data:#8A5700;
+  --ham:#B0286A;
+  --spec:#26702B;
+}
+
+:root[data-theme=dark]{
+  --bg:#141218; --card:#211F26; --card2:#2B2930; --card3:#36343B;
+  --on:#E6E0E9; --var:#CAC4D0; --outline:#49454F; --outlv:#3A3741;
+  --pri:#D0BCFF; --onpri:#381E72; --pric:#4F378B; --onpric:#EADDFF;
+  --sec:#CCC2DC; --secc:#4A4458; --terc:#633B48; --ter:#EFB8C8;
+  --arrow:#A29DAB; --sh:.5; --ok:#A6E3A1; --warn:#F7C873; --err:#F2B8B5;
+  --w0:#1D1B20; --w1:#2B2336; --w2:#3A2D55; --w3:#4F378B; --w4:#6B4FB0; --w5:#8E6FD6; --w6:#B79CF5; --w7:#E8DDFF;
+  --bc:#D0BCFF;
+  --av:#8ECDF7;
+  --mar:#7ED6C4;
+  --data:#F7C873;
+  --ham:#F2A7C3;
+  --spec:#A6E3A1;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg)}
+body{font-family:'Inter','Inter Display',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+svg{display:block}
+text{font-family:'Inter',system-ui,sans-serif;fill:var(--on)}
+.disp{font-family:'Inter Display','Inter',sans-serif}
+.mono{font-family:'DejaVu Sans Mono',ui-monospace,monospace}
+.f-var{fill:var(--var)} .f-pri{fill:var(--pri)} .f-sec{fill:var(--sec)} .f-on{fill:var(--on)}
+.f-ok{fill:var(--ok)} .f-warn{fill:var(--warn)} .f-err{fill:var(--err)} .f-onpri{fill:var(--onpri)} .f-onpric{fill:var(--onpric)}
+.bg{fill:var(--bg)}
+.card{fill:var(--card);stroke:var(--outlv);stroke-width:1}
+.card2{fill:var(--card2);stroke:var(--outlv);stroke-width:1}
+.card3{fill:var(--card3)}
+.pri{fill:var(--pri)} .pric{fill:var(--pric)} .secc{fill:var(--secc)} .terc{fill:var(--terc)}
+.ghost{fill:none;stroke:var(--outline);stroke-width:1.5;stroke-dasharray:5 5}
+.line{stroke:var(--outline);stroke-width:1;fill:none}
+.arr{stroke:var(--arrow);stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.arr.pri{stroke:var(--pri);stroke-width:2.5}
+.arr.dash{stroke-dasharray:6 6}
+.arr.err{stroke:var(--err)}
+.mk{fill:var(--arrow)} .mk-pri{fill:var(--pri)} .mk-err{fill:var(--err)}
+.ico{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sh{filter:url(#sh)}
+.sh2{filter:url(#sh2)}
+.lbl{fill:var(--bg);stroke:var(--outlv)}
+.g-bc{--g:var(--bc)}
+.g-av{--g:var(--av)}
+.g-mar{--g:var(--mar)}
+.g-data{--g:var(--data)}
+.g-ham{--g:var(--ham)}
+.g-spec{--g:var(--spec)}
+
+.gt{fill:var(--g)} .gs{stroke:var(--g);fill:none}
+.gtint{fill:color-mix(in srgb,var(--g) 17%,var(--card));stroke:color-mix(in srgb,var(--g) 45%,transparent);stroke-width:1.2}
+.gsolid{fill:var(--g)}
+.gdot{fill:var(--g)}
+.w0{fill:var(--w0)}.w1{fill:var(--w1)}.w2{fill:var(--w2)}.w3{fill:var(--w3)}.w4{fill:var(--w4)}.w5{fill:var(--w5)}.w6{fill:var(--w6)}.w7{fill:var(--w7)}
+</style></head><body><svg xmlns="http://www.w3.org/2000/svg" width="1640" height="1640" viewBox="0 0 1640 1640"><defs><filter id="sh" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#2a1a4a" style="flood-opacity:var(--sh)"/></filter><filter id="sh2" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#2a1a4a" style="flood-opacity:calc(var(--sh)*.7)"/></filter><marker id="ah" viewBox="0 0 10 10" refX="8.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path class="mk" d="M1 1.5 8.5 5 1 8.5z" stroke-linejoin="round" stroke="var(--arrow)" stroke-width="1"/></marker><marker id="ahp" viewBox="0 0 10 10" refX="8.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path class="mk-pri" d="M1 1.5 8.5 5 1 8.5z" stroke-linejoin="round" stroke="var(--pri)" stroke-width="1"/></marker><marker id="ahe" viewBox="0 0 10 10" refX="8.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path class="mk-err" d="M1 1.5 8.5 5 1 8.5z" stroke-linejoin="round" stroke="var(--err)" stroke-width="1"/></marker></defs><rect class="bg" width="1640" height="1640"/><text class="disp" x="48" y="64" font-size="30" font-weight="600" letter-spacing="-0.4">Sesión WebSocket de principio a fin</text><text class="f-var" x="48" y="92" font-size="15">Conexión, instantánea inicial, órdenes, flujo continuo y reconexión (web/js/ws.js, src/net/server.c, src/main.c).</text><rect class="card sh" x="205.0" y="106.0" width="250.0" height="84.0" rx="20" /><g class="g-bc"><circle class="gtint" cx="239.0" cy="140.0" r="18.0"/><g transform="translate(230.0 131.0) scale(0.7500)" class="ico" style="color:var(--g);stroke-width:2"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></g></g><text class="disp" x="269.0" y="138.0" font-size="16" font-weight="600">Navegador</text><text class="f-var" x="269.0" y="156.0" font-size="12.5" font-weight="400">web/js/ws.js</text><path class="ghost" d="M330 196 L330 1600"/><rect class="card sh" x="695.0" y="106.0" width="250.0" height="84.0" rx="20" /><g class="g-av"><circle class="gtint" cx="729.0" cy="140.0" r="18.0"/><g transform="translate(720.0 131.0) scale(0.7500)" class="ico" style="color:var(--g);stroke-width:2"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/></g></g><text class="disp" x="759.0" y="138.0" font-size="16" font-weight="600">Servidor</text><text class="f-var" x="759.0" y="156.0" font-size="12.5" font-weight="400">hilo de red · main.c</text><path class="ghost" d="M820 196 L820 1600"/><rect class="card sh" x="1185.0" y="106.0" width="250.0" height="84.0" rx="20" /><g class="g-spec"><circle class="gtint" cx="1219.0" cy="140.0" r="18.0"/><g transform="translate(1210.0 131.0) scale(0.7500)" class="ico" style="color:var(--g);stroke-width:2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></g></g><text class="disp" x="1249.0" y="138.0" font-size="16" font-weight="600">Motor y host</text><text class="f-var" x="1249.0" y="156.0" font-size="12.5" font-weight="400">hilo DSP · dec_host</text><path class="ghost" d="M1310 196 L1310 1600"/><rect class="card2" x="48" y="214" width="1544" height="150" rx="22" opacity=".55"/><circle class="pri" cx="78" cy="244" r="16"/><text class="f-onpri" x="78.0" y="250.0" font-size="15" font-weight="700" text-anchor="middle">1</text><text class="disp" x="104.0" y="250.0" font-size="15" font-weight="600">Conexión</text><path class="arr " d="M330.0 292.0 L820.0 292.0" marker-end="url(#ah)"/><text class="f-on" x="575.0" y="283.0" font-size="12.5" font-weight="500" text-anchor="middle">GET /ws  ·  Upgrade: websocket</text><text class="f-var" x="575.0" y="309.0" font-size="11.5" font-weight="400" text-anchor="middle">Origin debe coincidir con Host</text><path class="arr dash" d="M820.0 342.0 L330.0 342.0" marker-end="url(#ah)"/><text class="f-on" x="575.0" y="333.0" font-size="12.5" font-weight="500" text-anchor="middle">101 Switching Protocols</text><rect class="card2" x="48" y="384" width="1544" height="290" rx="22" opacity=".55"/><circle class="pri" cx="78" cy="414" r="16"/><text class="f-onpri" x="78.0" y="420.0" font-size="15" font-weight="700" text-anchor="middle">2</text><text class="disp" x="104.0" y="420.0" font-size="15" font-weight="600">Instantánea al conectar</text><path class="arr pri" d="M820.0 464.0 L330.0 464.0" marker-end="url(#ahp)"/><text class="f-on" x="575.0" y="455.0" font-size="12.5" font-weight="500" text-anchor="middle">status · signals · recording</text><path class="arr pri" d="M820.0 508.0 L330.0 508.0" marker-end="url(#ahp)"/><text class="f-on" x="575.0" y="499.0" font-size="12.5" font-weight="500" text-anchor="middle">decoders · profiles · tx_policy · dec_list</text><path class="arr pri" d="M820.0 552.0 L330.0 552.0" marker-end="url(#ahp)"/><text class="f-on" x="575.0" y="543.0" font-size="12.5" font-weight="500" text-anchor="middle">dec_state (último conocido)</text><path class="arr pri" d="M820.0 596.0 L330.0 596.0" marker-end="url(#ahp)"/><text class="f-on" x="575.0" y="587.0" font-size="12.5" font-weight="500" text-anchor="middle">últimos 100 dec con "replay": true</text><text class="f-var" x="844.0" y="646.0" font-size="12" font-weight="400">el cliente ya puede pintar sin pedir nada</text><rect class="card2" x="48" y="694" width="1544" height="330" rx="22" opacity=".55"/><circle class="pri" cx="78" cy="724" r="16"/><text class="f-onpri" x="78.0" y="730.0" font-size="15" font-weight="700" text-anchor="middle">3</text><text class="disp" x="104.0" y="730.0" font-size="15" font-weight="600">Órdenes</text><path class="arr " d="M330.0 776.0 L820.0 776.0" marker-end="url(#ah)"/><text class="f-on" x="575.0" y="767.0" font-size="12.5" font-weight="500" text-anchor="middle">{"cmd":"profile","id":"fm"}</text><text class="f-var" x="575.0" y="793.0" font-size="11.5" font-weight="400" text-anchor="middle">o config, channel, dec_add, record, tx…</text><path class="arr " d="M820.0 830.0 L1310.0 830.0" marker-end="url(#ah)"/><text class="f-on" x="1065.0" y="821.0" font-size="12.5" font-weight="500" text-anchor="middle">engine_request() · dec_host_add()</text><path class="arr dash" d="M1310.0 880.0 L820.0 880.0" marker-end="url(#ah)"/><text class="f-on" x="1065.0" y="871.0" font-size="12.5" font-weight="500" text-anchor="middle">aplicado (el DSP pausa el lector si hace falta)</text><path class="arr pri" d="M820.0 930.0 L330.0 930.0" marker-end="url(#ahp)"/><text class="f-on" x="575.0" y="921.0" font-size="12.5" font-weight="500" text-anchor="middle">status nuevo + dec_list</text><text class="f-var" x="575.0" y="947.0" font-size="11.5" font-weight="400" text-anchor="middle">a todos los clientes</text><path class="arr dash" d="M820.0 984.0 L330.0 984.0" marker-end="url(#ah)"/><text class="f-on" x="575.0" y="975.0" font-size="12.5" font-weight="500" text-anchor="middle">{"type":"error","msg":…}</text><text class="f-var" x="575.0" y="1001.0" font-size="11.5" font-weight="400" text-anchor="middle">si la orden no es válida</text><rect class="card2" x="48" y="1044" width="1544" height="330" rx="22" opacity=".55"/><circle class="pri" cx="78" cy="1074" r="16"/><text class="f-onpri" x="78.0" y="1080.0" font-size="15" font-weight="700" text-anchor="middle">4</text><text class="disp" x="104.0" y="1080.0" font-size="15" font-weight="600">Flujo continuo</text><path class="arr " d="M1310.0 1122.0 L820.0 1122.0" marker-end="url(#ah)"/><text class="f-on" x="1065.0" y="1113.0" font-size="12.5" font-weight="500" text-anchor="middle">bloque de IQ → espectro, audio, eventos</text><path class="arr " d="M820.0 1172.0 L330.0 1172.0" marker-end="url(#ah)"/><text class="f-on" x="575.0" y="1163.0" font-size="12.5" font-weight="500" text-anchor="middle">binario tipo 1 · espectro</text><text class="f-var" x="575.0" y="1189.0" font-size="11.5" font-weight="400" text-anchor="middle">a la tasa de fps</text><path class="arr " d="M820.0 1230.0 L330.0 1230.0" marker-end="url(#ah)"/><text class="f-on" x="575.0" y="1221.0" font-size="12.5" font-weight="500" text-anchor="middle">binario tipo 2 · audio 48 kHz</text><text class="f-var" x="575.0" y="1247.0" font-size="11.5" font-weight="400" text-anchor="middle">solo al cliente que escucha; tipo 3 al resto</text><path class="arr " d="M820.0 1288.0 L330.0 1288.0" marker-end="url(#ah)"/><text class="f-on" x="575.0" y="1279.0" font-size="12.5" font-weight="500" text-anchor="middle">signals ~2 Hz · dec_state ~1 Hz · status ~2 s</text><path class="arr " d="M820.0 1340.0 L330.0 1340.0" marker-end="url(#ah)"/><text class="f-on" x="575.0" y="1331.0" font-size="12.5" font-weight="500" text-anchor="middle">dec (un evento por mensaje válido, ≤ 200/s)</text><rect class="card2" x="48" y="1394" width="1544" height="200" rx="22" opacity=".55"/><circle class="pri" cx="78" cy="1424" r="16"/><text class="f-onpri" x="78.0" y="1430.0" font-size="15" font-weight="700" text-anchor="middle">5</text><text class="disp" x="104.0" y="1430.0" font-size="15" font-weight="600">Reconexión</text><text class="f-err" x="354.0" y="1472.0" font-size="12.5" font-weight="500">✕ se corta la red o el servidor se reinicia</text><path class="arr " d="M330.0 1490.0 L368.0 1490.0 Q376.0 1490.0 376.0 1498.0 L376.0 1508.0 Q376.0 1516.0 368.0 1516.0 L330.0 1516.0" marker-end="url(#ah)"/><text class="f-on" x="386.0" y="1507.0" font-size="12.5" font-weight="500">espera 0,5 s × 1,7 por intento (máx. 6 s)</text><path class="arr " d="M330.0 1554.0 L820.0 1554.0" marker-end="url(#ah)"/><text class="f-on" x="575.0" y="1545.0" font-size="12.5" font-weight="500" text-anchor="middle">GET /ws otra vez</text><text class="f-var" x="575.0" y="1571.0" font-size="11.5" font-weight="400" text-anchor="middle">y se repite la instantánea del paso 2</text></svg><script>if(/[?&]dark/.test(location.search))document.documentElement.dataset.theme="dark";</script></body></html>

@@ -1,5 +1,89 @@
 # ACARS (VHF, ARINC 618)
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/acars-cadena-dark.png">
+  <img src="../img/decoders/acars-cadena-light.png" alt="Cadena de procesado de ACARS">
+</picture>
+
+*Figura. Cadena de procesado de ACARS, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/acars-senal-dark.png">
+  <img src="../img/decoders/acars-senal-light.png" alt="Cascada y envolvente AM de la grabación real.">
+</picture>
+
+*Figura. Cascada y envolvente AM de la grabación real.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/acars-estructura-dark.png">
+  <img src="../img/decoders/acars-estructura-light.png" alt="Bloque ACARS.">
+</picture>
+
+*Figura. Bloque ACARS.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: grabación IQ real (sigidwiki «ACARS IQ»). Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay acars.sigmf-meta --decode acars@131550000 --print`).
+
+Evento `dec` (campo `msg`, listas largas recortadas):
+
+```json
+{
+  "proto": "acars",
+  "mode": "O",
+  "reg": "VQ-BKV",
+  "dir": "down",
+  "tak": "NAK",
+  "label": "Q0",
+  "block": "6",
+  "msgno": "S11A",
+  "flight": "S71018",
+  "end": "ETX",
+  "parity_ok": true,
+  "body": "",
+  "level_db": -9.2,
+  "text": "VQ-BKV S71018 A>G Q0 #S11A: "
+}
+```
+
+Último `dec_state` recibido por WebSocket (`state`, listas recortadas):
+
+```json
+{
+  "msgs": 21,
+  "bad": 0,
+  "ac": [
+    {
+      "reg": "VQ-BKV",
+      "flight": "S71018",
+      "label": "Q0",
+      "msgs": 5,
+      "age": 1,
+      "last": "VQ-BKV S71018 A>G Q0 #S11A: "
+    },
+    {
+      "reg": "TC-JSN",
+      "flight": "TK04ZB",
+      "label": "16",
+      "msgs": 4,
+      "age": 3,
+      "last": "TC-JSN TK04ZB A>G 16 #M47A: /N 54.924/E 36.578/20411/1510/1747/09759/2020/"
+    },
+    "… (2 más)"
+  ]
+}
+```
+
+<!-- vision-rapida:fin -->
+
 Ficheros: `src/decoders/acars.c`, `src/decoders/acars_blk.{c,h}` (bloque, BCS; lo reutiliza VDL2),
 `src/tx/mod_acars.c`, `tests/test_acars.c`.
 

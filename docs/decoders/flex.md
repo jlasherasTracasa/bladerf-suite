@@ -1,5 +1,73 @@
 # FLEX
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/flex-cadena-dark.png">
+  <img src="../img/decoders/flex-cadena-light.png" alt="Cadena de procesado de FLEX">
+</picture>
+
+*Figura. Cadena de procesado de FLEX, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/flex-senal-dark.png">
+  <img src="../img/decoders/flex-senal-light.png" alt="Cascada y histograma FSK de 2 niveles (audio real remodulado).">
+</picture>
+
+*Figura. Cascada y histograma FSK de 2 niveles (audio real remodulado).*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/flex-estructura-dark.png">
+  <img src="../img/decoders/flex-estructura-light.png" alt="Trama FLEX.">
+</picture>
+
+*Figura. Trama FLEX.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: audio FM real de multimon-ng (FLEX 1600, P2000) remodulado en FM. Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay flex.sigmf-meta --decode flex@466075000 --print`).
+
+Evento `dec` (campo `msg`, listas largas recortadas):
+
+```json
+{
+  "capcode": 1123102,
+  "phase": "A",
+  "cycle": 0,
+  "frame": 9,
+  "kind": "alpha",
+  "msg": "Fijne dienst",
+  "mode": "1600/2",
+  "baud": 1600,
+  "levels": 2,
+  "corrected": 1,
+  "text": "FLEX 1600/2 capcode 1123102 fase A alpha: Fijne dienst"
+}
+```
+
+Último `dec_state` recibido por WebSocket (`state`, listas recortadas):
+
+```json
+{
+  "frames": 6,
+  "bad_frames": 3,
+  "msgs": 0,
+  "long_addr_skipped": 127,
+  "mode": "1600/2",
+  "cycle": 0,
+  "frame": 1,
+  "pages": []
+}
+```
+
+<!-- vision-rapida:fin -->
+
 Decodificador `src/decoders/flex.c` (+ `flex.h`, `pocsag_fsk.h`), modulador `src/tx/mod_flex.c`, test
 `tests/test_flex.c`. Narrow, 48 000 Hz.
 

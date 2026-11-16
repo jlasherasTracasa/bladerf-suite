@@ -1,0 +1,69 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Motor de espectro FPGA</title><style>
+:root{
+  --bg:#FEF7FF; --card:#F3EDF7; --card2:#ECE6F0; --card3:#E6E0E9;
+  --on:#1D1B20; --var:#49454F; --outline:#CAC4D0; --outlv:#E0D9E3;
+  --pri:#6750A4; --onpri:#FFFFFF; --pric:#EADDFF; --onpric:#21005D;
+  --sec:#625B71; --secc:#E8DEF8; --terc:#FFD8E4; --ter:#7D5260;
+  --arrow:#6F6A78; --sh:.16; --ok:#26702B; --warn:#8A5700; --err:#B3261E;
+  --w0:#F3EDF7; --w1:#E8DEF8; --w2:#D9C9F3; --w3:#C4B0EA; --w4:#A58BDB; --w5:#8467C8; --w6:#6750A4; --w7:#4F378B;
+  --bc:#6A4FB3;
+  --av:#0A6AA6;
+  --mar:#08695B;
+  --data:#8A5700;
+  --ham:#B0286A;
+  --spec:#26702B;
+}
+
+:root[data-theme=dark]{
+  --bg:#141218; --card:#211F26; --card2:#2B2930; --card3:#36343B;
+  --on:#E6E0E9; --var:#CAC4D0; --outline:#49454F; --outlv:#3A3741;
+  --pri:#D0BCFF; --onpri:#381E72; --pric:#4F378B; --onpric:#EADDFF;
+  --sec:#CCC2DC; --secc:#4A4458; --terc:#633B48; --ter:#EFB8C8;
+  --arrow:#A29DAB; --sh:.5; --ok:#A6E3A1; --warn:#F7C873; --err:#F2B8B5;
+  --w0:#1D1B20; --w1:#2B2336; --w2:#3A2D55; --w3:#4F378B; --w4:#6B4FB0; --w5:#8E6FD6; --w6:#B79CF5; --w7:#E8DDFF;
+  --bc:#D0BCFF;
+  --av:#8ECDF7;
+  --mar:#7ED6C4;
+  --data:#F7C873;
+  --ham:#F2A7C3;
+  --spec:#A6E3A1;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg)}
+body{font-family:'Inter','Inter Display',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+svg{display:block}
+text{font-family:'Inter',system-ui,sans-serif;fill:var(--on)}
+.disp{font-family:'Inter Display','Inter',sans-serif}
+.mono{font-family:'DejaVu Sans Mono',ui-monospace,monospace}
+.f-var{fill:var(--var)} .f-pri{fill:var(--pri)} .f-sec{fill:var(--sec)} .f-on{fill:var(--on)}
+.f-ok{fill:var(--ok)} .f-warn{fill:var(--warn)} .f-err{fill:var(--err)} .f-onpri{fill:var(--onpri)} .f-onpric{fill:var(--onpric)}
+.bg{fill:var(--bg)}
+.card{fill:var(--card);stroke:var(--outlv);stroke-width:1}
+.card2{fill:var(--card2);stroke:var(--outlv);stroke-width:1}
+.card3{fill:var(--card3)}
+.pri{fill:var(--pri)} .pric{fill:var(--pric)} .secc{fill:var(--secc)} .terc{fill:var(--terc)}
+.ghost{fill:none;stroke:var(--outline);stroke-width:1.5;stroke-dasharray:5 5}
+.line{stroke:var(--outline);stroke-width:1;fill:none}
+.arr{stroke:var(--arrow);stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.arr.pri{stroke:var(--pri);stroke-width:2.5}
+.arr.dash{stroke-dasharray:6 6}
+.arr.err{stroke:var(--err)}
+.mk{fill:var(--arrow)} .mk-pri{fill:var(--pri)} .mk-err{fill:var(--err)}
+.ico{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sh{filter:url(#sh)}
+.sh2{filter:url(#sh2)}
+.lbl{fill:var(--bg);stroke:var(--outlv)}
+.g-bc{--g:var(--bc)}
+.g-av{--g:var(--av)}
+.g-mar{--g:var(--mar)}
+.g-data{--g:var(--data)}
+.g-ham{--g:var(--ham)}
+.g-spec{--g:var(--spec)}
+
+.gt{fill:var(--g)} .gs{stroke:var(--g);fill:none}
+.gtint{fill:color-mix(in srgb,var(--g) 17%,var(--card));stroke:color-mix(in srgb,var(--g) 45%,transparent);stroke-width:1.2}
+.gsolid{fill:var(--g)}
+.gdot{fill:var(--g)}
+.w0{fill:var(--w0)}.w1{fill:var(--w1)}.w2{fill:var(--w2)}.w3{fill:var(--w3)}.w4{fill:var(--w4)}.w5{fill:var(--w5)}.w6{fill:var(--w6)}.w7{fill:var(--w7)}
+</style></head><body><svg xmlns="http://www.w3.org/2000/svg" width="1700" height="760" viewBox="0 0 1700 760"><defs><filter id="sh" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#2a1a4a" style="flood-opacity:var(--sh)"/></filter><filter id="sh2" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#2a1a4a" style="flood-opacity:calc(var(--sh)*.7)"/></filter><marker id="ah" viewBox="0 0 10 10" refX="8.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path class="mk" d="M1 1.5 8.5 5 1 8.5z" stroke-linejoin="round" stroke="var(--arrow)" stroke-width="1"/></marker><marker id="ahp" viewBox="0 0 10 10" refX="8.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path class="mk-pri" d="M1 1.5 8.5 5 1 8.5z" stroke-linejoin="round" stroke="var(--pri)" stroke-width="1"/></marker><marker id="ahe" viewBox="0 0 10 10" refX="8.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path class="mk-err" d="M1 1.5 8.5 5 1 8.5z" stroke-linejoin="round" stroke="var(--err)" stroke-width="1"/></marker></defs><rect class="bg" width="1700" height="760"/><text class="disp" x="48" y="64" font-size="30" font-weight="600" letter-spacing="-0.4">Motor de espectro en la FPGA (imagen lab)</text><text class="f-var" x="48" y="92" font-size="15">Ventana, FFT de flujo, potencia y acumulación de K tramas sin huecos; la salida sustituye al ADC con rx_mux = 3.</text><rect class="card sh" x="60.0" y="130.0" width="330.0" height="150.0" rx="20" /><g class="g-data"><circle class="gtint" cx="95.0" cy="165.0" r="19.0"/><g transform="translate(85.5 155.5) scale(0.7917)" class="ico" style="color:var(--g);stroke-width:2"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 9h6v6H9zM9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></g></g><text class="disp" x="126.0" y="163.0" font-size="16" font-weight="600">Entrada</text><text class="f-var" x="126.0" y="181.0" font-size="12.5" font-weight="400">adc_streams · canal activo</text><text class="f-var" x="126.0" y="199.1" font-size="12.5" font-weight="400">12 bit, 1 muestra cada 2 ciclos</text><text class="f-var" x="126.0" y="217.2" font-size="12.5" font-weight="400">habilitador ce</text><rect class="card sh" x="460.0" y="130.0" width="330.0" height="150.0" rx="20" /><g class="g-av"><circle class="gtint" cx="495.0" cy="165.0" r="19.0"/><g transform="translate(485.5 155.5) scale(0.7917)" class="ico" style="color:var(--g);stroke-width:2"><path d="M2 13a2 2 0 0 0 2-2V7a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0V4a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0v-4a2 2 0 0 1 2-2"/></g></g><text class="disp" x="526.0" y="163.0" font-size="16" font-weight="600">Ventana</text><text class="f-var" x="526.0" y="181.0" font-size="12.5" font-weight="400">Blackman-Harris Q15 en ROM</text><text class="f-var" x="526.0" y="199.1" font-size="12.5" font-weight="400">N = 1024 · 2048 · 4096 · 8192</text><text class="f-var" x="526.0" y="217.2" font-size="12.5" font-weight="400">xw = (x·w + 1024) &gt;&gt; 11</text><rect class="card sh" x="860.0" y="130.0" width="330.0" height="150.0" rx="20" /><g class="g-spec"><circle class="gtint" cx="895.0" cy="165.0" r="19.0"/><g transform="translate(885.5 155.5) scale(0.7917)" class="ico" style="color:var(--g);stroke-width:2"><path d="M3 20V10M9 20V4M15 20v-7M21 20V8"/></g></g><text class="disp" x="926.0" y="163.0" font-size="16" font-weight="600">spec_fft</text><text class="f-var" x="926.0" y="181.0" font-size="12.5" font-weight="400">SDF radix-2², 13 etapas</text><text class="f-var" x="926.0" y="199.1" font-size="12.5" font-weight="400">X_hw = 0,5 · FFT(x·w)</text><text class="f-var" x="926.0" y="217.2" font-size="12.5" font-weight="400">salida 25 bit, bit-invertida</text><rect class="card sh" x="1260.0" y="130.0" width="330.0" height="150.0" rx="20" /><g class="g-mar"><circle class="gtint" cx="1295.0" cy="165.0" r="19.0"/><g transform="translate(1285.5 155.5) scale(0.7917)" class="ico" style="color:var(--g);stroke-width:2"><rect width="16" height="20" x="4" y="2" rx="2"/><path d="M8 6h8M16 14v4M16 10h.01M12 10h.01M8 10h.01M12 14h.01M8 14h.01M12 18h.01M8 18h.01"/></g></g><text class="disp" x="1326.0" y="163.0" font-size="16" font-weight="600">|X|² y acumulador</text><text class="f-var" x="1326.0" y="181.0" font-size="12.5" font-weight="400">re² + im² exacto (50 bit)</text><text class="f-var" x="1326.0" y="199.1" font-size="12.5" font-weight="400">K tramas en 64 bit por bin</text><text class="f-var" x="1326.0" y="217.2" font-size="12.5" font-weight="400">RAM M10K × 2 en ping-pong</text><path class="arr pri" d="M390.0 205.0 L460.0 205.0" marker-end="url(#ahp)"/><path class="arr pri" d="M790.0 205.0 L860.0 205.0" marker-end="url(#ahp)"/><path class="arr pri" d="M1190.0 205.0 L1260.0 205.0" marker-end="url(#ahp)"/><rect class="card sh" x="1260.0" y="380.0" width="330.0" height="130.0" rx="20" /><g class="g-ham"><circle class="gtint" cx="1295.0" cy="415.0" r="19.0"/><g transform="translate(1285.5 405.5) scale(0.7917)" class="ico" style="color:var(--g);stroke-width:2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></g></g><text class="disp" x="1326.0" y="413.0" font-size="16" font-weight="600">Lectura fftshift</text><text class="f-var" x="1326.0" y="431.0" font-size="12.5" font-weight="400">N bins, de −N/2 a N/2−1</text><text class="f-var" x="1326.0" y="449.1" font-size="12.5" font-weight="400">1 palabra por ciclo</text><rect class="card sh" x="860.0" y="380.0" width="330.0" height="130.0" rx="20" /><g class="g-av"><circle class="gtint" cx="895.0" cy="415.0" r="19.0"/><g transform="translate(885.5 405.5) scale(0.7917)" class="ico" style="color:var(--g);stroke-width:2"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></g></g><text class="disp" x="926.0" y="413.0" font-size="16" font-weight="600">Formato {E, M}</text><text class="f-var" x="926.0" y="431.0" font-size="12.5" font-weight="400">M · 2^E, 26 bit de mantisa</text><text class="f-var" x="926.0" y="449.1" font-size="12.5" font-weight="400">E = máx(0, msb(acc) − 25)</text><rect class="card sh" x="460.0" y="380.0" width="330.0" height="130.0" rx="20" /><g class="g-data"><circle class="gtint" cx="495.0" cy="415.0" r="19.0"/><g transform="translate(485.5 405.5) scale(0.7917)" class="ico" style="color:var(--g);stroke-width:2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></g></g><text class="disp" x="526.0" y="413.0" font-size="16" font-weight="600">FIFO + rx_mux = 3</text><text class="f-var" x="526.0" y="431.0" font-size="12.5" font-weight="400">sustituye al flujo del ADC</text><text class="f-var" x="526.0" y="449.1" font-size="12.5" font-weight="400">trama SC16, sin metadatos</text><rect class="card sh" x="60.0" y="380.0" width="330.0" height="130.0" rx="20" /><g class="g-bc"><circle class="gtint" cx="95.0" cy="415.0" r="19.0"/><g transform="translate(85.5 405.5) scale(0.7917)" class="ico" style="color:var(--g);stroke-width:2"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></g></g><text class="disp" x="126.0" y="413.0" font-size="16" font-weight="600">FX3 · USB 3 → host</text><text class="f-var" x="126.0" y="431.0" font-size="12.5" font-weight="400">lab_probe / fpga_lab_parser</text><text class="f-var" x="126.0" y="449.1" font-size="12.5" font-weight="400">(w0, w1) sincronizan la trama</text><path class="arr pri" d="M1425.0 280.0 L1425.0 380.0" marker-end="url(#ahp)"/><path class="arr pri" d="M1260.0 445.0 L1190.0 445.0" marker-end="url(#ahp)"/><path class="arr pri" d="M860.0 445.0 L790.0 445.0" marker-end="url(#ahp)"/><path class="arr pri" d="M460.0 445.0 L390.0 445.0" marker-end="url(#ahp)"/><rect class="card2 sh" x="60.0" y="590.0" width="1530.0" height="120.0" rx="24" /><circle class="pric" cx="100.0" cy="628.0" r="20.0"/><g transform="translate(90.0 618.0) scale(0.8333)" class="ico" style="color:var(--onpric);stroke-width:2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></g><text class="disp" x="136.0" y="636.0" font-size="16" font-weight="600">Banco de registros Wishbone (lab_regs)</text><text class="f-var" x="136.0" y="660.0" font-size="12.5" font-weight="400">SPEC_LOG2N (N) · SPEC_K (K) · SPEC_CTRL (relleno) configuran el motor; los contadores CNT_* lo vigilan.</text><text class="f-var" x="136.0" y="682.0" font-size="12.5" font-weight="400">Maestro Wishbone del Nios, a 80 MHz, accesible con bladerf_wishbone_master_read/write (libbladeRF 2.6.1, sin parches).</text><text class="f-var" x="1652.0" y="742.0" font-size="12" font-weight="400" text-anchor="end">Fuente: docs/FIRMWARE.md §10 y §11.</text></svg><script>if(/[?&]dark/.test(location.search))document.documentElement.dataset.theme="dark";</script></body></html>

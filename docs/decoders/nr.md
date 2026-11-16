@@ -1,5 +1,51 @@
 # Decodificador 5G NR (`nr`)
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/nr-cadena-dark.png">
+  <img src="../img/decoders/nr-cadena-light.png" alt="Cadena de procesado de NR">
+</picture>
+
+*Figura. Cadena de procesado de NR, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/nr-pss-dark.png">
+  <img src="../img/decoders/nr-pss-light.png" alt="Espectro de la grabación real y correlación con la PSS en una señal generada.">
+</picture>
+
+*Figura. Espectro de la grabación real y correlación con la PSS en una señal generada.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/nr-estructura-dark.png">
+  <img src="../img/decoders/nr-estructura-light.png" alt="Bloque SSB e identidad de celda.">
+</picture>
+
+*Figura. Bloque SSB e identidad de celda.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: grabación IQ real (sigidwiki «NR 10 MHz»): no aparece ninguna celda, así que no hay evento. Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay nr.sigmf-meta --decode nr --print`).
+
+Esta grabación no produce ningún evento `dec`.
+
+Último `dec_state` recibido por WebSocket (`state`, listas recortadas):
+
+```json
+{
+  "windows": 2,
+  "cells": []
+}
+```
+
+<!-- vision-rapida:fin -->
+
 Búsqueda de bloques SS/PBCH (SSB) en la rejilla GSCN que cae dentro de la captura: PSS/SSS → PCI (0–1007),
 SCS (15/30 kHz), CFO, potencia. **Sin PBCH (polar)**: no se decodifica la MIB ni el índice de SSB. Código:
 `src/decoders/nr.c`, secuencias y GSCN en `nr_phy.{h,c}`, correlación en `nr_corr.{h,c}` (aislada para C1), modulador

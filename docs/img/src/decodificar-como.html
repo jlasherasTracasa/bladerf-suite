@@ -1,0 +1,69 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Decodificar como</title><style>
+:root{
+  --bg:#FEF7FF; --card:#F3EDF7; --card2:#ECE6F0; --card3:#E6E0E9;
+  --on:#1D1B20; --var:#49454F; --outline:#CAC4D0; --outlv:#E0D9E3;
+  --pri:#6750A4; --onpri:#FFFFFF; --pric:#EADDFF; --onpric:#21005D;
+  --sec:#625B71; --secc:#E8DEF8; --terc:#FFD8E4; --ter:#7D5260;
+  --arrow:#6F6A78; --sh:.16; --ok:#26702B; --warn:#8A5700; --err:#B3261E;
+  --w0:#F3EDF7; --w1:#E8DEF8; --w2:#D9C9F3; --w3:#C4B0EA; --w4:#A58BDB; --w5:#8467C8; --w6:#6750A4; --w7:#4F378B;
+  --bc:#6A4FB3;
+  --av:#0A6AA6;
+  --mar:#08695B;
+  --data:#8A5700;
+  --ham:#B0286A;
+  --spec:#26702B;
+}
+
+:root[data-theme=dark]{
+  --bg:#141218; --card:#211F26; --card2:#2B2930; --card3:#36343B;
+  --on:#E6E0E9; --var:#CAC4D0; --outline:#49454F; --outlv:#3A3741;
+  --pri:#D0BCFF; --onpri:#381E72; --pric:#4F378B; --onpric:#EADDFF;
+  --sec:#CCC2DC; --secc:#4A4458; --terc:#633B48; --ter:#EFB8C8;
+  --arrow:#A29DAB; --sh:.5; --ok:#A6E3A1; --warn:#F7C873; --err:#F2B8B5;
+  --w0:#1D1B20; --w1:#2B2336; --w2:#3A2D55; --w3:#4F378B; --w4:#6B4FB0; --w5:#8E6FD6; --w6:#B79CF5; --w7:#E8DDFF;
+  --bc:#D0BCFF;
+  --av:#8ECDF7;
+  --mar:#7ED6C4;
+  --data:#F7C873;
+  --ham:#F2A7C3;
+  --spec:#A6E3A1;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg)}
+body{font-family:'Inter','Inter Display',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+svg{display:block}
+text{font-family:'Inter',system-ui,sans-serif;fill:var(--on)}
+.disp{font-family:'Inter Display','Inter',sans-serif}
+.mono{font-family:'DejaVu Sans Mono',ui-monospace,monospace}
+.f-var{fill:var(--var)} .f-pri{fill:var(--pri)} .f-sec{fill:var(--sec)} .f-on{fill:var(--on)}
+.f-ok{fill:var(--ok)} .f-warn{fill:var(--warn)} .f-err{fill:var(--err)} .f-onpri{fill:var(--onpri)} .f-onpric{fill:var(--onpric)}
+.bg{fill:var(--bg)}
+.card{fill:var(--card);stroke:var(--outlv);stroke-width:1}
+.card2{fill:var(--card2);stroke:var(--outlv);stroke-width:1}
+.card3{fill:var(--card3)}
+.pri{fill:var(--pri)} .pric{fill:var(--pric)} .secc{fill:var(--secc)} .terc{fill:var(--terc)}
+.ghost{fill:none;stroke:var(--outline);stroke-width:1.5;stroke-dasharray:5 5}
+.line{stroke:var(--outline);stroke-width:1;fill:none}
+.arr{stroke:var(--arrow);stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.arr.pri{stroke:var(--pri);stroke-width:2.5}
+.arr.dash{stroke-dasharray:6 6}
+.arr.err{stroke:var(--err)}
+.mk{fill:var(--arrow)} .mk-pri{fill:var(--pri)} .mk-err{fill:var(--err)}
+.ico{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sh{filter:url(#sh)}
+.sh2{filter:url(#sh2)}
+.lbl{fill:var(--bg);stroke:var(--outlv)}
+.g-bc{--g:var(--bc)}
+.g-av{--g:var(--av)}
+.g-mar{--g:var(--mar)}
+.g-data{--g:var(--data)}
+.g-ham{--g:var(--ham)}
+.g-spec{--g:var(--spec)}
+
+.gt{fill:var(--g)} .gs{stroke:var(--g);fill:none}
+.gtint{fill:color-mix(in srgb,var(--g) 17%,var(--card));stroke:color-mix(in srgb,var(--g) 45%,transparent);stroke-width:1.2}
+.gsolid{fill:var(--g)}
+.gdot{fill:var(--g)}
+.w0{fill:var(--w0)}.w1{fill:var(--w1)}.w2{fill:var(--w2)}.w3{fill:var(--w3)}.w4{fill:var(--w4)}.w5{fill:var(--w5)}.w6{fill:var(--w6)}.w7{fill:var(--w7)}
+</style></head><body><svg xmlns="http://www.w3.org/2000/svg" width="1640" height="560" viewBox="0 0 1640 560"><defs><filter id="sh" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#2a1a4a" style="flood-opacity:var(--sh)"/></filter><filter id="sh2" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#2a1a4a" style="flood-opacity:calc(var(--sh)*.7)"/></filter><marker id="ah" viewBox="0 0 10 10" refX="8.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path class="mk" d="M1 1.5 8.5 5 1 8.5z" stroke-linejoin="round" stroke="var(--arrow)" stroke-width="1"/></marker><marker id="ahp" viewBox="0 0 10 10" refX="8.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path class="mk-pri" d="M1 1.5 8.5 5 1 8.5z" stroke-linejoin="round" stroke="var(--pri)" stroke-width="1"/></marker><marker id="ahe" viewBox="0 0 10 10" refX="8.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path class="mk-err" d="M1 1.5 8.5 5 1 8.5z" stroke-linejoin="round" stroke="var(--err)" stroke-width="1"/></marker></defs><rect class="bg" width="1640" height="560"/><text class="disp" x="48" y="64" font-size="30" font-weight="600" letter-spacing="-0.4">Decodificar como…: de una señal detectada a un decodificador</text><text class="f-var" x="48" y="92" font-size="15">El detector OS-CFAR marca las portadoras; un clic crea una instancia sobre esa frecuencia (dec_add).</text><rect class="card sh" x="48.0" y="150.0" width="330.0" height="200.0" rx="20" /><g class="g-spec"><circle class="gtint" cx="84.0" cy="186.0" r="20.0"/><g transform="translate(74.0 176.0) scale(0.8333)" class="ico" style="color:var(--g);stroke-width:2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></g></g><text class="disp" x="116.0" y="184.0" font-size="16" font-weight="600">1  Señal detectada</text><text class="f-var" x="116.0" y="202.0" font-size="12.5" font-weight="400">barra amarilla sobre el espectro</text><text class="f-var" x="116.0" y="220.1" font-size="12.5" font-weight="400">frecuencia, ancho y SNR</text><rect class="card sh" x="440.0" y="150.0" width="330.0" height="200.0" rx="20" /><g class="g-av"><circle class="gtint" cx="476.0" cy="186.0" r="20.0"/><g transform="translate(466.0 176.0) scale(0.8333)" class="ico" style="color:var(--g);stroke-width:2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></g></g><text class="disp" x="508.0" y="184.0" font-size="16" font-weight="600">2  Clic en la marca</text><text class="f-var" x="508.0" y="202.0" font-size="12.5" font-weight="400">menú: sintonizar o</text><text class="f-var" x="508.0" y="220.1" font-size="12.5" font-weight="400">«decodificar como…»</text><rect class="card sh" x="832.0" y="150.0" width="330.0" height="200.0" rx="20" /><g class="g-bc"><circle class="gtint" cx="868.0" cy="186.0" r="20.0"/><g transform="translate(858.0 176.0) scale(0.8333)" class="ico" style="color:var(--g);stroke-width:2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></g></g><text class="disp" x="900.0" y="184.0" font-size="16" font-weight="600">3  Elegir protocolo</text><text class="f-var" x="900.0" y="202.0" font-size="12.5" font-weight="400">catálogo con su tasa y ancho</text><text class="f-var" x="900.0" y="220.1" font-size="12.5" font-weight="400">narrow o wide</text><rect class="card sh" x="1224.0" y="150.0" width="330.0" height="200.0" rx="20" /><g class="g-mar"><circle class="gtint" cx="1260.0" cy="186.0" r="20.0"/><g transform="translate(1250.0 176.0) scale(0.8333)" class="ico" style="color:var(--g);stroke-width:2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></g></g><text class="disp" x="1292.0" y="184.0" font-size="16" font-weight="600">4  Instancia en marcha</text><text class="f-var" x="1292.0" y="202.0" font-size="12.5" font-weight="400">pestaña Decodificadores</text><text class="f-var" x="1292.0" y="220.1" font-size="12.5" font-weight="400">activo · esperando · error</text><path class="arr pri" d="M378.0 250.0 L440.0 250.0" marker-end="url(#ahp)"/><path class="arr pri" d="M770.0 250.0 L832.0 250.0" marker-end="url(#ahp)"/><path class="arr pri" d="M1162.0 250.0 L1224.0 250.0" marker-end="url(#ahp)"/><rect class="secc" x="1216.2" y="398.0" width="345.6" height="24" rx="12.0"/><text class="f-on" x="1227.2" y="414.3" font-size="12" font-weight="500">esperando = el canal queda fuera de la banda capturada</text><text class="f-var" x="48.0" y="500.0" font-size="12.5" font-weight="400">Orden enviada: {"cmd":"dec_add","proto":"…","freq":Hz}. Con un perfil, el host puede crear las instancias solo (auto:true).</text></svg><script>if(/[?&]dark/.test(location.search))document.documentElement.dataset.theme="dark";</script></body></html>

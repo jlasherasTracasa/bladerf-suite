@@ -131,3 +131,19 @@ ganancia, bias-tee, FFT, fps, umbral del detector y localización. Se guarda des
 `engine_on_config_change` (escritura atómica `tmp` + `rename`). Con una fuente de
 fichero no se sobrescriben centro y tasa. No se guardan instancias de
 decodificadores ni perfil.
+
+## Diagramas de secuencia e hilos
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/arquitectura/secuencia-bloque-dark.png">
+  <img src="img/arquitectura/secuencia-bloque-light.png" alt="Recorrido de un bloque de muestras">
+</picture>
+
+*Figura 3. Un bloque de IQ desde el lector hasta el navegador.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/arquitectura/hilos-cerrojos-dark.png">
+  <img src="img/arquitectura/hilos-cerrojos-light.png" alt="Hilos y cerrojos">
+</picture>
+
+*Figura 4. Hilos, cerrojos y el orden `h->lock → inst->m`.*

@@ -1,5 +1,115 @@
 # AIS (Automatic Identification System)
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/ais-cadena-dark.png">
+  <img src="../img/decoders/ais-cadena-light.png" alt="Cadena de procesado de AIS">
+</picture>
+
+*Figura. Cadena de procesado de AIS, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/ais-ojo-dark.png">
+  <img src="../img/decoders/ais-ojo-light.png" alt="Cascada de la grabación (audio real remodulado) y diagrama de ojo GMSK de una señal generada.">
+</picture>
+
+*Figura. Cascada de la grabación (audio real remodulado) y diagrama de ojo GMSK de una señal generada.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/ais-estructura-dark.png">
+  <img src="../img/decoders/ais-estructura-light.png" alt="Ráfaga AIS y mensaje 1/2/3.">
+</picture>
+
+*Figura. Ráfaga AIS y mensaje 1/2/3.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: audio FM real (sigidwiki «AIS Sound», Long Beach) remodulado en FM. Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay ais.sigmf-meta --decode ais@161975000 --print`).
+
+Evento `dec` (campo `msg`, listas largas recortadas):
+
+```json
+{
+  "msg_type": 1,
+  "repeat": 0,
+  "mmsi": 367003560,
+  "class": "A",
+  "lat": 33.767095,
+  "lon": -118.217115,
+  "sog": 0.0,
+  "cog": 0.0,
+  "navstat": 15,
+  "navstat_name": "no definido",
+  "second": 45,
+  "nmea": "!AIVDM,1,1,,A,15N07b?P00GRn56CDU`@0?wJ0HKO,0*22",
+  "text": "AIS 1 MMSI 367003560 33.7671,-118.2171 0.0 kn"
+}
+```
+
+Último `dec_state` recibido por WebSocket (`state`, listas recortadas):
+
+```json
+{
+  "msgs": 2,
+  "count": 2,
+  "ships": [
+    {
+      "mmsi": 367003560,
+      "name": "",
+      "callsign": "",
+      "shiptype": 0,
+      "shiptype_name": "",
+      "lat": 33.76709,
+      "lon": -118.21712,
+      "sog": 0.0,
+      "cog": 0.0,
+      "navstat": 15,
+      "navstat_name": "no definido",
+      "dest": "",
+      "bow": 0,
+      "stern": 0,
+      "port": 0,
+      "stbd": 0,
+      "draught": 0.0,
+      "class": "A",
+      "msgs": 1,
+      "age": 13
+    },
+    {
+      "mmsi": 366982310,
+      "name": "",
+      "callsign": "",
+      "shiptype": 0,
+      "shiptype_name": "",
+      "lat": 33.76142,
+      "lon": -118.21862,
+      "sog": 0.0,
+      "cog": 205.6,
+      "navstat": 0,
+      "navstat_name": "en marcha con motor",
+      "dest": "",
+      "bow": 0,
+      "stern": 0,
+      "port": 0,
+      "stbd": 0,
+      "draught": 0.0,
+      "class": "A",
+      "msgs": 1,
+      "age": 2
+    }
+  ]
+}
+```
+
+<!-- vision-rapida:fin -->
+
 Fuentes: ITU-R M.1371 (capa física anexo 2 §3, mensajes), tabla de campos de
 gpsd "AIVDM/AIVDO protocol decoding", Kanaan et al. arXiv:2503.01744 (PLVA, no
 implementado).

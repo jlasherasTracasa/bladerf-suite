@@ -68,3 +68,61 @@ x[n] ─► NCO e^{-jωn} ─► firdec ÷D1 ─► firdec ÷D2 … ─► cfir 
 saltos. El trabajo se hace en bloques internos de 8192 muestras (cabe en caché
 aunque la entrada sea de 61 Msps). Resultado medido (`test_dsp`): un interferente a
 +30 kHz de un canal de 16 kHz queda a −93 dB.
+
+## Respuestas medidas con nuestro código
+
+Las gráficas siguientes no son esquemas: salen de pequeños programas en C que enlazan con `src/dsp/*` y vuelcan los coeficientes y las medidas reales (`build/doc2b/*.c`), y se dibujan con `docs/img/src/plots_tecnicos.py`. Los datos se regeneran con `build/doc2b/build.sh` y `python3 docs/img/src/plots_tecnicos.py`.
+
+### Diezmador `firdec_t`
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/dsp/firdec-respuesta-dark.png">
+  <img src="img/dsp/firdec-respuesta-light.png" alt="Respuesta del diezmador FIR de Kaiser">
+</picture>
+
+*Figura. Etapa ÷8 de un DDC con canal de 200 kHz, a 2,4 Msps (209 taps) y a 61,44 Msps (73 taps). La banda rosa es la que, al diezmar, aliasea sobre la banda útil: queda por debajo de −68 dB, como pide el diseño de Kaiser (atenuación de 65 dB y más).*
+
+### Filtro de canal `cfir_t`
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/dsp/cfir-canal-dark.png">
+  <img src="img/dsp/cfir-canal-light.png" alt="Respuesta de los filtros de canal complejos">
+</picture>
+
+*Figura. Paso banda de coeficientes complejos de `channel.c` a 48 kHz. USB y LSB dejan pasar solo un lado (200–2700 Hz y −2700…−200 Hz); AM y NFM son simétricos. Nota: `cfir_process` guarda los coeficientes en orden inverso (el coeficiente `i` multiplica a `x[n−(N−1−i)]`), por lo que la respuesta al impulso es el vector invertido.*
+
+### Remuestreador polifásico
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/dsp/resamp-respuesta-dark.png">
+  <img src="img/dsp/resamp-respuesta-light.png" alt="Respuesta del remuestreador polifásico">
+</picture>
+
+*Figura. Prototipo del banco de 256 fases (WFM, 240 → 48 kHz con corte de 15 kHz; NFM, 52 083 → 48 kHz con corte de 3 kHz). La línea punteada marca fs_out/2; lo que queda por encima de `fs_out − corte` aliasearía sobre la banda de audio.*
+
+### Ventana Blackman-Harris
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/dsp/ventana-blackman-harris-dark.png">
+  <img src="img/dsp/ventana-blackman-harris-light.png" alt="Ventana Blackman-Harris y su espectro">
+</picture>
+
+*Figura. `window_blackman_harris()` con N = 1024: lóbulos laterales a −93 dB (el primero de la rectangular está a −13 dB y el de Hann a −31 dB) a cambio de un lóbulo principal más ancho (ENBW = 2,006 bins).*
+
+### Calibración del espectro
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/dsp/calibracion-espectro-dark.png">
+  <img src="img/dsp/calibracion-espectro-light.png" alt="Calibración del espectro">
+</picture>
+
+*Figura. Un tono complejo de amplitud conocida frente al pico medido por `spectrum.c` (ruta CPU; la ruta GPU da el mismo resultado en `tests/test_gpu.c`, error máximo 0,09 dB). Con el tono entre dos bins la ventana pierde 0,8 dB (festoneo); por debajo de −70 dBFS el tono se acerca a la cuantización de 12 bits.*
+
+### BER con y sin Viterbi
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/dsp/ber-viterbi-dark.png">
+  <img src="img/dsp/ber-viterbi-light.png" alt="BER con y sin Viterbi">
+</picture>
+
+*Figura. Código K = 7 (0171, 0133) de `fec.c`, BPSK sobre AWGN. A 4 dB de Eb/N0 el Viterbi blando de tasa 1/2 llega a ≈ 10⁻⁵ mientras que el duro ronda 5·10⁻³ y la señal sin codificar 1,3·10⁻²; el blando cuantizado a 8 bits (int8) es indistinguible del de coma flotante. La curva 3/4 es el punzonado de DVB.*

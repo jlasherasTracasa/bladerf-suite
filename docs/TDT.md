@@ -1,5 +1,49 @@
 # TDT: demux, audio MP2 y reproductor (TV2)
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/decoders/tdt-cadena-dark.png">
+  <img src="img/decoders/tdt-cadena-light.png" alt="Cadena de procesado de TDT">
+</picture>
+
+*Figura. Cadena de procesado de TDT, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/decoders/dvbt-senal-dark.png">
+  <img src="img/decoders/dvbt-senal-light.png" alt="La señal real del C32 de Pamplona (misma figura que en dvbt.md).">
+</picture>
+
+*Figura. La señal real del C32 de Pamplona (misma figura que en dvbt.md).*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/decoders/tdt-estructura-dark.png">
+  <img src="img/decoders/tdt-estructura-light.png" alt="Paquete TS y pila de tablas.">
+</picture>
+
+*Figura. Paquete TS y pila de tablas.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/decoders/tdt-estructura2-dark.png">
+  <img src="img/decoders/tdt-estructura2-light.png" alt="Capas de la TDT.">
+</picture>
+
+*Figura. Capas de la TDT.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: sin evento JSON propio: el decodificador `tdt` publica el mensaje `tv` y los binarios 5 y 6 por WebSocket. Sacado de ejecutar el decodificador, no escrito a mano.
+
+Esta grabación no produce ningún evento `dec`.
+
+<!-- vision-rapida:fin -->
+
 ## Figuras
 
 <picture>

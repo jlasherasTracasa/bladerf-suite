@@ -1,5 +1,101 @@
 # VDL Modo 2 (D8PSK 10 500 Bd, AVLC, ACARS sobre AVLC)
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/vdl2-cadena-dark.png">
+  <img src="../img/decoders/vdl2-cadena-light.png" alt="Cadena de procesado de VDL2">
+</picture>
+
+*Figura. Cadena de procesado de VDL2, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/vdl2-senal-dark.png">
+  <img src="../img/decoders/vdl2-senal-light.png" alt="Cascada real y constelación D8PSK diferencial, sintética y real.">
+</picture>
+
+*Figura. Cascada real y constelación D8PSK diferencial, sintética y real.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/vdl2-estructura-dark.png">
+  <img src="../img/decoders/vdl2-estructura-light.png" alt="Ráfaga D8PSK y trama AVLC.">
+</picture>
+
+*Figura. Ráfaga D8PSK y trama AVLC.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: señal sintética de `--gen vdl2` (la grabación real sigue sin decodificarse). Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay vdl2.sigmf-meta --decode vdl2@136975000 --print`).
+
+Evento `dec` (campo `msg`, listas largas recortadas):
+
+```json
+{
+  "proto": "vdl2",
+  "src": "4840D6",
+  "src_type": "aircraft",
+  "dst": "2B4F10",
+  "dst_type": "ground",
+  "cr": 0,
+  "ftype": "I",
+  "ctrl": 0,
+  "poll": 0,
+  "ns": 0,
+  "nr": 0,
+  "len": 67,
+  "info": "01322E45432D4D585915483133024D313241494233343536234446422F5758204C454D44204C45424C20313531…",
+  "acars": {
+    "mode": "2",
+    "reg": "EC-MXY",
+    "label": "H1",
+    "block": "3",
+    "msgno": "M12A",
+    "flight": "IB3456",
+    "body": "#DFB/WX LEMD LEBL 151200Z 27008KT CAVOK"
+  },
+  "cfo_hz": -1,
+  "rs_fixed": 0,
+  "level_db": -7.1,
+  "text": "4840D6(aircraft) > 2B4F10(ground) I ns=0 nr=0 | ACARS EC-MXY IB3456 H1: #DFB/WX LEMD LEBL …"
+}
+```
+
+Último `dec_state` recibido por WebSocket (`state`, listas recortadas):
+
+```json
+{
+  "bursts": 174,
+  "frames": 72,
+  "bad": 102,
+  "ac": [
+    {
+      "icao": "4840D6",
+      "msgs": 72,
+      "age": 0,
+      "reg": "EC-MXY",
+      "flight": "IB3456",
+      "last": "H1 IB3456: #DFB/WX LEMD LEBL 151200Z 27008KT CAVOK"
+    }
+  ],
+  "gs": [
+    {
+      "icao": "2B4F10",
+      "msgs": 0,
+      "age": 0,
+      "last": ""
+    }
+  ]
+}
+```
+
+<!-- vision-rapida:fin -->
+
 Ficheros: `src/decoders/vdl2.c` (demodulador y tablas), `vdl2_frame.{c,h}` (cabecera, aleatorizador,
 RS entrelazado, HDLC), `vdl2_avlc.{c,h}` (direcciones y control AVLC), `acars_blk.{c,h}` (ACARS sobre
 AVLC), `src/tx/mod_vdl2.c`, `tests/test_vdl2.c`.

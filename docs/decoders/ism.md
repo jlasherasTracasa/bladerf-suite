@@ -1,5 +1,88 @@
 # ISM genérico (OOK/FSK, 433/868 MHz) — `ism`
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/ism-cadena-dark.png">
+  <img src="../img/decoders/ism-cadena-light.png" alt="Cadena de procesado de ISM">
+</picture>
+
+*Figura. Cadena de procesado de ISM, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/ism-senal-dark.png">
+  <img src="../img/decoders/ism-senal-light.png" alt="Envolvente OOK real y un tren de pulsos con el umbral adaptativo.">
+</picture>
+
+*Figura. Envolvente OOK real y un tren de pulsos con el umbral adaptativo.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/ism-estructura-dark.png">
+  <img src="../img/decoders/ism-estructura-light.png" alt="Esquema de un sensor meteorológico OOK.">
+</picture>
+
+*Figura. Esquema de un sensor meteorológico OOK.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: señal sintética de `--gen ism` (los .cu8 reales de rtl_433_tests dan los mismos modelos). Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay ism.sigmf-meta --decode ism@433920000 --print`).
+
+Evento `dec` (campo `msg`, listas largas recortadas):
+
+```json
+{
+  "kind": "sensor",
+  "model": "Oregon-THN132N",
+  "id": 65,
+  "modulation": "OOK",
+  "channel": 2,
+  "temperature_c": 16.3,
+  "battery_low": false,
+  "hex": "EC4021403610F2",
+  "text": "Oregon-THN132N id 65 ch 2  16.3 °C"
+}
+```
+
+Último `dec_state` recibido por WebSocket (`state`, listas recortadas):
+
+```json
+{
+  "bursts": 28,
+  "decoded": 28,
+  "generic": 0,
+  "devices": [
+    {
+      "model": "Oregon-THN132N",
+      "id": 65,
+      "channel": 2,
+      "temperature_c": 16.3,
+      "battery_low": false,
+      "count": 4,
+      "age_s": 3
+    },
+    {
+      "model": "Oregon-THGR810",
+      "id": 66,
+      "channel": 3,
+      "temperature_c": 17.6,
+      "humidity": 46,
+      "battery_low": false,
+      "count": 5,
+      "age_s": 2
+    },
+    "… (5 más)"
+  ]
+}
+```
+
+<!-- vision-rapida:fin -->
+
 Decodificador estrecho (N) a 250 kHz complejos, canal de 200 kHz. Detecta ráfagas
 OOK y FSK, extrae el tren de pulsos, lo pasa por protocolos conocidos con
 validación de suma/CRC y, si ninguno encaja, por un analizador automático de

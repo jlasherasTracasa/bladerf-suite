@@ -1,5 +1,78 @@
 # DAB / DAB+ (modo I) — `src/decoders/dab.c`, `dab.h`, `src/tx/mod_dab.c`
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/dab-cadena-dark.png">
+  <img src="../img/decoders/dab-cadena-light.png" alt="Cadena de procesado de DAB">
+</picture>
+
+*Figura. Cadena de procesado de DAB, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/dab-senal-dark.png">
+  <img src="../img/decoders/dab-senal-light.png" alt="Símbolo nulo, espectro y constelación D-QPSK de una grabación real.">
+</picture>
+
+*Figura. Símbolo nulo, espectro y constelación D-QPSK de una grabación real.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/dab-estructura-dark.png">
+  <img src="../img/decoders/dab-estructura-light.png" alt="Trama de transmisión del modo I y FIB.">
+</picture>
+
+*Figura. Trama de transmisión del modo I y FIB.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: grabación IQ real (sigidwiki «DAB», ensemble 5001). Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay dab.sigmf-meta --decode dab --print`).
+
+Evento `dec` (campo `msg`, listas largas recortadas):
+
+```json
+{
+  "kind": "ensemble",
+  "eid": "5001",
+  "label": "Towercom",
+  "text": "Ensemble 5001 \"Towercom\""
+}
+```
+
+Último `dec_state` recibido por WebSocket (`state`, listas recortadas):
+
+```json
+{
+  "ensemble": {
+    "id": "5001",
+    "label": "Towercom"
+  },
+  "services": [
+    {
+      "sid": "5201",
+      "label": "Radio Slovensko",
+      "subch": 0,
+      "kbps": 96,
+      "prot": "EEP 3-A",
+      "type": "DAB+",
+      "pty": 0
+    }
+  ],
+  "sync": true,
+  "frames": 1,
+  "fib_ok": 324,
+  "fib_bad": 0,
+  "cfo_hz": -49
+}
+```
+
+<!-- vision-rapida:fin -->
+
 Decodificador WIDE a **2 048 000 S/s exactos** (muestras Q11 crudas). Obtiene del FIC
 el conjunto (EId, etiqueta) y los servicios (SId, etiqueta, subcanal, tasa, protección,
 tipo). **No decodifica el MSC (audio).** Referencia: ETSI EN 300 401.

@@ -145,3 +145,12 @@ desequilibrio IQ + DC (`cs_iq_imbalance`, `cs_iq_munu`), deriva de reloj
 (`cs_clock_drift`), AWGN y la cadena completa `cs_apply(cs_cfg_t)`. Su test
 (`test_chan_sim.c`) comprueba potencia, P(|h|²<0,1), autocorrelación J0, varianza de
 Rice, potencias de caminos, varianza del ruido de fase, IRR teórico, deriva en ppm y SNR.
+
+## Ejemplo de medida de ancho ocupado
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/tx/ancho-ocupado-dark.png">
+  <img src="img/tx/ancho-ocupado-light.png" alt="Ancho ocupado de tres señales generadas">
+</picture>
+
+*Figura. Medida de `measure_occupancy()` (tx.c) sobre la señal por omisión de los moduladores `aprs`, `ism` y `lora`: periodograma de Welch con FFT de 1024 y ventana Blackman-Harris, bordes que dejan el 0,01 % de la potencia a cada lado. Las bandas sombreadas contienen el 99,98 % de la potencia; el ancho medido decide si la señal cabe en una banda permitida. Los datos los vuelca `build/doc2b/occupancy.c`, que replica el algoritmo (la función original es privada). Para `aprs` el resultado coincide con el que escribe `--gen aprs` en su salida: 13 969 Hz.*

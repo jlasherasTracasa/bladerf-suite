@@ -1,0 +1,69 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Solución de problemas</title><style>
+:root{
+  --bg:#FEF7FF; --card:#F3EDF7; --card2:#ECE6F0; --card3:#E6E0E9;
+  --on:#1D1B20; --var:#49454F; --outline:#CAC4D0; --outlv:#E0D9E3;
+  --pri:#6750A4; --onpri:#FFFFFF; --pric:#EADDFF; --onpric:#21005D;
+  --sec:#625B71; --secc:#E8DEF8; --terc:#FFD8E4; --ter:#7D5260;
+  --arrow:#6F6A78; --sh:.16; --ok:#26702B; --warn:#8A5700; --err:#B3261E;
+  --w0:#F3EDF7; --w1:#E8DEF8; --w2:#D9C9F3; --w3:#C4B0EA; --w4:#A58BDB; --w5:#8467C8; --w6:#6750A4; --w7:#4F378B;
+  --bc:#6A4FB3;
+  --av:#0A6AA6;
+  --mar:#08695B;
+  --data:#8A5700;
+  --ham:#B0286A;
+  --spec:#26702B;
+}
+
+:root[data-theme=dark]{
+  --bg:#141218; --card:#211F26; --card2:#2B2930; --card3:#36343B;
+  --on:#E6E0E9; --var:#CAC4D0; --outline:#49454F; --outlv:#3A3741;
+  --pri:#D0BCFF; --onpri:#381E72; --pric:#4F378B; --onpric:#EADDFF;
+  --sec:#CCC2DC; --secc:#4A4458; --terc:#633B48; --ter:#EFB8C8;
+  --arrow:#A29DAB; --sh:.5; --ok:#A6E3A1; --warn:#F7C873; --err:#F2B8B5;
+  --w0:#1D1B20; --w1:#2B2336; --w2:#3A2D55; --w3:#4F378B; --w4:#6B4FB0; --w5:#8E6FD6; --w6:#B79CF5; --w7:#E8DDFF;
+  --bc:#D0BCFF;
+  --av:#8ECDF7;
+  --mar:#7ED6C4;
+  --data:#F7C873;
+  --ham:#F2A7C3;
+  --spec:#A6E3A1;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg)}
+body{font-family:'Inter','Inter Display',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+svg{display:block}
+text{font-family:'Inter',system-ui,sans-serif;fill:var(--on)}
+.disp{font-family:'Inter Display','Inter',sans-serif}
+.mono{font-family:'DejaVu Sans Mono',ui-monospace,monospace}
+.f-var{fill:var(--var)} .f-pri{fill:var(--pri)} .f-sec{fill:var(--sec)} .f-on{fill:var(--on)}
+.f-ok{fill:var(--ok)} .f-warn{fill:var(--warn)} .f-err{fill:var(--err)} .f-onpri{fill:var(--onpri)} .f-onpric{fill:var(--onpric)}
+.bg{fill:var(--bg)}
+.card{fill:var(--card);stroke:var(--outlv);stroke-width:1}
+.card2{fill:var(--card2);stroke:var(--outlv);stroke-width:1}
+.card3{fill:var(--card3)}
+.pri{fill:var(--pri)} .pric{fill:var(--pric)} .secc{fill:var(--secc)} .terc{fill:var(--terc)}
+.ghost{fill:none;stroke:var(--outline);stroke-width:1.5;stroke-dasharray:5 5}
+.line{stroke:var(--outline);stroke-width:1;fill:none}
+.arr{stroke:var(--arrow);stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.arr.pri{stroke:var(--pri);stroke-width:2.5}
+.arr.dash{stroke-dasharray:6 6}
+.arr.err{stroke:var(--err)}
+.mk{fill:var(--arrow)} .mk-pri{fill:var(--pri)} .mk-err{fill:var(--err)}
+.ico{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sh{filter:url(#sh)}
+.sh2{filter:url(#sh2)}
+.lbl{fill:var(--bg);stroke:var(--outlv)}
+.g-bc{--g:var(--bc)}
+.g-av{--g:var(--av)}
+.g-mar{--g:var(--mar)}
+.g-data{--g:var(--data)}
+.g-ham{--g:var(--ham)}
+.g-spec{--g:var(--spec)}
+
+.gt{fill:var(--g)} .gs{stroke:var(--g);fill:none}
+.gtint{fill:color-mix(in srgb,var(--g) 17%,var(--card));stroke:color-mix(in srgb,var(--g) 45%,transparent);stroke-width:1.2}
+.gsolid{fill:var(--g)}
+.gdot{fill:var(--g)}
+.w0{fill:var(--w0)}.w1{fill:var(--w1)}.w2{fill:var(--w2)}.w3{fill:var(--w3)}.w4{fill:var(--w4)}.w5{fill:var(--w5)}.w6{fill:var(--w6)}.w7{fill:var(--w7)}
+</style></head><body><svg xmlns="http://www.w3.org/2000/svg" width="1700" height="760" viewBox="0 0 1700 760"><defs><filter id="sh" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#2a1a4a" style="flood-opacity:var(--sh)"/></filter><filter id="sh2" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#2a1a4a" style="flood-opacity:calc(var(--sh)*.7)"/></filter><marker id="ah" viewBox="0 0 10 10" refX="8.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path class="mk" d="M1 1.5 8.5 5 1 8.5z" stroke-linejoin="round" stroke="var(--arrow)" stroke-width="1"/></marker><marker id="ahp" viewBox="0 0 10 10" refX="8.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path class="mk-pri" d="M1 1.5 8.5 5 1 8.5z" stroke-linejoin="round" stroke="var(--pri)" stroke-width="1"/></marker><marker id="ahe" viewBox="0 0 10 10" refX="8.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path class="mk-err" d="M1 1.5 8.5 5 1 8.5z" stroke-linejoin="round" stroke="var(--err)" stroke-width="1"/></marker></defs><rect class="bg" width="1700" height="760"/><text class="disp" x="48" y="64" font-size="30" font-weight="600" letter-spacing="-0.4">Solución de problemas</text><text class="f-var" x="48" y="92" font-size="15">De síntoma a causa y remedio: equipo ocupado, overruns, sin señal y antena.</text><rect class="card sh" x="48.0" y="130.0" width="380.0" height="560.0" rx="26" /><g class="g-ham"><circle class="gtint" cx="91.0" cy="173.0" r="23.0"/><g transform="translate(79.5 161.5) scale(0.9583)" class="ico" style="color:var(--g);stroke-width:2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z"/><path d="M12 9v4M12 17h.01"/></g></g><text class="disp" x="128.0" y="182.0" font-size="19" font-weight="600">Equipo ocupado</text><text class="f-var" x="72.0" y="250.0" font-size="11.5" font-weight="700" letter-spacing="1">SÍNTOMA</text><text class="f-on" x="72.0" y="278.0" font-size="13.5" font-weight="400">El servidor no abre el bladeRF:</text><text class="f-on" x="72.0" y="302.0" font-size="13.5" font-weight="400">otro programa lo tiene (p. ej. el</text><text class="f-on" x="72.0" y="326.0" font-size="13.5" font-weight="400">servicio OpenWebRX).</text><path class="line" d="M72 390 L404 390"/><text class="f-pri" x="72.0" y="424.0" font-size="11.5" font-weight="700" letter-spacing="1">REMEDIO</text><text class="f-on" x="72.0" y="452.0" font-size="13.5" font-weight="400">Libéralo antes de arrancar.</text><text class="f-on" x="72.0" y="476.0" font-size="13.5" font-weight="400">No hay dos procesos a la vez.</text><text class="f-on" x="72.0" y="500.0" font-size="13.5" font-weight="400">Prueba con --replay para descartar</text><text class="f-on" x="72.0" y="524.0" font-size="13.5" font-weight="400">el resto del montaje.</text><rect class="card sh" x="452.0" y="130.0" width="380.0" height="560.0" rx="26" /><g class="g-data"><circle class="gtint" cx="495.0" cy="173.0" r="23.0"/><g transform="translate(483.5 161.5) scale(0.9583)" class="ico" style="color:var(--g);stroke-width:2"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></g></g><text class="disp" x="532.0" y="182.0" font-size="19" font-weight="600">Overruns</text><text class="f-var" x="476.0" y="250.0" font-size="11.5" font-weight="700" letter-spacing="1">SÍNTOMA</text><text class="f-on" x="476.0" y="278.0" font-size="13.5" font-weight="400">stats.overruns sube: el USB o</text><text class="f-on" x="476.0" y="302.0" font-size="13.5" font-weight="400">libbladeRF perdieron muestras.</text><text class="f-on" x="476.0" y="326.0" font-size="13.5" font-weight="400">stats.drops: el DSP no da abasto.</text><path class="line" d="M476 390 L808 390"/><text class="f-pri" x="476.0" y="424.0" font-size="11.5" font-weight="700" letter-spacing="1">REMEDIO</text><text class="f-on" x="476.0" y="452.0" font-size="13.5" font-weight="400">Baja la tasa (122,88 Msps es el</text><text class="f-on" x="476.0" y="476.0" font-size="13.5" font-weight="400">límite del USB, no del motor).</text><text class="f-on" x="476.0" y="500.0" font-size="13.5" font-weight="400">Puerto USB 3 directo, cable corto.</text><text class="f-on" x="476.0" y="524.0" font-size="13.5" font-weight="400">Libera CPU o activa la GPU.</text><rect class="card sh" x="856.0" y="130.0" width="380.0" height="560.0" rx="26" /><g class="g-av"><circle class="gtint" cx="899.0" cy="173.0" r="23.0"/><g transform="translate(887.5 161.5) scale(0.9583)" class="ico" style="color:var(--g);stroke-width:2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></g></g><text class="disp" x="936.0" y="182.0" font-size="19" font-weight="600">Sin señal</text><text class="f-var" x="880.0" y="250.0" font-size="11.5" font-weight="700" letter-spacing="1">SÍNTOMA</text><text class="f-on" x="880.0" y="278.0" font-size="13.5" font-weight="400">Cascada plana o solo ruido.</text><text class="f-on" x="880.0" y="302.0" font-size="13.5" font-weight="400">Decodificadores en «esperando».</text><text class="f-on" x="880.0" y="326.0" font-size="13.5" font-weight="400">Audio mudo.</text><path class="line" d="M880 390 L1212 390"/><text class="f-pri" x="880.0" y="424.0" font-size="11.5" font-weight="700" letter-spacing="1">REMEDIO</text><text class="f-on" x="880.0" y="452.0" font-size="13.5" font-weight="400">Comprueba centro y tasa: el canal</text><text class="f-on" x="880.0" y="476.0" font-size="13.5" font-weight="400">debe caer dentro de la banda.</text><text class="f-on" x="880.0" y="500.0" font-size="13.5" font-weight="400">Sube la ganancia o activa el AGC.</text><text class="f-on" x="880.0" y="524.0" font-size="13.5" font-weight="400">Mira el bias-tee solo si el LNA lo pide.</text><rect class="card sh" x="1260.0" y="130.0" width="380.0" height="560.0" rx="26" /><g class="g-spec"><circle class="gtint" cx="1303.0" cy="173.0" r="23.0"/><g transform="translate(1291.5 161.5) scale(0.9583)" class="ico" style="color:var(--g);stroke-width:2"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/></g></g><text class="disp" x="1340.0" y="182.0" font-size="19" font-weight="600">Antena</text><text class="f-var" x="1284.0" y="250.0" font-size="11.5" font-weight="700" letter-spacing="1">SÍNTOMA</text><text class="f-on" x="1284.0" y="278.0" font-size="13.5" font-weight="400">Con la antena actual no llega ADS-B</text><text class="f-on" x="1284.0" y="302.0" font-size="13.5" font-weight="400">(1090 MHz) ni UHF suficiente para</text><text class="f-on" x="1284.0" y="326.0" font-size="13.5" font-weight="400">la TDT (SNR ≈ −9 dB frente a ≈ 16 dB).</text><path class="line" d="M1284 390 L1616 390"/><text class="f-pri" x="1284.0" y="424.0" font-size="11.5" font-weight="700" letter-spacing="1">REMEDIO</text><text class="f-on" x="1284.0" y="452.0" font-size="13.5" font-weight="400">ADS-B: monopolo de ¼ de onda</text><text class="f-on" x="1284.0" y="476.0" font-size="13.5" font-weight="400">(≈ 6,9 cm), alto y despejado.</text><text class="f-on" x="1284.0" y="500.0" font-size="13.5" font-weight="400">TDT: toma de antena de TV de casa</text><text class="f-on" x="1284.0" y="524.0" font-size="13.5" font-weight="400">con adaptador F/IEC a SMA.</text></svg><script>if(/[?&]dark/.test(location.search))document.documentElement.dataset.theme="dark";</script></body></html>

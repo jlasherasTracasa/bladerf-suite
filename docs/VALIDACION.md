@@ -82,3 +82,19 @@ recortes), descargas en `build/v2/dl/<fuente>/` (datos no fiables, Python siempr
 
 Trampas: las WAV de sigidwiki declaran a veces otra tasa; las grabaciones de RS41 son audio FM, no IQ; los cu8 de rtl_433_tests
 necesitan pasar el fragmento dos veces (el detector aprende el ruido en ≈ 8 ms; `--replay` repite en bucle).
+
+## Figuras de evidencia
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/validacion/validacion-grupo-a-dark.png">
+  <img src="img/validacion/validacion-grupo-a-light.png" alt="Evidencia del grupo A">
+</picture>
+
+*Figura 1. Grupo A: lo que se contrastó con grabaciones públicas y decodificadores de referencia.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/validacion/validacion-grupo-b-dark.png">
+  <img src="img/validacion/validacion-grupo-b-light.png" alt="Evidencia del grupo B">
+</picture>
+
+*Figura 2. Grupo B. Las barras muestran decodificados / referencia solo donde la tabla da un recuento.*

@@ -1,5 +1,85 @@
 # ADS-B / Mode S (1090 MHz)
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/decoders/adsb-cadena-dark.png">
+  <img src="img/decoders/adsb-cadena-light.png" alt="Cadena de procesado de ADS-B">
+</picture>
+
+*Figura. Cadena de procesado de ADS-B, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/decoders/adsb-trama-dark.png">
+  <img src="img/decoders/adsb-trama-light.png" alt="Módulo de una trama DF17 a 2 Msps: preámbulo y 112 bits PPM. Señal sintética.">
+</picture>
+
+*Figura. Módulo de una trama DF17 a 2 Msps: preámbulo y 112 bits PPM. Señal sintética.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/decoders/adsb-estructura-dark.png">
+  <img src="img/decoders/adsb-estructura-light.png" alt="Campos de la trama DF17 y del ME de posición.">
+</picture>
+
+*Figura. Campos de la trama DF17 y del ME de posición.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: señal sintética de `--gen adsb` (no hay grabación real a 1090 MHz). Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay adsb.sigmf-meta --decode adsb --print`).
+
+Evento `dec` (campo `msg`, listas largas recortadas):
+
+```json
+{
+  "icao": "4840D6",
+  "kind": "new",
+  "cs": "KLM1023",
+  "text": "Nuevo 4840D6 KLM1023"
+}
+```
+
+Último `dec_state` recibido por WebSocket (`state`, listas recortadas):
+
+```json
+{
+  "msgs": 1436,
+  "rate": 98.2,
+  "fps": 98.2,
+  "fix1": 0,
+  "fix2": 0,
+  "crc": 0,
+  "rej": 0,
+  "rx": false,
+  "ac": [
+    {
+      "icao": "4840D6",
+      "cs": "KLM1023",
+      "cat": "A0",
+      "alt": 38000,
+      "gs": 159.2,
+      "trk": 182.9,
+      "vr": -832,
+      "lat": 52.25721,
+      "lon": 3.91937,
+      "seen_pos": 0.0,
+      "gnd": false,
+      "msgs": 1436,
+      "seen": 0.0,
+      "rssi": -1.9,
+      "adsb": true
+    }
+  ]
+}
+```
+
+<!-- vision-rapida:fin -->
+
 ## Figuras
 
 <picture>

@@ -1,5 +1,73 @@
 # RDS (Radio Data System) — `src/decoders/rds.c`, `src/tx/mod_rds.c`
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/rds-cadena-dark.png">
+  <img src="../img/decoders/rds-cadena-light.png" alt="Cadena de procesado de RDS">
+</picture>
+
+*Figura. Cadena de procesado de RDS, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/rds-senal-dark.png">
+  <img src="../img/decoders/rds-senal-light.png" alt="Espectro MPX con piloto y subportadora de 57 kHz, y constelación BPSK. Señal sintética.">
+</picture>
+
+*Figura. Espectro MPX con piloto y subportadora de 57 kHz, y constelación BPSK. Señal sintética.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/rds-estructura-dark.png">
+  <img src="../img/decoders/rds-estructura-light.png" alt="Estructura de los grupos 0A y 2A.">
+</picture>
+
+*Figura. Estructura de los grupos 0A y 2A.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: señal sintética de `--gen rds` (RDS real validado aparte con `redsea`, sin grabación IQ). Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay rds.sigmf-meta --decode rds@100300000 --print`).
+
+Evento `dec` (campo `msg`, listas largas recortadas):
+
+```json
+{
+  "kind": "pi",
+  "pi": "C201",
+  "pty": 0,
+  "pty_name": "None",
+  "text": "PI C201"
+}
+```
+
+Último `dec_state` recibido por WebSocket (`state`, listas recortadas):
+
+```json
+{
+  "pi": "C201",
+  "ps": "BLADERF",
+  "rt": "BladeRF Lab RDS: hola mundo!",
+  "pty": 10,
+  "pty_name": "Pop music",
+  "tp": true,
+  "ta": false,
+  "ms": "music",
+  "af": [
+    100300000,
+    98500000,
+    "… (1 más)"
+  ],
+  "ct": "2026-11-15 12:34 +01:00"
+}
+```
+
+<!-- vision-rapida:fin -->
+
 Decodificador NARROW a 250 000 S/s complejos (DDC con filtro de 200 kHz). El perfil
 `fm` lo crea con `follow:true`: al cambiar de emisora la interfaz envía `dec_tune`.
 

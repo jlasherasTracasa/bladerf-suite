@@ -1,5 +1,98 @@
 # DSC VHF (ITU-R M.493, canal 70)
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/dsc-cadena-dark.png">
+  <img src="../img/decoders/dsc-cadena-light.png" alt="Cadena de procesado de DSC">
+</picture>
+
+*Figura. Cadena de procesado de DSC, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/dsc-senal-dark.png">
+  <img src="../img/decoders/dsc-senal-light.png" alt="Cascada y frecuencia instantánea FSK de 1200 bd. Señal sintética.">
+</picture>
+
+*Figura. Cascada y frecuencia instantánea FSK de 1200 bd. Señal sintética.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/dsc-estructura-dark.png">
+  <img src="../img/decoders/dsc-estructura-light.png" alt="Secuencia de símbolos de una llamada.">
+</picture>
+
+*Figura. Secuencia de símbolos de una llamada.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: señal sintética de `--gen dsc` (no hay grabación real de DSC). Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay dsc.sigmf-meta --decode dsc@156525000 --print`).
+
+Evento `dec` (campo `msg`, listas largas recortadas):
+
+```json
+{
+  "fs": 112,
+  "format": "socorro",
+  "category": 112,
+  "category_name": "socorro",
+  "mmsi": "224123456",
+  "nature": 107,
+  "nature_name": "no designado",
+  "lat": 43.35,
+  "lon": -8.4,
+  "utc": "12:34",
+  "subsequent": 126,
+  "eos": 127,
+  "ext": [],
+  "symbols": [
+    112,
+    22,
+    "… (15 más)"
+  ],
+  "text": "DSC socorro MMSI 224123456 no designado pos 43.350,-8.400"
+}
+```
+
+Último `dec_state` recibido por WebSocket (`state`, listas recortadas):
+
+```json
+{
+  "calls_total": 16,
+  "count": 16,
+  "calls": [
+    {
+      "fs": 112,
+      "format": "socorro",
+      "mmsi": "224123456",
+      "to": "",
+      "category": "socorro",
+      "nature": "no designado",
+      "lat": 43.35,
+      "lon": -8.4,
+      "age": 1
+    },
+    {
+      "fs": 102,
+      "format": "área geográfica",
+      "mmsi": "224123456",
+      "to": "0422080320",
+      "category": "seguridad",
+      "nature": "",
+      "age": 2
+    },
+    "… (14 más)"
+  ]
+}
+```
+
+<!-- vision-rapida:fin -->
+
 Fuentes: ITU-R M.493 (formato) y M.541. **El PDF de M.493 no se pudo leer en el
 entorno de desarrollo**; se contrastó con el código del decodificador libre
 CuteSDR (`dsp/fskdemod.cpp`) y con el resumen de GopherTrunk.

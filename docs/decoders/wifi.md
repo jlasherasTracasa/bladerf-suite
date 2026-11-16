@@ -1,5 +1,104 @@
 # WiFi (balizas 802.11b/g/a) — `wifi`
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/wifi-cadena-dark.png">
+  <img src="../img/decoders/wifi-cadena-light.png" alt="Cadena de procesado de WiFi">
+</picture>
+
+*Figura. Cadena de procesado de WiFi, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/wifi-senal-dark.png">
+  <img src="../img/decoders/wifi-senal-light.png" alt="Cascada y ráfagas de balizas 802.11b en la grabación real.">
+</picture>
+
+*Figura. Cascada y ráfagas de balizas 802.11b en la grabación real.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/wifi-estructura-dark.png">
+  <img src="../img/decoders/wifi-estructura-light.png" alt="PPDU y trama Beacon.">
+</picture>
+
+*Figura. PPDU y trama Beacon.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: grabación IQ real (sigidwiki «Wi-Fi», balizas 802.11b DSSS). Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay wifi.sigmf-meta --decode wifi --print`).
+
+Evento `dec` (campo `msg`, listas largas recortadas):
+
+```json
+{
+  "text": "UPC5035941 38:43:7D:EF:D8:7C canal 1 WPA2+WPA n -54 dBFS",
+  "kind": "beacon",
+  "event": "new",
+  "ssid": "UPC5035941",
+  "bssid": "38:43:7D:EF:D8:7C",
+  "channel": 1,
+  "band": "2.4",
+  "security": "WPA2+WPA",
+  "std": "n",
+  "phy": "DSSS 1M",
+  "rates": "1,2,5.5,11,9,18,36,54,6,12,24,48",
+  "rssi": -54.2,
+  "beacon_ms": 102.4,
+  "count": 1
+}
+```
+
+Último `dec_state` recibido por WebSocket (`state`, listas recortadas):
+
+```json
+{
+  "nets": [
+    {
+      "ssid": "UPC5035941",
+      "bssid": "38:43:7D:EF:D8:7C",
+      "channel": 1,
+      "band": "2.4",
+      "security": "WPA2+WPA",
+      "std": "n",
+      "phy": "DSSS 1M",
+      "rates": "1,2,5.5,11,9,18,36,54,6,12,24,48",
+      "rssi": -53.7,
+      "beacon_ms": 102.4,
+      "count": 2,
+      "age": 3
+    },
+    {
+      "ssid": "UPC8443073.2,4G",
+      "bssid": "34:2C:C4:18:95:3B",
+      "channel": 1,
+      "band": "2.4",
+      "security": "WPA2+WPA",
+      "std": "n",
+      "phy": "DSSS 1M",
+      "rates": "1,2,5.5,11,9,18,36,54,6,12,24,48",
+      "rssi": -36.0,
+      "beacon_ms": 102.4,
+      "count": 44,
+      "age": 0
+    },
+    "… (11 más)"
+  ],
+  "bursts": 1496,
+  "frames": 188,
+  "fcs_err": 256,
+  "skipped": 11,
+  "noise_dbfs": -84.5
+}
+```
+
+<!-- vision-rapida:fin -->
+
 Decodificador **wide** (20 Msps exactos, muestras Q11) que descubre redes WiFi a
 partir de sus **balizas (Beacon)** y **respuestas de sondeo (Probe Response)**.
 

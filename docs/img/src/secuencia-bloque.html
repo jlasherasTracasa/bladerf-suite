@@ -1,0 +1,69 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Recorrido de un bloque</title><style>
+:root{
+  --bg:#FEF7FF; --card:#F3EDF7; --card2:#ECE6F0; --card3:#E6E0E9;
+  --on:#1D1B20; --var:#49454F; --outline:#CAC4D0; --outlv:#E0D9E3;
+  --pri:#6750A4; --onpri:#FFFFFF; --pric:#EADDFF; --onpric:#21005D;
+  --sec:#625B71; --secc:#E8DEF8; --terc:#FFD8E4; --ter:#7D5260;
+  --arrow:#6F6A78; --sh:.16; --ok:#26702B; --warn:#8A5700; --err:#B3261E;
+  --w0:#F3EDF7; --w1:#E8DEF8; --w2:#D9C9F3; --w3:#C4B0EA; --w4:#A58BDB; --w5:#8467C8; --w6:#6750A4; --w7:#4F378B;
+  --bc:#6A4FB3;
+  --av:#0A6AA6;
+  --mar:#08695B;
+  --data:#8A5700;
+  --ham:#B0286A;
+  --spec:#26702B;
+}
+
+:root[data-theme=dark]{
+  --bg:#141218; --card:#211F26; --card2:#2B2930; --card3:#36343B;
+  --on:#E6E0E9; --var:#CAC4D0; --outline:#49454F; --outlv:#3A3741;
+  --pri:#D0BCFF; --onpri:#381E72; --pric:#4F378B; --onpric:#EADDFF;
+  --sec:#CCC2DC; --secc:#4A4458; --terc:#633B48; --ter:#EFB8C8;
+  --arrow:#A29DAB; --sh:.5; --ok:#A6E3A1; --warn:#F7C873; --err:#F2B8B5;
+  --w0:#1D1B20; --w1:#2B2336; --w2:#3A2D55; --w3:#4F378B; --w4:#6B4FB0; --w5:#8E6FD6; --w6:#B79CF5; --w7:#E8DDFF;
+  --bc:#D0BCFF;
+  --av:#8ECDF7;
+  --mar:#7ED6C4;
+  --data:#F7C873;
+  --ham:#F2A7C3;
+  --spec:#A6E3A1;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg)}
+body{font-family:'Inter','Inter Display',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+svg{display:block}
+text{font-family:'Inter',system-ui,sans-serif;fill:var(--on)}
+.disp{font-family:'Inter Display','Inter',sans-serif}
+.mono{font-family:'DejaVu Sans Mono',ui-monospace,monospace}
+.f-var{fill:var(--var)} .f-pri{fill:var(--pri)} .f-sec{fill:var(--sec)} .f-on{fill:var(--on)}
+.f-ok{fill:var(--ok)} .f-warn{fill:var(--warn)} .f-err{fill:var(--err)} .f-onpri{fill:var(--onpri)} .f-onpric{fill:var(--onpric)}
+.bg{fill:var(--bg)}
+.card{fill:var(--card);stroke:var(--outlv);stroke-width:1}
+.card2{fill:var(--card2);stroke:var(--outlv);stroke-width:1}
+.card3{fill:var(--card3)}
+.pri{fill:var(--pri)} .pric{fill:var(--pric)} .secc{fill:var(--secc)} .terc{fill:var(--terc)}
+.ghost{fill:none;stroke:var(--outline);stroke-width:1.5;stroke-dasharray:5 5}
+.line{stroke:var(--outline);stroke-width:1;fill:none}
+.arr{stroke:var(--arrow);stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.arr.pri{stroke:var(--pri);stroke-width:2.5}
+.arr.dash{stroke-dasharray:6 6}
+.arr.err{stroke:var(--err)}
+.mk{fill:var(--arrow)} .mk-pri{fill:var(--pri)} .mk-err{fill:var(--err)}
+.ico{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sh{filter:url(#sh)}
+.sh2{filter:url(#sh2)}
+.lbl{fill:var(--bg);stroke:var(--outlv)}
+.g-bc{--g:var(--bc)}
+.g-av{--g:var(--av)}
+.g-mar{--g:var(--mar)}
+.g-data{--g:var(--data)}
+.g-ham{--g:var(--ham)}
+.g-spec{--g:var(--spec)}
+
+.gt{fill:var(--g)} .gs{stroke:var(--g);fill:none}
+.gtint{fill:color-mix(in srgb,var(--g) 17%,var(--card));stroke:color-mix(in srgb,var(--g) 45%,transparent);stroke-width:1.2}
+.gsolid{fill:var(--g)}
+.gdot{fill:var(--g)}
+.w0{fill:var(--w0)}.w1{fill:var(--w1)}.w2{fill:var(--w2)}.w3{fill:var(--w3)}.w4{fill:var(--w4)}.w5{fill:var(--w5)}.w6{fill:var(--w6)}.w7{fill:var(--w7)}
+</style></head><body><svg xmlns="http://www.w3.org/2000/svg" width="1760" height="1010" viewBox="0 0 1760 1010"><defs><filter id="sh" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#2a1a4a" style="flood-opacity:var(--sh)"/></filter><filter id="sh2" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#2a1a4a" style="flood-opacity:calc(var(--sh)*.7)"/></filter><marker id="ah" viewBox="0 0 10 10" refX="8.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path class="mk" d="M1 1.5 8.5 5 1 8.5z" stroke-linejoin="round" stroke="var(--arrow)" stroke-width="1"/></marker><marker id="ahp" viewBox="0 0 10 10" refX="8.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path class="mk-pri" d="M1 1.5 8.5 5 1 8.5z" stroke-linejoin="round" stroke="var(--pri)" stroke-width="1"/></marker><marker id="ahe" viewBox="0 0 10 10" refX="8.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path class="mk-err" d="M1 1.5 8.5 5 1 8.5z" stroke-linejoin="round" stroke="var(--err)" stroke-width="1"/></marker></defs><rect class="bg" width="1760" height="1010"/><text class="disp" x="48" y="64" font-size="30" font-weight="600" letter-spacing="-0.4">Recorrido de un bloque de muestras</text><text class="f-var" x="48" y="92" font-size="15">Del lector al navegador: lo que ocurre con cada bloque de IQ (src/engine.c, src/decoders/host.c, src/net/server.c).</text><rect class="card sh" x="65.0" y="116.0" width="250.0" height="84.0" rx="20" /><g class="g-data"><circle class="gtint" cx="99.0" cy="150.0" r="18.0"/><g transform="translate(90.0 141.0) scale(0.7500)" class="ico" style="color:var(--g);stroke-width:2"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v3a3 3 0 0 0 3 3h6"/></g></g><text class="disp" x="129.0" y="148.0" font-size="16" font-weight="600">Lector</text><text class="f-var" x="129.0" y="166.0" font-size="12.5" font-weight="400">reader_main</text><path class="ghost" d="M190 206 L190 970"/><rect class="card sh" x="345.0" y="116.0" width="250.0" height="84.0" rx="20" /><g class="g-spec"><circle class="gtint" cx="379.0" cy="150.0" r="18.0"/><g transform="translate(370.0 141.0) scale(0.7500)" class="ico" style="color:var(--g);stroke-width:2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></g></g><text class="disp" x="409.0" y="148.0" font-size="16" font-weight="600">Hilo DSP</text><text class="f-var" x="409.0" y="166.0" font-size="12.5" font-weight="400">dsp_main</text><path class="ghost" d="M470 206 L470 970"/><rect class="card sh" x="635.0" y="116.0" width="250.0" height="84.0" rx="20" /><g class="g-bc"><circle class="gtint" cx="669.0" cy="150.0" r="18.0"/><g transform="translate(660.0 141.0) scale(0.7500)" class="ico" style="color:var(--g);stroke-width:2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></g></g><text class="disp" x="699.0" y="148.0" font-size="16" font-weight="600">Host</text><text class="f-var" x="699.0" y="166.0" font-size="12.5" font-weight="400">dec_host_feed</text><path class="ghost" d="M760 206 L760 970"/><rect class="card sh" x="925.0" y="116.0" width="250.0" height="84.0" rx="20" /><g class="g-av"><circle class="gtint" cx="959.0" cy="150.0" r="18.0"/><g transform="translate(950.0 141.0) scale(0.7500)" class="ico" style="color:var(--g);stroke-width:2"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v3a3 3 0 0 0 3 3h6"/></g></g><text class="disp" x="989.0" y="148.0" font-size="16" font-weight="600">Instancia</text><text class="f-var" x="989.0" y="166.0" font-size="12.5" font-weight="400">dec-&lt;id&gt;</text><path class="ghost" d="M1050 206 L1050 970"/><rect class="card sh" x="1215.0" y="116.0" width="250.0" height="84.0" rx="20" /><g class="g-mar"><circle class="gtint" cx="1249.0" cy="150.0" r="18.0"/><g transform="translate(1240.0 141.0) scale(0.7500)" class="ico" style="color:var(--g);stroke-width:2"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/></g></g><text class="disp" x="1279.0" y="148.0" font-size="16" font-weight="600">Servidor</text><text class="f-var" x="1279.0" y="166.0" font-size="12.5" font-weight="400">server_send_*</text><path class="ghost" d="M1340 206 L1340 970"/><rect class="card sh" x="1495.0" y="116.0" width="250.0" height="84.0" rx="20" /><g class="g-ham"><circle class="gtint" cx="1529.0" cy="150.0" r="18.0"/><g transform="translate(1520.0 141.0) scale(0.7500)" class="ico" style="color:var(--g);stroke-width:2"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></g></g><text class="disp" x="1559.0" y="148.0" font-size="16" font-weight="600">Navegador</text><text class="f-var" x="1559.0" y="166.0" font-size="12.5" font-weight="400">WebSocket</text><path class="ghost" d="M1620 206 L1620 970"/><path class="arr " d="M190.0 228.0 L222.0 228.0 Q230.0 228.0 230.0 236.0 L230.0 246.0 Q230.0 254.0 222.0 254.0 L190.0 254.0" marker-end="url(#ah)"/><text class="f-on" x="240.0" y="245.0" font-size="12.5" font-weight="500">source_read()</text><path class="arr " d="M190.0 296.0 L470.0 296.0" marker-end="url(#ah)"/><text class="f-on" x="330.0" y="287.0" font-size="12.5" font-weight="500" text-anchor="middle">ring_push → ring_pop</text><text class="f-var" x="330.0" y="313.0" font-size="11.5" font-weight="400" text-anchor="middle">anillo de 0,25–0,5 s</text><path class="arr " d="M470.0 350.0 L502.0 350.0 Q510.0 350.0 510.0 358.0 L510.0 368.0 Q510.0 376.0 502.0 376.0 L470.0 376.0" marker-end="url(#ah)"/><text class="f-on" x="520.0" y="367.0" font-size="12.5" font-weight="500">espectro (CPU o GPU)</text><path class="arr pri" d="M470.0 402.0 L1340.0 402.0" marker-end="url(#ahp)"/><text class="f-on" x="905.0" y="393.0" font-size="12.5" font-weight="500" text-anchor="middle">tipo 1 · espectro por difusión</text><path class="arr pri" d="M1340.0 402.0 L1620.0 402.0" marker-end="url(#ahp)"/><text class="f-on" x="1480.0" y="393.0" font-size="12.5" font-weight="500" text-anchor="middle"></text><path class="arr " d="M470.0 454.0 L760.0 454.0" marker-end="url(#ah)"/><text class="f-on" x="615.0" y="445.0" font-size="12.5" font-weight="500" text-anchor="middle">dec_host_feed(iq, buf, n)</text><text class="f-var" x="615.0" y="471.0" font-size="11.5" font-weight="400" text-anchor="middle">copia UNA vez; contador de referencias</text><path class="arr " d="M760.0 520.0 L1050.0 520.0" marker-end="url(#ah)"/><text class="f-on" x="905.0" y="511.0" font-size="12.5" font-weight="500" text-anchor="middle">encola el puntero</text><text class="f-var" x="905.0" y="537.0" font-size="11.5" font-weight="400" text-anchor="middle">cola de 16 bloques; llena → drops</text><path class="arr " d="M1050.0 574.0 L1082.0 574.0 Q1090.0 574.0 1090.0 582.0 L1090.0 592.0 Q1090.0 600.0 1082.0 600.0 L1050.0 600.0" marker-end="url(#ah)"/><text class="f-on" x="1100.0" y="591.0" font-size="12.5" font-weight="500">DDC → decoder</text><path class="arr " d="M1050.0 638.0 L1340.0 638.0" marker-end="url(#ah)"/><text class="f-on" x="1195.0" y="629.0" font-size="12.5" font-weight="500" text-anchor="middle">emit(): JSON dec</text><text class="f-var" x="1195.0" y="655.0" font-size="11.5" font-weight="400" text-anchor="middle">límite 200 eventos/s</text><path class="arr " d="M1340.0 638.0 L1620.0 638.0" marker-end="url(#ah)"/><text class="f-on" x="1480.0" y="629.0" font-size="12.5" font-weight="500" text-anchor="middle"></text><path class="arr " d="M470.0 692.0 L502.0 692.0 Q510.0 692.0 510.0 700.0 L510.0 710.0 Q510.0 718.0 502.0 718.0 L470.0 718.0" marker-end="url(#ah)"/><text class="f-on" x="520.0" y="709.0" font-size="12.5" font-weight="500">canales de audio (Q11)</text><path class="arr pri" d="M470.0 750.0 L1340.0 750.0" marker-end="url(#ahp)"/><text class="f-on" x="905.0" y="741.0" font-size="12.5" font-weight="500" text-anchor="middle">tipo 2 · audio al cliente que escucha</text><path class="arr pri" d="M1340.0 750.0 L1620.0 750.0" marker-end="url(#ahp)"/><text class="f-on" x="1480.0" y="741.0" font-size="12.5" font-weight="500" text-anchor="middle"></text><path class="arr " d="M470.0 804.0 L760.0 804.0" marker-end="url(#ah)"/><text class="f-on" x="615.0" y="795.0" font-size="12.5" font-weight="500" text-anchor="middle">dec_host_periodic()</text><text class="f-var" x="615.0" y="821.0" font-size="11.5" font-weight="400" text-anchor="middle">dec_state y dec_list ~1 Hz</text><path class="arr dash" d="M760.0 858.0 L1340.0 858.0" marker-end="url(#ah)"/><text class="f-on" x="1050.0" y="849.0" font-size="12.5" font-weight="500" text-anchor="middle">dec_state · dec_list</text><path class="arr dash" d="M1340.0 858.0 L1620.0 858.0" marker-end="url(#ah)"/><text class="f-on" x="1480.0" y="849.0" font-size="12.5" font-weight="500" text-anchor="middle"></text></svg><script>if(/[?&]dark/.test(location.search))document.documentElement.dataset.theme="dark";</script></body></html>

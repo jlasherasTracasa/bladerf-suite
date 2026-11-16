@@ -1,5 +1,76 @@
 # LoRa / LoRaWAN (`lora`)
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/lora-cadena-dark.png">
+  <img src="../img/decoders/lora-cadena-light.png" alt="Cadena de procesado de LoRa">
+</picture>
+
+*Figura. Cadena de procesado de LoRa, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/lora-senal-dark.png">
+  <img src="../img/decoders/lora-senal-light.png" alt="Cascada de chirps y picos tras el dechirp (referencia de loratx).">
+</picture>
+
+*Figura. Cascada de chirps y picos tras el dechirp (referencia de loratx).*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/lora-estructura-dark.png">
+  <img src="../img/decoders/lora-estructura-light.png" alt="Paquete LoRa y cabecera explícita.">
+</picture>
+
+*Figura. Paquete LoRa y cabecera explícita.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: referencia generada con la herramienta externa loratx (no es una captura en el aire). Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay lora.sigmf-meta --decode lora@868100000 --print`).
+
+Evento `dec` (campo `msg`, listas largas recortadas):
+
+```json
+{
+  "sf": 9,
+  "bw": 125000,
+  "cr": "4/5",
+  "crc_ok": true,
+  "has_crc": true,
+  "ldro": false,
+  "sync": "0x12",
+  "len": 21,
+  "snr": 12.9,
+  "rssi": -30.5,
+  "cfo": 0,
+  "sfo_ppm": 0,
+  "fec_fixed": 0,
+  "payload": "486F6C61206465736465206C6F7261747820313233",
+  "text": "LoRa SF9 BW125 CR4/5 21 B, SNR 12.9 dB"
+}
+```
+
+Último `dec_state` recibido por WebSocket (`state`, listas recortadas):
+
+```json
+{
+  "bw": 125000,
+  "frames": 73,
+  "lorawan": 0,
+  "preambles": 73,
+  "hdr_bad": 0,
+  "crc_bad": 0,
+  "devices": []
+}
+```
+
+<!-- vision-rapida:fin -->
+
 Decodificador NARROW a 500 kS/s (`src/decoders/lora.c`, capa física en
 `lora_phy.{h,c}`; modulador `src/tx/mod_lora.c`). Cubre SF7–SF12 con BW de 125 o
 250 kHz, cabecera explícita, CR 4/5–4/8, LDRO y CRC de carga, y analiza la capa

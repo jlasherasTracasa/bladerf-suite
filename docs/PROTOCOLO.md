@@ -200,3 +200,23 @@ El PTS está desenrollado (33 bits → 64) y nunca retrocede: ante un salto del 
 
 `GET /` y ficheros de `web/`; `GET /api/status`; `GET /api/recordings`;
 `GET /recordings/<fichero>`. Por defecto solo `127.0.0.1` (`--host 0.0.0.0` para la LAN).
+
+## Diagramas
+
+### Mensajes binarios 1 a 6
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/protocolo/msg-binarios-dark.png">
+  <img src="img/protocolo/msg-binarios-light.png" alt="Mensajes binarios del WebSocket">
+</picture>
+
+*Figura. Disposición byte a byte de las cabeceras binarias; las casillas punteadas son los datos que siguen a cada cabecera.*
+
+### Una sesión WebSocket
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/protocolo/secuencia-ws-dark.png">
+  <img src="img/protocolo/secuencia-ws-light.png" alt="Sesión WebSocket">
+</picture>
+
+*Figura. Conexión, instantánea inicial, órdenes, flujo continuo y reconexión. El cliente web espera 0,5 s tras un corte y multiplica la espera por 1,7 en cada intento hasta 6 s (`web/js/ws.js`).*

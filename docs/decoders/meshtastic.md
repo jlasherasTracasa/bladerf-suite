@@ -1,5 +1,101 @@
 # Meshtastic (`meshtastic`)
 
+<!-- vision-rapida:inicio (generada por docs/img/src/doc_decoders.py) -->
+
+## Visión rápida
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/meshtastic-cadena-dark.png">
+  <img src="../img/decoders/meshtastic-cadena-light.png" alt="Cadena de procesado de Meshtastic">
+</picture>
+
+*Figura. Cadena de procesado de Meshtastic, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
+
+### Así es la señal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/meshtastic-senal-dark.png">
+  <img src="../img/decoders/meshtastic-senal-light.png" alt="Cascada y picos tras el dechirp (SF11, BW 250 kHz). Señal sintética.">
+</picture>
+
+*Figura. Cascada y picos tras el dechirp (SF11, BW 250 kHz). Señal sintética.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/meshtastic-estructura-dark.png">
+  <img src="../img/decoders/meshtastic-estructura-light.png" alt="Cabecera de 16 bytes y nonce de AES-CTR.">
+</picture>
+
+*Figura. Cabecera de 16 bytes y nonce de AES-CTR.*
+
+La procedencia de cada señal (grabación real o sintética) y qué parte del procesado es Python de ilustración y no el código C se indican en el pie de cada imagen.
+
+### Ejemplo de evento y de estado
+
+Procedencia: señal sintética de `--gen meshtastic`. Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay meshtastic.sigmf-meta --decode meshtastic@869525000 --print`).
+
+Evento `dec` (campo `msg`, listas largas recortadas):
+
+```json
+{
+  "from": "!a1b2c3d4",
+  "to": "^all",
+  "to_id": 4294967295,
+  "id": 439041024,
+  "hop_limit": 3,
+  "hop_start": 3,
+  "want_ack": false,
+  "via_mqtt": false,
+  "channel": 8,
+  "next_hop": 0,
+  "relay": 212,
+  "dup": false,
+  "sf": 11,
+  "bw": 250000,
+  "snr": 32.3,
+  "rssi": -2.0,
+  "len": 53,
+  "encrypted": false,
+  "portnum": 4,
+  "port": "NODEINFO_APP",
+  "long_name": "BladeRF Lab",
+  "short_name": "BLDR",
+  "hw_model": 255,
+  "text": "BLDR → ^all: nodeinfo «BladeRF Lab» (BLDR)"
+}
+```
+
+Último `dec_state` recibido por WebSocket (`state`, listas recortadas):
+
+```json
+{
+  "sf": 11,
+  "bw": 250000,
+  "packets": 19,
+  "decrypted": 19,
+  "encrypted": 0,
+  "dups": 15,
+  "nodes": [
+    {
+      "id": "!a1b2c3d4",
+      "short_name": "BLDR",
+      "long_name": "BladeRF Lab",
+      "lat": 40.4168,
+      "lon": -3.7038,
+      "alt": 667,
+      "battery": 87,
+      "voltage": 4.01,
+      "packets": 19,
+      "rssi": -2.0,
+      "snr": 31.7,
+      "hops": 0,
+      "age": 0
+    }
+  ]
+}
+```
+
+<!-- vision-rapida:fin -->
+
 Decodificador NARROW a 500 kS/s (`src/decoders/meshtastic.c`, utilidades en
 `meshtastic.h`, AES en `aes.{h,c}`, capa física en `lora_phy.{h,c}`; modulador
 `src/tx/mod_meshtastic.c`).
