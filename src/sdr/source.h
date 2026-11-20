@@ -93,6 +93,9 @@ void source_sc8_to_q11(const int8_t *in, int16_t *out, size_t n_values);
 /* Flujo de baja latencia (búferes pequeños) para el barrido; surte efecto en el
  * próximo source_start(). */
 void source_set_low_latency(source_t *s, bool on);
+/* Búferes y timeout de sync_rx adecuados al flujo del espectro FPGA (ver source.c); frame_period_s =
+ * K·N/tasa. Se aplica en el siguiente source_start(); false restaura los valores de IQ. */
+void source_set_spectrum_stream(source_t *s, bool on, double frame_period_s);
 
 /* E/S hacia la FPGA para fpga_lab (versión, config_gpio, Wishbone) con el dispositivo de
  * esta fuente. 0 si va bien; < 0 si la fuente no es un bladeRF. Los accesos a la

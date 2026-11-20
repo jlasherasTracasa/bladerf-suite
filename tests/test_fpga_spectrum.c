@@ -56,6 +56,7 @@ typedef struct {
     uint8_t msg[32 + N];
     size_t msglen;
     bool dropped;
+    int k;
 } cap_t;
 
 static void on_frame(void *ctx, const fpga_lab_frame_t *f)
@@ -63,8 +64,153 @@ static void on_frame(void *ctx, const fpga_lab_frame_t *f)
     cap_t *c = ctx;
     c->count++;
     c->dropped = f->dropped;
+    c->k = f->k;
     fpga_lab_frame_to_dbfs(f, c->db);
     c->msglen = spectrum_msg_pack(c->msg, c->db, f->n, SPEC_SRC_FPGA, 100e6, 30.72e6, -145.f, 0.6f);
+}
+
+
+/* ---- Placa simulada (registros lab 1.1 / 1.2) ------------------------------------------------ */
+typedef struct {
+    uint32_t reg[32];
+    uint32_t version;      /* 0x00010001 o 0x00010002 */
+    uint32_t gpio;
+    int bad_reads;         /* lecturas Wishbone de registros >= 16 en una 1.1 (devuelven 0xBAD0BAD0) */
+    int wr_k, wr_other, gpio_writes;
+    uint64_t time;         /* contador de 64 bit; sube en cada lectura */
+    uint32_t hi_latched;
+    int order_ok;          /* TIME_HI leído solo tras TIME_LO */
+    bool lo_read;
+} mock_t;
+
+static int m_ver(void *c, uint32_t *ma, uint32_t *mi, uint32_t *pa) { (void)c; *ma = 0; *mi = 16; *pa = 101; return 0; }
+static int m_gr(void *c, uint32_t *v) { *v = ((mock_t *)c)->gpio | (0xAu << 24); return 0; }
+static int m_gw(void *c, uint32_t v) { ((mock_t *)c)->gpio = v; ((mock_t *)c)->gpio_writes++; return 0; }
+static int m_wr(void *c, uint32_t a, uint32_t *v)
+{
+    mock_t *m = c;
+    const unsigned i = a / 4;
+    if (i >= 16 && m->version < FPGA_LAB_VERSION_1_2) { m->bad_reads++; *v = 0xBAD0BAD0u; return 0; }
+    if (i == FPGA_LAB_REG_TIME_LO) {
+        m->time += 0x7FFFFFFFull; /* el contador avanza entre lecturas: cruza el acarreo de 32 bit */
+        m->hi_latched = (uint32_t)(m->time >> 32);
+        m->lo_read = true;
+        *v = (uint32_t)m->time;
+        return 0;
+    }
+    if (i == FPGA_LAB_REG_TIME_HI) {
+        if (!m->lo_read) m->order_ok = 0;
+        *v = m->hi_latched;
+        return 0;
+    }
+    *v = m->reg[i];
+    return 0;
+}
+static int m_ww(void *c, uint32_t a, uint32_t v)
+{
+    mock_t *m = c;
+    if (a / 4 == FPGA_LAB_REG_K) m->wr_k++; else m->wr_other++;
+    m->reg[a / 4] = v;
+    return 0;
+}
+
+static void mock_init(mock_t *m, uint32_t version, fpga_lab_io_t *io)
+{
+    memset(m, 0, sizeof *m);
+    m->version = version;
+    m->order_ok = 1;
+    m->reg[FPGA_LAB_REG_ID] = FPGA_LAB_ID_VALUE;
+    m->reg[FPGA_LAB_REG_VERSION] = version;
+    m->reg[FPGA_LAB_REG_FEATURES] = 0x0DA1;
+    m->reg[FPGA_LAB_REG_CAPS] = 0x0F;
+    m->reg[FPGA_LAB_REG_SYNTH] = 0x100A0D0Cu;
+    m->reg[FPGA_LAB_REG_CNT_ADC_SAT] = 1234;
+    m->reg[FPGA_LAB_REG_SAT_WIN] = 6554; /* ~10 % de 65536 */
+    m->reg[FPGA_LAB_REG_CNT_SPEC_DROP] = 3;
+    m->time = 0xFFFFFFFF00ull;
+    io->ctx = m;
+    io->fpga_version = m_ver;
+    io->gpio_read = m_gr;
+    io->gpio_write = m_gw;
+    io->wb_read = m_wr;
+    io->wb_write = m_ww;
+}
+
+static void test_lab12_regs(void)
+{
+    mock_t m;
+    fpga_lab_io_t io;
+    fpga_lab_t lab;
+    char err[200];
+    /* 1.2: CAPS/SYNTH tras el probe, telemetría, marca de tiempo, K en caliente */
+    mock_init(&m, FPGA_LAB_VERSION_1_2, &io);
+    CHECK_EQ(fpga_lab_probe(&io, &lab, err, sizeof err), 1);
+    CHECK(lab.v12);
+    CHECK_EQ(lab.caps, 0x0F);
+    CHECK((lab.caps & FPGA_LAB_CAP_ADC_SAT) && (lab.caps & FPGA_LAB_CAP_TIMESTAMP));
+    CHECK_EQ(lab.synth, 0x100A0D0Cu);
+    fpga_lab_telem_t t;
+    CHECK_EQ(fpga_lab_read_telemetry(&lab, &t), 0);
+    CHECK_EQ(t.adc_sat, 1234);
+    CHECK_EQ(t.spec_drop, 3);
+    CHECK_NEAR(t.sat_pct, 10.0, 0.01);
+    uint64_t ts = 0;
+    CHECK_EQ(fpga_lab_read_time(&lab, &ts), 0);
+    CHECK(m.order_ok); /* TIME_LO antes que TIME_HI */
+    CHECK_EQ(ts, m.time); /* instantánea coherente a través del acarreo de 32 bit */
+    const int gw = m.gpio_writes;
+    CHECK_EQ(fpga_lab_set_k_hot(&lab, 40), 0);
+    CHECK_EQ(m.wr_k, 1);
+    CHECK_EQ(m.wr_other, 0);          /* ni N ni CTRL ni CLEAR */
+    CHECK_EQ(m.gpio_writes, gw);      /* rx_mux intacto */
+    CHECK_EQ(m.reg[FPGA_LAB_REG_K], 40);
+    CHECK(fpga_lab_set_k_hot(&lab, 0) < 0);
+
+    /* 1.1: no se leen los registros 16..22 (darían 0xBAD0BAD0) y no hay K en caliente */
+    mock_init(&m, FPGA_LAB_VERSION_1_1, &io);
+    CHECK_EQ(fpga_lab_probe(&io, &lab, err, sizeof err), 1);
+    CHECK(!lab.v12);
+    CHECK_EQ(lab.caps, 0);
+    CHECK(fpga_lab_read_telemetry(&lab, &t) < 0);
+    CHECK(fpga_lab_read_time(&lab, &ts) < 0);
+    CHECK(fpga_lab_set_k_hot(&lab, 40) < 0);
+    CHECK_EQ(m.bad_reads, 0);
+    CHECK_EQ(m.wr_k, 0);
+}
+
+/* K cambiado en caliente: la trama que se estaba leyendo sale truncada (la FPGA reinicia el motor y
+ * la siguiente empieza con el K nuevo). El intérprete debe descartarla, contar UN hueco y entregar
+ * las siguientes con el K nuevo en la cabecera. */
+static void test_hot_k_resync(void)
+{
+    cap_t cap;
+    memset(&cap, 0, sizeof cap);
+    fpga_lab_parser_t *p = fpga_lab_parser_create(on_frame, &cap);
+    static uint32_t st[6 * TOTAL];
+    int n = 0;
+    n += build_frame(st + n, 0, 100, 1000, 100000, false);
+    n += build_frame(st + n, 1, 100, 1000, 100000, false);
+    /* trama 2 truncada a mitad de los bins (cambio de K) ... */
+    uint32_t tmp[TOTAL];
+    build_frame(tmp, 2, 100, 1000, 100000, false);
+    memcpy(st + n, tmp, 300 * 4);
+    n += 300;
+    /* ... y la siguiente ya con K = 8 (cabecera palabra 2) */
+    build_frame(tmp, 3, 100, 1000, 100000, false);
+    tmp[2] = (uint32_t)N | (8u << 16);
+    memcpy(st + n, tmp, TOTAL * 4);
+    n += TOTAL;
+    n += build_frame(st + n, 4, 100, 1000, 100000, false);
+    st[n - TOTAL + 2] = (uint32_t)N | (8u << 16);
+    fpga_lab_parser_feed_words(p, st, (size_t)n);
+    uint64_t frames, skipped, gaps;
+    fpga_lab_parser_stats(p, &frames, &skipped, &gaps);
+    CHECK_EQ(frames, 4); /* 0, 1, 3 y 4: la 2 se descarta */
+    CHECK_EQ(cap.count, 4);
+    CHECK_EQ(cap.k, 8); /* la última trama ya lleva el K nuevo */
+    CHECK(gaps >= 1 && gaps <= 2); /* el hueco de la trama cortada (+ el salto de grupo 1→3) */
+    CHECK(skipped >= 300);
+    fpga_lab_parser_destroy(p);
 }
 
 static void test_params(void)
@@ -229,6 +375,8 @@ int main(void)
 {
     test_dbfs_fast();
     test_params();
+    test_lab12_regs();
+    test_hot_k_resync();
     test_frames();
     test_engine_file();
     return TEST_SUMMARY();

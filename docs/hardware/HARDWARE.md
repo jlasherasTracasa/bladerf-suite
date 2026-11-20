@@ -185,9 +185,29 @@ Fuente de espectro alternativa (CPU / GPU / FPGA) del motor, `src/engine.c` + `s
   vuelve a sondear al pedir `spectrum_src: "fpga"`.
 - **Activación** (hilo DSP, lector en pausa): RX parado → sondeo → N/K (`fpga_lab_choose_params`:
   N = FFT pedida en 1024…8192, K = rate/(fps·N), con relleno) → RX con rx_mux = 0 → 4 lecturas →
-  rx_mux = 3 («late-mux», §16.2 de FIRMWARE.md). El anillo pasa a bloques de 4096 palabras.
+  rx_mux = 3 («late-mux», §16.2 de FIRMWARE.md). El anillo pasa a bloques de una trama con relleno
+  (6144 palabras con N = 4096), así que una lectura = una imagen.
 - **Datos**: las palabras SC16 van al intérprete de tramas; cada trama se convierte a dBFS y sigue
   el camino normal (relleno del pico de continua, detector, S-meter, mensaje tipo 1 con `[1]` = 2).
 - **Salida**: `spectrum_src: "cpu"|"gpu"` (rx_mux = 0, se reinicia el flujo IQ y se reconstruye
   la FFT) o automática si no llegan tramas en 3 s. No hay IQ en modo FPGA: grabar y barrer se rechazan.
 - Pruebas sin placa: `tests/test_fpga_spectrum.c`. En placa, secuencia de prueba en el informe de F1.
+
+### 7.1 Lab 1.2: telemetría, K en caliente y búferes USB del modo espectro
+
+- **Versión**: tras el sondeo se lee `VERSION`; solo si es >= 1.2 (`lab.v12`) se leen CAPS/SYNTH y, cada 2 s
+  desde el hilo DSP, `SAT_WIN`, `CNT_ADC_SAT`, `CNT_SPEC_DROP` y la marca de 64 bit (`TIME_LO` y después
+  `TIME_HI`). En la 1.1 esos registros dan `0xBAD0BAD0`: no se leen y todo lo demás funciona igual.
+  `status.fpga_lab` añade `caps`, `synth`, `sat_pct` (= 100·SAT_WIN/65536), `adc_sat`, `spec_drop`, `time`
+  y `resyncs` (huecos esperados por un cambio de K en caliente; `gaps` ya no los incluye).
+- **K en caliente**: un cambio de fps con la misma N y tasa escribe solo `SPEC_K` (lab >= 1.2), sin parar
+  RX ni tocar `rx_mux`: se pierde la trama en acumulación y se trunca la que se leía; el intérprete
+  resincroniza por la magia (2 huecos: trama cortada + salto de grupo, absorbidos en `resyncs`). Un cambio
+  de N, de tasa o de FFT sigue la secuencia completa. En la 1.1 no se usa (no verificado en placa).
+- **Búferes de sync_rx** (`source_set_spectrum_stream`): con rx_mux = 3 el caudal es ~0,5 MB/s
+  (N = 4096, 20 img/s = 123 kpalabras/s), no 30 Msps. Se usan 16 búferes de 2048 palabras (8 KiB; el múltiplo
+  al que la FPGA rellena cada trama), 4 transferencias en vuelo (~32 K palabras = 5 imágenes de colchón
+  máximo) y timeout = 4 periodos de imagen (1…10 s; antes 3,5 s). El motor lee de a una trama
+  (6144 palabras): 20 lecturas/s en vez de 30 de 4096, sin esperar búferes enormes; latencia <= 1 imagen.
+  Al salir (`fpga_leave`) o fallar la entrada se restauran los búferes de IQ.
+- Banco sin placa (`tests/bench_fpga_spectrum.c`, con cambio de K simulado): 43 us/trama = 0,09 % de un núcleo.

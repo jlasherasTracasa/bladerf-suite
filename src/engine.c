@@ -86,6 +86,8 @@ struct engine {
     fpga_lab_t lab;
     bool lab_present_pub; /* copias de lab.present/version y del motor de espectro para "status" (bajo e->lock) */
     uint32_t lab_version_pub;
+    bool lab_v12_pub;
+    uint32_t lab_caps_pub, lab_synth_pub;
     bool spec_gpu;
     int ssrc_cmd;          /* 0 nada, 1 pasar a FPGA, 2 volver a CPU/GPU (bajo e->lock) */
     bool fpga_active;
@@ -93,6 +95,13 @@ struct engine {
     int fpga_n, fpga_k;
     float *fpga_db;        /* FPGA_SPEC_NMAX valores dBFS de la trama en curso */
     double fpga_t_last;    /* instante (monotónico) de la última trama útil */
+    uint64_t fpga_gaps_hot;   /* huecos esperados por un cambio de K en caliente (no se publican como pérdida) */
+    int fpga_hot_forgive;     /* huecos del parser aún por absorber tras un cambio en caliente */
+    uint64_t fpga_gp_seen;    /* gaps del parser ya contabilizados */
+    fpga_lab_telem_t fpga_tel; /* telemetría lab >= 1.2 (publicada bajo e->lock) */
+    bool fpga_tel_ok;
+    uint64_t fpga_time;        /* marca de tiempo de 64 bit de la FPGA (0 si no hay) */
+    double fpga_t_tel;         /* última lectura de telemetría (monotónico) */
     uint64_t fpga_frames, fpga_gaps; /* publicados en "status" (copia de las estadísticas del parser) */
     char spec_backend[160];
     char last_error[300];
@@ -567,7 +576,7 @@ static void send_status(engine_t *e);
  * DSP las pasa al intérprete y de cada trama sale el mismo mensaje binario tipo 1 que
  * produce la FFT de CPU/GPU, con el byte [1] = 2. Sin IQ no hay audio, grabación ni
  * decodificadores: el motor lo dice con un aviso y el host los pone en "waiting". */
-#define FPGA_BLOCK_WORDS 4096u      /* palabras por bloque del anillo en modo FPGA (~20 ms) */
+#define FPGA_TELEMETRY_S 2.0        /* periodo de lectura de la telemetría por Wishbone (lab >= 1.2) */
 #define FPGA_WARMUP_READS 4         /* búferes leídos con rx_mux = 0 antes de activar el espectro (late-mux) */
 #define FPGA_FRAME_TIMEOUT_S 3.0    /* sin tramas durante este tiempo → vuelta a CPU/GPU */
 #define FPGA_SUSPEND_MSG "Espectro FPGA activo: sin muestras IQ (el audio y los decodificadores esperan)"
@@ -580,6 +589,61 @@ static void fpga_frame_cb(void *ctx, const fpga_lab_frame_t *f)
         return; /* una trama de otro N (llegada tras un cambio de configuración) no se dibuja */
     fpga_lab_frame_to_dbfs(f, e->fpga_db);
     on_spectrum(e, e->fpga_db, f->n, f->k);
+}
+
+/* Detectores (señales y etiquetas) del tamaño de la trama de la FPGA. */
+static void fpga_rebuild_detectors(engine_t *e)
+{
+    detector_destroy(e->det);
+    e->det = detector_create(e->fpga_n);
+    detector_destroy(e->ldet);
+    e->ldet = e->lab_fn ? detector_create(e->fpga_n) : NULL;
+    e->lab_frames = 0;
+}
+
+/* Cambio de fps sin cambiar N ni la tasa: basta reescribir K con el flujo en marcha (lab >= 1.2).
+ * No se para RX ni se toca rx_mux, así que no hay timeouts de sync_rx; la trama en curso sale
+ * truncada y el intérprete resincroniza (un hueco esperado, que no se cuenta como pérdida).
+ * Devuelve true si lo ha hecho (o no había nada que cambiar). Hilo DSP. */
+static bool fpga_hot_k(engine_t *e, const engine_cfg_t *c)
+{
+    int log2n, k;
+    if (!e->fpga_active || !e->lab.v12 || c->rate > SOURCE_RATE_NATIVE_MAX)
+        return false;
+    if (fpga_lab_choose_params(c->fft_size, (double)c->rate, c->fps, &log2n, &k) < 0 || (1 << log2n) != e->fpga_n)
+        return false;
+    if (k == e->fpga_k)
+        return true;
+    if (fpga_lab_set_k_hot(&e->lab, k) < 0)
+        return false;
+    e->fpga_k = k;
+    e->fpga_hot_forgive = 2; /* trama en acumulación perdida + trama truncada */
+    e->fpga_t_last = now_monotonic();
+    pthread_mutex_lock(&e->lock);
+    snprintf(e->spec_backend, sizeof e->spec_backend, "FPGA lab (N=%d, K=%d, %.1f imágenes/s)", e->fpga_n, k,
+             (double)c->rate / ((double)e->fpga_n * k));
+    pthread_mutex_unlock(&e->lock);
+    LOG_I("Espectro FPGA: K=%d en caliente (%.1f imágenes/s)", k, (double)c->rate / ((double)e->fpga_n * k));
+    return true;
+}
+
+/* Lee la telemetría de la lab 1.2 (saturación del ADC, tramas perdidas, marca de tiempo). Cada
+ * acceso Wishbone es una transferencia de control USB: solo cada FPGA_TELEMETRY_S. Hilo DSP. */
+static void fpga_poll_telemetry(engine_t *e, double now)
+{
+    if (!e->fpga_active || !e->lab.v12 || now - e->fpga_t_tel < FPGA_TELEMETRY_S)
+        return;
+    e->fpga_t_tel = now;
+    fpga_lab_telem_t t;
+    uint64_t ts = 0;
+    const bool ok = fpga_lab_read_telemetry(&e->lab, &t) == 0;
+    const bool okt = fpga_lab_read_time(&e->lab, &ts) == 0;
+    pthread_mutex_lock(&e->lock);
+    e->fpga_tel_ok = ok;
+    if (ok)
+        e->fpga_tel = t;
+    e->fpga_time = okt ? ts : 0;
+    pthread_mutex_unlock(&e->lock);
 }
 
 static void fpga_publish(engine_t *e, bool active)
@@ -622,6 +686,8 @@ static int fpga_enter(engine_t *e, const engine_cfg_t *c, char *err, size_t el)
     bool started = false;
     /* 1) RX parado: es seguro tocar la imagen. Detección (también si la lab se cargó con el servidor ya en marcha). */
     source_stop(e->src);
+    /* Búferes USB para el caudal real del modo espectro (ver source_set_spectrum_stream) */
+    source_set_spectrum_stream(e->src, true, (double)k * (1 << log2n) / (double)c->rate);
     /* Reconfiguración con el modo ya activo (cambio de fps/N/tasa): el FPGA sigue con rx_mux = 3. Se deja
      * en 0 AHORA, con RX parado, para que el arranque del flujo sea el late-mux de siempre; hacerlo
      * después de arrancar (como hacía fpga_leave) deja el flujo IQ a 30 Msps sobre USB 2, que no lo
@@ -676,11 +742,15 @@ static int fpga_enter(engine_t *e, const engine_cfg_t *c, char *err, size_t el)
     if (rc < 0) {
         if (e->lab.present)
             fpga_lab_set_spectrum_mode(&e->lab, false);
+        source_set_spectrum_stream(e->src, false, 0);
         if (!started)
             source_start(e->src); /* recupera el flujo IQ que se paró para configurar */
         pthread_mutex_lock(&e->lock);
         e->lab_present_pub = e->lab.present;
         e->lab_version_pub = e->lab.version;
+        e->lab_v12_pub = e->lab.v12;
+        e->lab_caps_pub = e->lab.caps;
+        e->lab_synth_pub = e->lab.synth;
         pthread_mutex_unlock(&e->lock);
         reader_resume(e, true);
         return -1;
@@ -691,10 +761,15 @@ static int fpga_enter(engine_t *e, const engine_cfg_t *c, char *err, size_t el)
     e->fpga_k = k;
     e->fpga_t_last = now_monotonic();
     e->fpga_frames = e->fpga_gaps = 0;
-    ring_alloc(e, FPGA_BLOCK_WORDS, 1e6);
-    /* Ventana Blackman-Harris de N puntos (FFT de la FPGA) y detector del tamaño de la trama */
-    detector_destroy(e->det);
-    e->det = detector_create(e->fpga_n);
+    e->fpga_gaps_hot = 0;
+    e->fpga_hot_forgive = 0;
+    e->fpga_gp_seen = 0;
+    e->fpga_t_tel = 0;
+    /* Un bloque = una trama con relleno (≥ 1 imagen de latencia como mucho); el rate de dimensionado es
+     * el caudal real (palabras/s), no los Msps del ADC. */
+    ring_alloc(e, (unsigned)fpga_lab_frame_words(log2n), 4e5);
+    /* Detectores del tamaño de la trama (ventana Blackman-Harris de N puntos de la FPGA) */
+    fpga_rebuild_detectors(e);
     e->enbw_bins = 2.0044;
     e->t_spec = 0;
     recorder_stop(e->rec);
@@ -703,6 +778,9 @@ static int fpga_enter(engine_t *e, const engine_cfg_t *c, char *err, size_t el)
     e->nsigs = 0;
     e->lab_present_pub = true;
     e->lab_version_pub = e->lab.version;
+        e->lab_v12_pub = e->lab.v12;
+        e->lab_caps_pub = e->lab.caps;
+        e->lab_synth_pub = e->lab.synth;
     snprintf(e->spec_backend, sizeof e->spec_backend, "FPGA lab (N=%d, K=%d, %.1f imágenes/s)", e->fpga_n, k,
              (double)c->rate / ((double)e->fpga_n * k));
     pthread_mutex_unlock(&e->lock);
@@ -722,6 +800,7 @@ static void fpga_leave(engine_t *e, const engine_cfg_t *c)
     source_stop(e->src);
     if (e->lab.present)
         fpga_lab_set_spectrum_mode(&e->lab, false);
+    source_set_spectrum_stream(e->src, false, 0); /* vuelven los búferes de IQ */
     source_start(e->src);
     fpga_lab_parser_destroy(e->fpar);
     e->fpar = NULL;
@@ -740,8 +819,17 @@ static void fpga_status_json(engine_t *e, sb_t *sb)
     if (e->lab_present_pub)
         sb_printf(sb, ",\"version\":\"%u.%u\"", (e->lab_version_pub >> 16) & 0xFFFFu, e->lab_version_pub & 0xFFFFu);
     if (e->fpga_active)
-        sb_printf(sb, ",\"n\":%d,\"k\":%d,\"frames\":%llu,\"gaps\":%llu", e->fpga_n, e->fpga_k,
-                  (unsigned long long)e->fpga_frames, (unsigned long long)e->fpga_gaps);
+        sb_printf(sb, ",\"n\":%d,\"k\":%d,\"frames\":%llu,\"gaps\":%llu,\"resyncs\":%llu", e->fpga_n, e->fpga_k,
+                  (unsigned long long)e->fpga_frames, (unsigned long long)e->fpga_gaps,
+                  (unsigned long long)e->fpga_gaps_hot);
+    if (e->lab_present_pub && e->lab_v12_pub) {
+        sb_printf(sb, ",\"caps\":%u,\"synth\":%u", e->lab_caps_pub, e->lab_synth_pub);
+        if (e->fpga_active && e->fpga_tel_ok)
+            sb_printf(sb, ",\"sat_pct\":%.3f,\"adc_sat\":%u,\"spec_drop\":%u", e->fpga_tel.sat_pct,
+                      e->fpga_tel.adc_sat, e->fpga_tel.spec_drop);
+        if (e->fpga_active && e->fpga_time)
+            sb_printf(sb, ",\"time\":%llu", (unsigned long long)e->fpga_time);
+    }
     sb_puts(sb, "}");
 }
 
@@ -809,7 +897,8 @@ static void apply_config(engine_t *e, bool first)
     if (d & CFG_FFT) {
         a.fft_size = w.fft_size;
         a.fps = w.fps;
-        rebuild_spectrum(e, &a);
+        if (!e->fpga_active) /* con el espectro FPGA activo no hay FFT propia que reconstruir */
+            rebuild_spectrum(e, &a);
     }
     if (d & CFG_LOC) {
         a.loc_valid = w.loc_valid;
@@ -823,6 +912,9 @@ static void apply_config(engine_t *e, bool first)
      * se puede (p. ej. la nueva tasa pide oversample) se vuelve a CPU/GPU con un aviso. */
     if (e->fpga_active && (d & (CFG_RATE | CFG_FFT))) {
         char ferr[300] = "";
+        if (!(d & CFG_RATE) && fpga_hot_k(e, &a)) {
+            /* solo cambió K: hecho sin parar el flujo */
+        } else
         /* Directo a fpga_enter (que ya para, pone rx_mux = 0 y rearranca): pasar antes por fpga_leave
          * rearrancaba un flujo IQ completo que luego se paraba de inmediato (causa del timeout). */
         if (fpga_enter(e, &a, ferr, sizeof ferr) < 0) {
@@ -1358,15 +1450,26 @@ static void *dsp_main(void *arg)
             fpga_lab_parser_feed_iq(e->fpar, iq, n);
             uint64_t fr = 0, sk = 0, gp = 0;
             fpga_lab_parser_stats(e->fpar, &fr, &sk, &gp);
+            /* Tras un cambio de K en caliente se esperan hasta 2 huecos (trama truncada): no son pérdidas */
+            if (gp > e->fpga_gp_seen) {
+                uint64_t nuevos = gp - e->fpga_gp_seen;
+                while (nuevos && e->fpga_hot_forgive > 0) {
+                    nuevos--;
+                    e->fpga_hot_forgive--;
+                    e->fpga_gaps_hot++;
+                }
+                e->fpga_gp_seen = gp;
+            }
             pthread_mutex_lock(&e->lock);
             e->fpga_frames = fr;
-            e->fpga_gaps = gp;
+            e->fpga_gaps = gp - e->fpga_gaps_hot;
             pthread_mutex_unlock(&e->lock);
             pthread_mutex_lock(&e->rg_m);
             e->rg_busy = false;
             pthread_cond_broadcast(&e->rg_ctl);
             pthread_mutex_unlock(&e->rg_m);
             double t2f = now_monotonic();
+            fpga_poll_telemetry(e, t2f);
             busy += t2f - t1;
             periodic(e, t2f, &t_sig, &t_status, &samples, &t_rate);
             if (e->host)
@@ -1494,6 +1597,9 @@ engine_t *engine_create(source_t *src, server_t *srv, const engine_cfg_t *initia
     if (source_fpga_lab_io(src, &io) == 0 && fpga_lab_probe(&io, &e->lab, perr, sizeof perr) > 0) {
         e->lab_present_pub = true;
         e->lab_version_pub = e->lab.version;
+        e->lab_v12_pub = e->lab.v12;
+        e->lab_caps_pub = e->lab.caps;
+        e->lab_synth_pub = e->lab.synth;
         LOG_I("FPGA: imagen lab detectada (versión %u.%u): espectro FPGA disponible", e->lab.version >> 16,
               e->lab.version & 0xFFFFu);
     }

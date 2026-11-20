@@ -6,7 +6,9 @@
  * tiempo de CPU del camino parser → fpga_lab_frame_to_dbfs → empaquetado tipo 1,
  * que es lo que el hilo DSP hace por trama (on_spectrum añade detector y S-meter,
  * ver engine.c; aquí solo se mide lo que vive en fpga_lab.c).
- * Se alimenta en bloques de 4096 palabras como el anillo del motor.
+ * Se alimenta en bloques de una trama (6144 palabras = lo que lee el motor en modo espectro,
+ * engine.c) y a mitad del flujo se simula un cambio de K en caliente: una trama truncada que el
+ * intérprete debe resincronizar (cuenta un hueco) sin perder las siguientes.
  *
  *   gcc -std=c11 -D_GNU_SOURCE -O2 -Isrc tests/bench_fpga_spectrum.c src/sdr/fpga_lab.c \
  *       src/dsp/detector.c src/dsp/fft.c src/util/log.c -lm -lpthread -o build/f1b/bench_fpga && build/f1b/bench_fpga
@@ -78,23 +80,39 @@ int main(int argc, char **argv)
         fr[i] = 0xDEADBEEFu;
 
     const int nframes = FPS * SECONDS;
+    /* cambio de K en caliente a mitad: la trama 'cut' se corta tras 1000 palabras */
+    const int cut = nframes / 2;
     const size_t total_words = (size_t)nframes * TOTAL;
     uint32_t *stream = malloc(total_words * 4);
+    size_t w = 0;
+    int expected = 0;
     for (int i = 0; i < nframes; i++) {
-        memcpy(stream + (size_t)i * TOTAL, fr, sizeof fr);
-        stream[(size_t)i * TOTAL + 3] = (uint32_t)i;
+        const size_t len = i == cut ? 1000 : TOTAL;
+        memcpy(stream + w, fr, len * 4);
+        stream[w + 3] = (uint32_t)i;
+        if (i > cut)
+            stream[w + 2] = (uint32_t)N | (188u << 16); /* K nuevo */
+        w += len;
+        if (i != cut)
+            expected++;
     }
+    const size_t total_used = w;
     /* Como llega de sync_rx: pares int16 I,Q (palabra = I | Q<<16) en bloques de 4096 */
     fpga_lab_parser_t *p = fpga_lab_parser_create(on_frame, NULL);
     const double t0 = cpu_s();
-    for (size_t i = 0; i < total_words; i += 4096) {
-        size_t m = total_words - i < 4096 ? total_words - i : 4096;
+    for (size_t i = 0; i < total_used; i += TOTAL) {
+        size_t m = total_used - i < TOTAL ? total_used - i : TOTAL;
         fpga_lab_parser_feed_iq(p, (const int16_t *)(stream + i), m);
     }
     const double dt = cpu_s() - t0;
+    uint64_t fr_n, sk, gp;
+    fpga_lab_parser_stats(p, &fr_n, &sk, &gp);
+    printf("huecos %llu (2 esperados por el cambio de K: trama cortada + salto de grupo), palabras descartadas %llu\n", (unsigned long long)gp,
+           (unsigned long long)sk);
     printf("tramas %ld (%d esperadas), CPU %.3f s por %d s de flujo = %.3f %% de un núcleo, %.1f us/trama\n",
-           g_frames, nframes, dt, SECONDS, 100.0 * dt / SECONDS, 1e6 * dt / nframes);
+           g_frames, expected, dt, SECONDS, 100.0 * dt / SECONDS, 1e6 * dt / nframes);
     fpga_lab_parser_destroy(p);
     free(stream);
-    return g_frames == nframes ? 0 : 1;
+    (void)total_words;
+    return g_frames == expected && gp == 2 ? 0 : 1;
 }

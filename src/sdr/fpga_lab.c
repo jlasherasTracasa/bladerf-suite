@@ -69,18 +69,26 @@ int fpga_lab_probe(const fpga_lab_io_t *io, fpga_lab_t *lab, char *err, size_t e
         return -1;
     }
     lab->present = true;
+    /* La 1.1 devuelve 0xBAD0BAD0 en los registros 16..22: solo se leen si VERSION lo promete. */
+    lab->v12 = lab->version >= FPGA_LAB_VERSION_1_2 && lab->version != 0xBAD0BAD0u;
+    if (lab->v12 && (io->wb_read(io->ctx, 4u * FPGA_LAB_REG_CAPS, &lab->caps) < 0 ||
+                     io->wb_read(io->ctx, 4u * FPGA_LAB_REG_SYNTH, &lab->synth) < 0)) {
+        set_err(err, errlen, "fallo leyendo CAPS/SYNTH");
+        lab->present = false;
+        return -1;
+    }
     return 1;
 }
 
 int fpga_lab_reg_read(const fpga_lab_t *lab, int index, uint32_t *val)
 {
-    if (!lab || !lab->present || index < 0 || index > 15) return -1;
+    if (!lab || !lab->present || index < 0 || index > FPGA_LAB_REG_MAX) return -1;
     return lab->io.wb_read(lab->io.ctx, 4u * (uint32_t)index, val);
 }
 
 int fpga_lab_reg_write(const fpga_lab_t *lab, int index, uint32_t val)
 {
-    if (!lab || !lab->present || index < 0 || index > 15 || !lab->io.wb_write) return -1;
+    if (!lab || !lab->present || index < 0 || index > FPGA_LAB_REG_MAX || !lab->io.wb_write) return -1;
     return lab->io.wb_write(lab->io.ctx, 4u * (uint32_t)index, val);
 }
 
@@ -123,6 +131,36 @@ int fpga_lab_set_spectrum_mode(const fpga_lab_t *lab, bool on)
      * lo ocurrido en modo espectro (con rx_mux = 0 la FIFO desborda mientras nadie lee). */
     return on ? fpga_lab_clear_counters(lab) : 0;
 }
+
+int fpga_lab_read_telemetry(const fpga_lab_t *lab, fpga_lab_telem_t *t)
+{
+    memset(t, 0, sizeof *t);
+    if (!lab || !lab->present || !lab->v12) return -1;
+    if (fpga_lab_reg_read(lab, FPGA_LAB_REG_CNT_ADC_SAT, &t->adc_sat) < 0 ||
+        fpga_lab_reg_read(lab, FPGA_LAB_REG_SAT_WIN, &t->sat_win) < 0 ||
+        fpga_lab_reg_read(lab, FPGA_LAB_REG_CNT_SPEC_DROP, &t->spec_drop) < 0)
+        return -1;
+    t->sat_pct = 100.0 * t->sat_win / FPGA_LAB_SAT_WIN_SAMPLES;
+    return 0;
+}
+
+int fpga_lab_read_time(const fpga_lab_t *lab, uint64_t *t)
+{
+    uint32_t lo = 0, hi = 0;
+    if (!lab || !lab->present || !lab->v12) return -1;
+    if (fpga_lab_reg_read(lab, FPGA_LAB_REG_TIME_LO, &lo) < 0 || fpga_lab_reg_read(lab, FPGA_LAB_REG_TIME_HI, &hi) < 0)
+        return -1;
+    *t = ((uint64_t)hi << 32) | lo;
+    return 0;
+}
+
+int fpga_lab_set_k_hot(const fpga_lab_t *lab, int k)
+{
+    if (!lab || !lab->present || !lab->v12 || k < 1 || k > 65535) return -1;
+    return fpga_lab_reg_write(lab, FPGA_LAB_REG_K, (uint32_t)k);
+}
+
+int fpga_lab_frame_words(int log2n) { return (((1 << log2n) + FPGA_SPEC_HDR_WORDS + 2047) / 2048) * 2048; }
 
 int fpga_lab_read_counters(const fpga_lab_t *lab, fpga_lab_counters_t *c)
 {

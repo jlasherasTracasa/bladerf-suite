@@ -48,8 +48,23 @@ enum {
     FPGA_LAB_REG_LOG2N = 5, FPGA_LAB_REG_K = 6, FPGA_LAB_REG_CTRL = 7,
     FPGA_LAB_REG_CNT_SAMPLES = 8, FPGA_LAB_REG_CNT_FIFO_OVF = 9, FPGA_LAB_REG_CNT_FFT = 10,
     FPGA_LAB_REG_CNT_SPEC = 11, FPGA_LAB_REG_CNT_LATE = 12, FPGA_LAB_REG_CNT_WORDS = 13,
-    FPGA_LAB_REG_STATUS = 14, FPGA_LAB_REG_CLEAR = 15
+    FPGA_LAB_REG_STATUS = 14, FPGA_LAB_REG_CLEAR = 15,
+    /* Nuevos en lab 1.2 (FPGA 0.16.102). En la 1.1 no existen y leen 0xBAD0BAD0: solo se tocan tras
+     * comprobar VERSION >= FPGA_LAB_VERSION_1_2 (fpga_lab_t.v12). */
+    FPGA_LAB_REG_CAPS = 16, FPGA_LAB_REG_SYNTH = 17, FPGA_LAB_REG_CNT_ADC_SAT = 18,
+    FPGA_LAB_REG_SAT_WIN = 19, FPGA_LAB_REG_CNT_SPEC_DROP = 20,
+    FPGA_LAB_REG_TIME_LO = 21, FPGA_LAB_REG_TIME_HI = 22,
+    FPGA_LAB_REG_MAX = 22
 };
+
+#define FPGA_LAB_VERSION_1_1 0x00010001u
+#define FPGA_LAB_VERSION_1_2 0x00010002u
+/* Máscaras de CAPS (registro 16) */
+#define FPGA_LAB_CAP_SPECTRUM (1u << 0)
+#define FPGA_LAB_CAP_ADC_SAT (1u << 1)
+#define FPGA_LAB_CAP_TIMESTAMP (1u << 2)
+#define FPGA_LAB_CAP_SPEC_DROP (1u << 3)
+#define FPGA_LAB_SAT_WIN_SAMPLES 65536.0 /* tamaño de la ventana de SAT_WIN */
 
 #define FPGA_SPEC_MAGIC0 0x4C415031u
 #define FPGA_SPEC_MAGIC1 0xB3BEAFCEu
@@ -71,7 +86,18 @@ typedef struct {
     bool present;          /* imagen lab detectada y verificada */
     uint32_t version;      /* registro VERSION */
     uint32_t features;     /* registro FEATURES */
+    bool v12;              /* VERSION >= 1.2: existen los registros 16..22 */
+    uint32_t caps;         /* CAPS (0 en la 1.1) */
+    uint32_t synth;        /* SYNTH (0 en la 1.1) */
 } fpga_lab_t;
+
+/* Telemetría de la 1.2 (fpga_lab_read_telemetry). Con una 1.1 todo queda a 0 y la función devuelve -1. */
+typedef struct {
+    uint32_t adc_sat;      /* muestras saturadas desde el último CLEAR */
+    uint32_t sat_win;      /* saturadas en la última ventana de 65536 muestras */
+    uint32_t spec_drop;    /* tramas de espectro con palabras perdidas */
+    double sat_pct;        /* 100·sat_win/65536 */
+} fpga_lab_telem_t;
 
 typedef struct {
     uint32_t samples, fifo_ovf, fft_frames, spec_frames, late, words;
@@ -102,6 +128,22 @@ int fpga_lab_config_spectrum(const fpga_lab_t *lab, int log2n, int k, bool pad);
  * Si se activa el modo antes de habilitar RX, la FIFO de la FPGA se llena durante el arranque del flujo
  * USB y se pierde una trama (y el parser descarta palabras hasta resincronizar). */
 int fpga_lab_set_spectrum_mode(const fpga_lab_t *lab, bool on);
+
+/* Solo lab >= 1.2. Los registros 18..20 (devuelve < 0 en la 1.1 sin tocar el bus). */
+int fpga_lab_read_telemetry(const fpga_lab_t *lab, fpga_lab_telem_t *t);
+/* Marca de tiempo de 64 bit (muestras del canal 0 desde la carga de la FPGA): lee TIME_LO y DESPUÉS
+ * TIME_HI (la lectura de LO congela HI; en el orden contrario un acarreo daría ±2^32). Solo >= 1.2. */
+int fpga_lab_read_time(const fpga_lab_t *lab, uint64_t *t);
+
+/* Cambia SOLO K con el flujo en marcha, sin tocar rx_mux ni parar RX (FIRMWARE.md §16.6: el motor se
+ * reinicia internamente; se pierde la trama en acumulación y se trunca la que se esté leyendo; el
+ * intérprete resincroniza por la magia y cuenta un hueco). Exige lab >= 1.2 (en la 1.1 el mismo
+ * mecanismo de reinicio existe pero no está verificado en placa: devuelve -1 y el llamador usa la
+ * secuencia completa). Un cambio de N sí exige la secuencia completa. */
+int fpga_lab_set_k_hot(const fpga_lab_t *lab, int k);
+
+/* Palabras por trama con relleno (múltiplo de 2048) para N = 2^log2n. */
+int fpga_lab_frame_words(int log2n);
 
 int fpga_lab_read_counters(const fpga_lab_t *lab, fpga_lab_counters_t *c);
 int fpga_lab_clear_counters(const fpga_lab_t *lab);
