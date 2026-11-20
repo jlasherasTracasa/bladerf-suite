@@ -71,7 +71,11 @@ function visibleRange(o) {
   return clamp(m * 1.15, 2, 3000);
 }
 
-function drawMap() {
+// Los gestos (arrastre, rueda) y los mensajes pueden pedir varios dibujos por imagen: se agrupan en uno por rAF.
+let drawRaf = 0;
+function drawMap() { if (!drawRaf) drawRaf = requestAnimationFrame(() => { drawRaf = 0; paintMap(); }); }
+
+function paintMap() {
   if (!cv || !cv.offsetParent) return;
   const c = cx; c.setTransform(dpr, 0, 0, dpr, 0, 0);
   c.fillStyle = '#0b0a0e'; c.fillRect(0, 0, W, H);
@@ -171,11 +175,19 @@ function renderTables() {
   if (!layers.length) { box.replaceChildren(); return; }
   const open = new Set([...box.querySelectorAll('details[open]')].map((d) => d.dataset.id));
   const firstTime = !box.firstChild;
-  box.replaceChildren(...layers.map((l) => h('details', { 'data-id': l.id, open: firstTime || open.has(l.id) ? true : null },
-    h('summary', {}, h('i', { class: 'sw', style: `background:${l.color}` }), ` ${l.id} · ${l.key} (${l.rows.length})`),
-    autoTable(l.rows, { id: 'map:' + l.id, limit: 300,
-      isSel: (r, i) => !!selected && selected.layer === l.id && selected.k === rowKey(r, i),
-      onRow: (r, i) => { selected = { layer: l.id, k: rowKey(r, i) }; renderSelected(); renderTables(); drawMap(); } }))));
+  // Solo se construye la tabla de las capas desplegadas (cientos de filas × 14 columnas por capa y por refresco);
+  // al desplegar una cerrada se construye en ese momento.
+  const table = (l) => autoTable(l.rows, { id: 'map:' + l.id, limit: 300,
+    isSel: (r, i) => !!selected && selected.layer === l.id && selected.k === rowKey(r, i),
+    onRow: (r, i) => { selected = { layer: l.id, k: rowKey(r, i) }; renderSelected(); renderTables(); drawMap(); } });
+  box.replaceChildren(...layers.map((l) => {
+    const isOpen = firstTime || open.has(l.id);
+    const det = h('details', { 'data-id': l.id, open: isOpen ? true : null },
+      h('summary', {}, h('i', { class: 'sw', style: `background:${l.color}` }), ` ${l.id} · ${l.key} (${l.rows.length})`));
+    if (isOpen) det.append(table(l));
+    else det.addEventListener('toggle', () => { if (det.open && det.children.length < 2) det.append(table(l)); });
+    return det;
+  }));
 }
 
 function refresh() {

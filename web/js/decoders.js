@@ -110,7 +110,13 @@ function renderStates() {
     if (!det) { det = h('details', { open: true }, h('summary', {}), h('div', {})); stateBoxes.set(s.inst, det); box.append(det); }
     const d = S.decoders.find((x) => x.id === s.proto);
     det.firstChild.textContent = `#${s.inst} ${d ? d.name : s.proto} · ${fmtTime(s.t)}`;
-    det.lastChild.replaceChildren(...(s.proto === 'adsb' ? [adsbSummary(s.state)] : []), ...stateView(s.state, 'dec' + s.inst));
+    // Detalles plegados: no se construye nada (se rehace al desplegar); sin cambios desde el último dibujo: tampoco.
+    const paintState = () => { det._sig = JSON.stringify(s.state); det.lastChild.replaceChildren(...(s.proto === 'adsb' ? [adsbSummary(s.state)] : []), ...stateView(s.state, 'dec' + s.inst)); };
+    det._paint = paintState;
+    if (!det._tg) { det._tg = true; det.addEventListener('toggle', () => { if (det.open && det._stale) { det._stale = false; det._paint(); } }); }
+    if (!det.open) { det._stale = true; continue; }
+    det._stale = false;
+    if (det._sig !== JSON.stringify(s.state)) paintState();
   }
   for (const [k, det] of stateBoxes) if (!S.decState[k]) { det.remove(); stateBoxes.delete(k); }
 }

@@ -29,6 +29,7 @@ function strongestNear(p, f0) {
   }
   return best;
 }
+let applyingFollow = false;
 function tryFollow() {
   const pf = pendingFollow;
   if (!pf) return;
@@ -38,7 +39,8 @@ function tryFollow() {
   pendingFollow = null;
   if (!best) return;
   const g = best.bw >= 100e3 ? 100e3 : 5e3, fr = Math.round(best.f / g) * g;
-  setChannel({ freq: fr }, { user: true });   // user:true → «follow» mueve el RDS a la emisora
+  applyingFollow = true;
+  try { setChannel({ freq: fr }, { user: true }); } finally { applyingFollow = false; }   // user:true → «follow» mueve el RDS a la emisora
   toast(`Sintonizado en la señal más fuerte cerca de ${fmtHz(pf.p.chan_freq, 3)}: ${fmtHz(fr, 3)}`, 'ok');
 }
 
@@ -132,6 +134,8 @@ export function initProtocols() {
   bus.on('msg:decoders', renderCatalog);
   bus.on('msg:status', () => { markActive(); tryFollow(); });
   bus.on('msg:signals', tryFollow);
-  bus.on('chan', ({ user, patch }) => { if (user && patch.freq != null) follow(); });
+  // Si la persona sintoniza otra frecuencia mientras el perfil espera la «señal más fuerte», esa búsqueda se cancela:
+  // no debe llevarse el canal de vuelta a la emisora del perfil (causa de un fallo intermitente en las pruebas).
+  bus.on('chan', ({ user, patch }) => { if (user && patch.freq != null) { if (!applyingFollow) pendingFollow = null; follow(); } });
   renderProfiles(); renderCatalog();
 }

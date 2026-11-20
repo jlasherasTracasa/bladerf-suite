@@ -3,7 +3,7 @@ import { S, bus, $, $$, h, toast, fmtHz } from './util.js';
 import { connect } from './ws.js';
 import { initAudio } from './audio.js';
 import { initReceiver, setChannel, tuneBy, getStep, MODES, toggleListen } from './receiver.js';
-import { initSpectrum, zoomBy, zoomReset, xToFreq, freqToX, getView } from './spectrum.js';
+import { initSpectrum, zoomBy, zoomReset, xToFreq, freqToX, getView, specRenderInfo } from './spectrum.js';
 import { initSweep } from './sweep.js';
 import { initHardware, toggleRecording } from './hardware.js';
 import { initProtocols } from './protocols.js';
@@ -105,5 +105,5 @@ function boot() {
   connect();
 }
 // Gancho de solo lectura para las pruebas E2E (tests/web_e2e.mjs) y la consola del navegador.
-window.__app = { S, bus, xToFreq, freqToX, getView, lists: { ev: evList, ms: msList } };
+window.__app = { S, bus, xToFreq, freqToX, getView, specRenderInfo, lists: { ev: evList, ms: msList } };
 boot();

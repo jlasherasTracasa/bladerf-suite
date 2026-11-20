@@ -92,3 +92,18 @@ node tests/ux_audit.mjs --enforce   # falla si una tarea no cumple sus objetivos
 ```
 
 Para `make webtest`: añadir `BIN=$(abspath $(BIN)) node tests/ux_audit.mjs --enforce` tras la batería de `web_e2e.mjs` cuando las olas de §3 hayan cerrado sus fricciones (hoy 12 de 12 tareas funcionan pero 9 superan algún objetivo, así que con `--enforce` fallaría). Usa Chromium de `~/.cache/ms-playwright/chromium-1234` (variable `CHROME`) y reutiliza `tests/web_e2e.mjs` como biblioteca (`Browser`, `Page`, `makeData`).
+
+## 5. Fluidez del espectro y la cascada (W12): medidas
+
+Banco: Chromium headless con GL por software (SwiftShader), mock `--rich` (80 aviones, 60 barcos), ventana 1440×900, pestaña Receptor, 20 tramas/s de espectro.
+
+| Medida (sin carga, máquina con carga < 12) | Antes (Canvas 2D en el hilo principal) | Después (worker + OffscreenCanvas + WebGL) |
+|---|---|---|
+| Imágenes/s | 50–60 | 60 |
+| CPU total de Chromium | 700–960 % | 390–630 % |
+| Hilo principal (tarea) | 8–10 % | 6–9 % |
+| Montón JS tras 8 h simuladas (`--mem 110`) | n/d | 3–4 MB estable |
+
+El coste dominante era trazar la curva con degradado en Canvas 2D en la GPU de software (≈ 2/3 del proceso GPU). Con GPU real se espera 60 FPS sin tocar el hilo principal.
+
+Objetivo absoluto: ≥ 30 FPS y hilo principal < 25 % de un núcleo (60 FPS con GPU). La prueba `fugas` mide primero un lienzo trivial: si el entorno no da ≥ 50 FPS (máquina saturada por otras tareas), no se puede exigir el absoluto y se exige, medido en la misma ejecución, que el modo nuevo dé ≥ 90 % de los FPS del modo original (`?wf=main&wf=2d`) sin subir el hilo principal más de 5 puntos. Con carga 25–55 las medidas absolutas caen a 4–40 FPS incluso para un lienzo vacío.

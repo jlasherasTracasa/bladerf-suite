@@ -1,13 +1,15 @@
 // spectrum.js — espectro (línea) y cascada con zoom, desplazamiento y sintonía.
 //
 // Tres capas dentro de #spec-wrap:
-//   · plotC  : canvas 2D con el espectro, la rejilla en dB y el eje de frecuencia.
-//   · wfC    : cascada. WebGL si hay: una textura LUMINANCE de n×1024 usada como
-//              anillo (cada fotograma escribe una fila con texSubImage2D) y un
-//              shader que aplica zoom (u0..u1) y paleta (textura 256×1) según el
-//              rango de dB elegido. Si no hay WebGL, un canvas 2D desplazado.
-//   · ovC    : canvas 2D transparente encima de todo; dibuja el filtro, los
-//              marcadores y recibe el ratón/táctil.
+//   · plotC  : curva del espectro (fondo, relleno y traza).   ┐ las dos las pinta specrender.js,
+//   · wfC    : cascada (WebGL, anillo de 1024 filas).         ┘ normalmente en un Worker con OffscreenCanvas.
+//   · ovC    : canvas 2D transparente encima de todo: rejilla en dB, eje de frecuencia, filtro,
+//              marcadores y lecturas; recibe el ratón/táctil. Solo se repinta cuando cambia algo de
+//              la interfaz (no con cada trama de espectro).
+// Este fichero conserva el HILO PRINCIPAL ligero: geometría y vista (zoom, desplazamiento, inercia,
+// pellizco) y los textos; al worker solo le manda la vista (inicio/anchura, rango de dB) y las tramas
+// binarias por transferencia. Sin Worker u OffscreenCanvas (o con ?wf=main) el mismo renderizador
+// corre en este hilo; con ?wf=2d se fuerza la cascada 2D.
 //
 // El servidor manda v = (dB − dbmin)/dbstep en un byte. Para la cascada se
 // recodifica a q = (dB − QMIN)/QSTEP para que cambiar el rango de colores no
@@ -20,158 +22,68 @@
 // anchura reducida (máximo por columna) a WF_MAX_SWEEP. Sin filtro de canal,
 // señales ni decodificadores: no hay receptor mientras se barre.
 import { S, bus, $, clamp, fmtHz, fmtAxis, throttle, dispOff, dispUnit } from './util.js';
+import { SpecRenderer, QMIN, QSTEP, WF_MAX_SWEEP, AXIS_H } from './specrender.js';
 import { setChannel, filterEdges, getStep, BW_MAX, BW_MIN } from './receiver.js';
 
 // Codificación interna de la cascada (1 byte): cubre de -160 a +18 dBFS, más que cualquier cabecera (tipo 1: -145..+8; barrido: -140..-12,5).
 // Cada trama se convierte con SU dbmin/dbstep (lut), no con constantes del servidor.
-const QMIN = -160, QSTEP = 0.7, WF_ROWS = 1024, MAX_2D_W = 4096, WF_MAX_SWEEP = 4096;
-const AXIS_H = 18;
 
-let wrap, plotC, wfC, ovC, px, ox;
+let wrap, plotC, wfC, ovC, ox;
 let W = 0, H = 0, plotH = 0, wfH = 0, dpr = 1;
 const view = { start: 0, span: 1 };
-let n = 0, avg = new Float32Array(0), hold = new Float32Array(0), lastDb = new Float32Array(0), lut = new Uint8Array(256);
+let n = 0, avg = new Float32Array(0), lastDb = new Float32Array(0), dataDirty = false, ovLo = 0, ovHi = 0;
 let rangeLo = -110, rangeHi = -30, auto = true, holdOn = false, dirty = true, lastRangeUi = 0;
-let wf = null, hover = null, wfN = 0, sweepPick = null;
-let palette = null;                                   // Uint8Array 256×4
+let hover = null, sweepPick = null;
 
-/* ---- paleta: negro → azul → cian → verde → amarillo → rojo → blanco ---- */
-function buildPalette() {
-  const stops = [[0, 0, 0, 20], [0.15, 10, 20, 120], [0.35, 20, 150, 200], [0.5, 40, 200, 90], [0.7, 240, 230, 50], [0.88, 240, 70, 30], [1, 255, 255, 255]];
-  const p = new Uint8Array(256 * 4);
-  for (let i = 0; i < 256; i++) {
-    const t = i / 255;
-    let k = 0; while (k < stops.length - 2 && t > stops[k + 1][0]) k++;
-    const a = stops[k], b = stops[k + 1], f = clamp((t - a[0]) / (b[0] - a[0]), 0, 1);
-    for (let c = 0; c < 3; c++) p[i * 4 + c] = a[c + 1] + (b[c + 1] - a[c + 1]) * f;
-    p[i * 4 + 3] = 255;
-  }
-  return p;
+/* ---- renderizador: worker con OffscreenCanvas (normal) o en este hilo (alternativa) ----
+ * R expone lo mismo en los dos casos: spectrum(buf, sweep), size(...) y view(...). En el worker los
+ * datos binarios viajan por transferencia (el ArrayBuffer del WebSocket no se copia). */
+let R = null, worker = null, glKind = '', inflight = 0, dropped = 0;
+const sig = { view: '', size: '' };
+
+function newCanvases() {
+  const mk = (cls) => { const c = document.createElement('canvas'); if (cls) c.className = cls; return c; };
+  const np = mk(plotC && plotC.className), nw = mk(wfC && wfC.className);
+  if (plotC) { np.style.cssText = plotC.style.cssText; plotC.replaceWith(np); }
+  if (wfC) { nw.style.cssText = wfC.style.cssText; wfC.replaceWith(nw); }
+  plotC = np; wfC = nw;
 }
 
-/* ---- cascada WebGL ---- */
-class WfGL {
-  constructor(canvas) {
-    const gl = canvas.getContext('webgl', { antialias: false, alpha: false, preserveDrawingBuffer: false });
-    this.ok = !!gl;
-    if (!gl) return;
-    this.gl = gl; this.w = 0; this.n = 0;
-    const vs = 'attribute vec2 p;varying vec2 v;void main(){v=vec2(p.x*.5+.5,.5-p.y*.5);gl_Position=vec4(p,0.,1.);}';
-    const fs = `#ifdef GL_FRAGMENT_PRECISION_HIGH
-precision highp float;
-#else
-precision mediump float;
-#endif
-varying vec2 v;uniform sampler2D t,pal;
-      uniform float x0,x1,w,rows,lo,hi;
-      void main(){
-        float x=mix(x0,x1,v.x);
-        float r=floor(v.y*rows);
-        float row=mod(w-1.-r+${WF_ROWS}.,${WF_ROWS}.);
-        float q=texture2D(t,vec2(x,(row+.5)/${WF_ROWS}.)).r*255.;
-        if(q<.5){gl_FragColor=vec4(0.,0.,0.,1.);return;}   // fila aún sin datos: negra, no color de «-140 dB»
-        float db=${QMIN}.+q*${QSTEP.toFixed(2)};
-        float l=clamp((db-lo)/(hi-lo),0.,1.);
-        gl_FragColor=vec4(texture2D(pal,vec2(l*.99+.005,.5)).rgb,1.);
-      }`;
-    const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+function startLocal(force2d) {
+  if (worker) { worker.terminate(); worker = null; }
+  inflight = 0;
+  if (R) newCanvases();
+  const r = new SpecRenderer(plotC, wfC, { force2d }, (ev) => onRenderEvent(ev));
+  if (r.failed) return;                       // onRenderEvent('fail') ya reintenta en 2D
+  R = { spectrum: (b, sw) => r.spectrum(b, sw), size: (...a) => r.setSize(...a), view: (...a) => r.setView(...a), stats: () => r.stats };
+}
+
+function startRenderer(force2d) {
+  const can = typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined' && plotC.transferControlToOffscreen && !/[?&]wf=main\b/.test(location.search);
+  if (can) {
     try {
-      const pr = gl.createProgram();
-      gl.attachShader(pr, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, fs));
-      gl.linkProgram(pr);
-      if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) throw new Error('enlace');
-      gl.useProgram(pr); this.pr = pr;
-    } catch (e) { console.warn('WebGL descartado:', e); this.ok = false; return; }
-    const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-    const pr = this.pr, loc = gl.getAttribLocation(pr, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-    this.u = {}; for (const k of ['t', 'pal', 'x0', 'x1', 'w', 'rows', 'lo', 'hi']) this.u[k] = gl.getUniformLocation(pr, k);
-    this.maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-    // paleta
-    gl.activeTexture(gl.TEXTURE1);
-    this.palTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.palTex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, palette);
-    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
-    gl.uniform1i(this.u.pal, 1);
-    gl.activeTexture(gl.TEXTURE0); gl.uniform1i(this.u.t, 0);
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.ok = false; startWaterfall(true); });
+      worker = new Worker(new URL('./specworker.js', import.meta.url), { type: 'module' });
+      const po = plotC.transferControlToOffscreen(), wo = wfC.transferControlToOffscreen();
+      worker.onmessage = (e) => { if (e.data.t === 'ack') inflight = Math.max(0, inflight - 1); else onRenderEvent(e.data); };
+      worker.onerror = () => onRenderEvent({ t: 'fail' });
+      worker.postMessage({ t: 'init', plot: po, wf: wo, force2d: force2d || /[?&]wf=2d\b/.test(location.search) }, [po, wo]);
+      // Contrapresión: si el worker va retrasado (máquina saturada, pestaña en segundo plano) se descartan tramas en
+      // vez de acumular mensajes sin límite; cada trama procesada se confirma con un 'ack'.
+      R = { spectrum: (b, sw) => { if (inflight >= 12) { dropped++; return; } inflight++; worker.postMessage({ t: 'spec', buf: b, sweep: sw }, [b]); }, size: (W, pH, wH, d) => worker.postMessage({ t: 'size', W, plotH: pH, wfH: wH, dpr: d }),
+        view: (start, span, lo, hi, hold) => worker.postMessage({ t: 'view', start, span, lo, hi, hold }), stats: () => ({}) };
+      layout(); return;
+    } catch (e) { console.warn('worker del espectro no disponible:', e); if (worker) { worker.terminate(); worker = null; } newCanvases(); }
   }
-  setN(nn) {
-    const gl = this.gl;
-    if (nn > this.maxTex) return false;
-    if (this.tex) gl.deleteTexture(this.tex);
-    this.tex = gl.createTexture(); this.n = nn; this.w = 0;
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, nn, WF_ROWS, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, new Uint8Array(nn * WF_ROWS));
-    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
-    return true;
-  }
-  push(q) {
-    const gl = this.gl;
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.tex);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, this.w, this.n, 1, gl.LUMINANCE, gl.UNSIGNED_BYTE, q);
-    this.w = (this.w + 1) % WF_ROWS;
-  }
-  resize(bw, bh) { this.gl.canvas.width = bw; this.gl.canvas.height = bh; this.gl.viewport(0, 0, bw, bh); }
-  draw(x0, x1, lo, hi) {
-    const gl = this.gl, u = this.u;
-    if (!this.tex) return;
-    gl.uniform1f(u.x0, x0); gl.uniform1f(u.x1, x1); gl.uniform1f(u.w, this.w);
-    gl.uniform1f(u.rows, Math.min(WF_ROWS, gl.canvas.height)); gl.uniform1f(u.lo, lo); gl.uniform1f(u.hi, hi);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-  }
-}
-
-/* ---- cascada 2D (alternativa) ---- */
-class Wf2D {
-  constructor(canvas) {
-    this.ok = true; this.ctx = canvas.getContext('2d', { alpha: false }); this.cv = canvas;
-    this.off = document.createElement('canvas'); this.p = 0; this.wd = 0;
-  }
-  setN(nn) {
-    this.n = nn; this.wd = Math.min(nn, MAX_2D_W);
-    this.off.width = this.wd; this.off.height = WF_ROWS;
-    this.octx = this.off.getContext('2d', { alpha: false });
-    this.octx.fillStyle = '#000'; this.octx.fillRect(0, 0, this.wd, WF_ROWS);
-    this.img = this.octx.createImageData(this.wd, 1); this.p = 0; return true;
-  }
-  push(q) {
-    // el más nuevo en la fila p; los anteriores en p+1, p+2… (módulo)
-    this.p = (this.p - 1 + WF_ROWS) % WF_ROWS;
-    const d = this.img.data, wd = this.wd, ratio = this.n / wd, span = rangeHi - rangeLo || 1;
-    for (let x = 0; x < wd; x++) {
-      let m = 0;
-      if (ratio <= 1) m = q[x];
-      else { const a = Math.floor(x * ratio), b = Math.min(this.n, Math.floor((x + 1) * ratio)); for (let i = a; i < b; i++) if (q[i] > m) m = q[i]; }
-      const l = clamp((QMIN + m * QSTEP - rangeLo) / span, 0, 1);
-      const k = (l * 255) | 0, j = x * 4;
-      d[j] = palette[k * 4]; d[j + 1] = palette[k * 4 + 1]; d[j + 2] = palette[k * 4 + 2]; d[j + 3] = 255;
-    }
-    this.octx.putImageData(this.img, 0, this.p);
-  }
-  resize(bw, bh) { this.cv.width = bw; this.cv.height = bh; }
-  draw(x0, x1) {
-    const c = this.ctx, bw = this.cv.width, bh = this.cv.height, rows = Math.min(WF_ROWS, bh);
-    if (!this.wd) return;
-    const sx = x0 * this.wd, sw = Math.max(1, (x1 - x0) * this.wd);
-    c.imageSmoothingEnabled = true;
-    const first = Math.min(rows, WF_ROWS - this.p);
-    c.drawImage(this.off, sx, this.p, sw, first, 0, 0, bw, first);
-    if (rows > first) c.drawImage(this.off, sx, 0, sw, rows - first, 0, first, bw, rows - first);
-  }
-}
-
-function startWaterfall(force2d) {
-  let w = null;
-  if (!force2d && !/[?&]wf=2d\b/.test(location.search)) { const g = new WfGL(wfC); if (g.ok) w = g; }
-  if (!w) {
-    // un canvas que ya tuvo contexto webgl no admite 2d: sustituirlo
-    const nc = document.createElement('canvas'); nc.className = wfC.className; nc.style.cssText = wfC.style.cssText;
-    wfC.replaceWith(nc); wfC = nc; w = new Wf2D(wfC);
-  }
-  wf = w; if (wfN) wf.setN(wfN);
+  startLocal(force2d || /[?&]wf=2d\b/.test(location.search));
   layout();
+}
+
+function onRenderEvent(ev) {
+  if (ev.t === 'info') { glKind = ev.gl ? 'WebGL' : '2D'; updateInfo(); }
+  else if (ev.t === 'fail') {                   // WebGL descartado con el lienzo ya ligado a GL: lienzos nuevos y 2D en este hilo
+    if (worker) { worker.terminate(); worker = null; }
+    newCanvases(); R = null; startLocal(true); sig.view = sig.size = ''; layout();
+  }
 }
 
 /* ---- geometría y mapeo ---- */
@@ -188,9 +100,9 @@ function layout() {
   plotH = Math.round(clamp(H * 0.36, 110, 240)); wfH = H - plotH;
   plotC.style.height = plotH + 'px'; plotC.style.top = '0';
   wfC.style.top = plotH + 'px'; wfC.style.height = wfH + 'px';
-  plotC.width = Math.round(W * dpr); plotC.height = Math.round(plotH * dpr);
   ovC.width = Math.round(W * dpr); ovC.height = Math.round(H * dpr);
-  wf.resize(Math.round(W * dpr), Math.round(wfH * dpr));
+  const sz = [W, plotH, wfH, dpr].join();
+  if (R && sz !== sig.size) { sig.size = sz; R.size(W, plotH, wfH, dpr); }
   dirty = true;
 }
 
@@ -220,49 +132,47 @@ function centerOnChan() {
 
 /* ---- datos entrantes ---- */
 function onSpectrum(buf, isSweep = false) {
-  if (!wf || buf.byteLength < 32) return;
+  const buf_t = performance.now();
+  if (!R || buf.byteLength < 32) return;
   const dv = new DataView(buf);
   const nn = dv.getUint32(4, true), center = dv.getFloat64(8, true), rate = dv.getFloat64(16, true);
   const dbmin = dv.getFloat32(24, true), dbstep = dv.getFloat32(28, true);
   if (!nn || buf.byteLength < 32 + nn || !(rate > 0)) return;
-  const sp = S.spec, complete = !isSweep || (dv.getUint8(2) & 1) === 1;
+  const sp = S.spec;
   const modeChanged = !!sp.sweep !== isSweep;
   const rateChanged = modeChanged || Math.abs(rate - sp.rate) > 1 || Math.abs(center - sp.center) > 1;
-  const wn = isSweep ? Math.min(nn, WF_MAX_SWEEP) : nn;      // anchura de la cascada
-  if (nn !== n) {
-    n = nn; avg = new Float32Array(n); hold = new Float32Array(n).fill(-200); lastDb = new Float32Array(n);
-    avg.fill(NaN);
-  }
-  if (wn !== wfN) { wfN = wn; if (!wf.setN(wfN)) { startWaterfall(true); } }
+  if (nn !== n) { n = nn; avg = new Float32Array(n).fill(NaN); lastDb = new Float32Array(n); }
   if ((rate !== sp.rate && sp.rate) || modeChanged) { zoomReset(); avg.fill(NaN); }
-  if (rateChanged) hold.fill(-200);
   Object.assign(sp, { n, center, rate, dbmin, dbstep, engine: ['CPU', 'GPU', 'FPGA'][dv.getUint8(1)] || 'CPU', sweep: isSweep });
+  // Aquí solo lo que necesita la interfaz (rango automático, lectura bajo el cursor, panel de señal); la cascada, la
+  // media y la retención de picos las calcula el renderizador sobre los mismos bytes.
   const v = new Uint8Array(buf, 32, n);
-  for (let i = 0; i < 256; i++) lut[i] = clamp(Math.round((dbmin + i * dbstep - QMIN) / QSTEP), 1, 255);   // 0 queda reservado a «sin datos»
-  const q = new Uint8Array(wfN), ratio = n / wfN;
   for (let i = 0; i < n; i++) {
     const db = dbmin + v[i] * dbstep; lastDb[i] = db;
     avg[i] = isSweep || Number.isNaN(avg[i]) ? db : avg[i] + (db - avg[i]) * 0.55;
-    hold[i] = Math.max(db, hold[i] - 0.08);
-    const j = ratio > 1 ? Math.floor(i / ratio) : i, l = lut[v[i]];
-    if (l > q[j]) q[j] = l;                          // máximo por columna si se reduce
   }
-  if (auto) autoRange();
-  if (complete) wf.push(q);
-  dirty = true;
-  if (rateChanged) updateInfo();
+  if (auto) autoRange(buf_t);
+  dataDirty = true;
+  if (rateChanged) { updateInfo(); dirty = true; }
+  R.spectrum(buf, isSweep);                          // el último uso: en el worker el buffer se TRANSFIERE (queda vacío aquí)
 }
 
 function refreshRangeUi() { const o = dispOff(); $('#rng-min').value = Math.round(rangeLo + o); $('#rng-max').value = Math.round(rangeHi + o); }
 
-function autoRange() {
+let lastAuto = 0;
+/** Rango automático: se recalcula como mucho cada ~45 ms (ordenar 512 muestras por trama es trabajo de más a 60 tramas/s);
+ *  el suavizado se ajusta al tiempo transcurrido para que la dinámica no dependa de la tasa de tramas. */
+function autoRange(now) {
+  const dt = lastAuto ? Math.min(500, now - lastAuto) : 50;
+  if (dt < 45) return;
+  lastAuto = now;
+  const k = 1 - Math.pow(1 - 0.08, dt / 50);
   const step = Math.max(1, Math.floor(n / 512)), s = [];
   for (let i = 0; i < n; i += step) s.push(lastDb[i]);
   s.sort((a, b) => a - b);
   // Suelo = mediana (robusta ante señales fuertes) menos 6 dB: el ruido cae en el azul oscuro de la paleta.
   const med = s[Math.floor(s.length * 0.5)], lo = med - 6, hi = Math.max(s[s.length - 1] + 6, med + 40);
-  rangeLo += (lo - rangeLo) * 0.08; rangeHi += (hi - rangeHi) * 0.08;
-  const now = performance.now();
+  rangeLo += (lo - rangeLo) * k; rangeHi += (hi - rangeHi) * k;
   if (now - lastRangeUi > 600) { lastRangeUi = now; refreshRangeUi(); }
 }
 
@@ -270,8 +180,8 @@ function updateInfo() {
   const s = S.spec;
   const bins = s.n ? `${fmtHz(s.rate / s.n, 1)}/bin` : '';
   $('#spec-info').textContent = !s.n ? '' : s.sweep
-    ? `Barrido ${fmtHz(s.center - s.rate / 2)} – ${fmtHz(s.center + s.rate / 2)} · ${s.n} bins · ${bins} · ${wf instanceof WfGL ? 'WebGL' : '2D'}`
-    : `${fmtHz(s.center)} · ±${fmtHz(s.rate / 2)} · FFT ${s.n} · ${bins} · ${s.engine || 'CPU'} · ${wf instanceof WfGL ? 'WebGL' : '2D'}`;
+    ? `Barrido ${fmtHz(s.center - s.rate / 2)} – ${fmtHz(s.center + s.rate / 2)} · ${s.n} bins · ${bins} · ${glKind}`
+    : `${fmtHz(s.center)} · ±${fmtHz(s.rate / 2)} · FFT ${s.n} · ${bins} · ${s.engine || 'CPU'} · ${glKind}`;
 }
 
 /* ---- dibujo ---- */
@@ -281,9 +191,8 @@ function niceStep(span, target) {
 }
 const dbY = (db) => (1 - (db - rangeLo) / (rangeHi - rangeLo)) * (plotH - AXIS_H);
 
-function drawPlot() {
-  const c = px; c.setTransform(dpr, 0, 0, dpr, 0, 0);
-  c.fillStyle = '#0b0a0e'; c.fillRect(0, 0, W, plotH);
+/** Rejilla en dB, eje de frecuencia y rótulos: capa estática sobre la curva (la curva la pinta el renderizador). */
+function drawGrid(c) {
   const rate = S.spec.rate;
   c.font = '10px ui-monospace, monospace'; c.textBaseline = 'middle';
   // rejilla horizontal en dB
@@ -306,24 +215,6 @@ function drawPlot() {
     if (x > 16 && x < W - 16) { c.fillStyle = 'rgba(255,255,255,.55)'; c.fillText(fmtAxis(f, fstep), x, plotH - AXIS_H / 2); }
   }
   c.textAlign = 'right'; c.fillStyle = 'rgba(255,255,255,.4)'; c.fillText(Math.abs(f1) >= 1e6 ? 'MHz' : 'kHz', W - 4, plotH - AXIS_H - 8);   // unidad del eje
-  // curva: máximo por columna si hay más bins que píxeles
-  const bpp = (n * view.span) / W, b0 = view.start * n;
-  const trace = (arr, close) => {
-    c.beginPath();
-    for (let x = 0; x < W; x++) {
-      let v;
-      if (bpp > 1.2) { const a = Math.floor(b0 + x * bpp), b = Math.min(n, Math.max(a + 1, Math.floor(b0 + (x + 1) * bpp))); v = -1e9; for (let i = a; i < b; i++) if (arr[i] > v) v = arr[i]; }
-      else { const p = clamp(b0 + (x / W) * n * view.span - 0.5, 0, n - 1), i = Math.floor(p), f = p - i; v = arr[i] + ((arr[Math.min(n - 1, i + 1)] - arr[i]) * f); }
-      const y = clamp(dbY(v), 0, plotH - AXIS_H);
-      if (x) c.lineTo(x, y); else c.moveTo(x, y);
-    }
-    if (close) { c.lineTo(W, plotH - AXIS_H); c.lineTo(0, plotH - AXIS_H); c.closePath(); }
-  };
-  if (holdOn) { trace(hold, false); c.strokeStyle = 'rgba(255,211,125,.6)'; c.lineWidth = 1; c.stroke(); }
-  trace(avg, true);
-  const g = c.createLinearGradient(0, 0, 0, plotH - AXIS_H); g.addColorStop(0, 'rgba(208,188,255,.55)'); g.addColorStop(1, 'rgba(208,188,255,.04)');
-  c.fillStyle = g; c.fill();
-  trace(avg, false); c.strokeStyle = '#d0bcff'; c.lineWidth = 1.3; c.stroke();
 }
 
 // Marcadores: el servidor ya excluye bordes, fusiona y aplica histéresis (src/dsp/detector.c).
@@ -343,6 +234,8 @@ function drawSweepOverlay(c) {
 
 function drawOverlay() {
   const c = ox; c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, W, H);
+  ovLo = rangeLo; ovHi = rangeHi;
+  drawGrid(c);
   if (!S.spec.rate) return;
   if (sweeping()) { drawSweepOverlay(c); return; }
   // filtro del canal
@@ -400,12 +293,16 @@ function drawHover(c) {
   c.strokeStyle = 'rgba(255,255,255,.25)'; c.lineWidth = 1; c.beginPath(); c.moveTo(hover.x + .5, 0); c.lineTo(hover.x + .5, H); c.stroke();
 }
 
+/* Un ciclo por imagen. La capa de rótulos (rejilla, filtro, marcadores) solo se redibuja si cambió algo
+ * de la interfaz o si el rango automático se movió ≥ 0,5 dB: con espectro nuevo a 20-60 tramas/s no hace
+ * falta repintar un lienzo del tamaño de la ventana. La vista se manda al renderizador solo si cambió. */
 function frame() {
-  if (dirty && wf) {
-    dirty = false;
-    drawPlot();
-    wf.draw(view.start, view.start + view.span, rangeLo, rangeHi);
-    drawOverlay();
+  if (R) {
+    if (!dirty && dataDirty && (Math.abs(rangeLo - ovLo) > 0.5 || Math.abs(rangeHi - ovHi) > 0.5)) dirty = true;
+    const k = [view.start, view.span, rangeLo.toFixed(2), rangeHi.toFixed(2), holdOn].join();
+    if (k !== sig.view) { sig.view = k; R.view(view.start, view.span, rangeLo, rangeHi, holdOn); }
+    if (dirty) { drawOverlay(); }
+    dirty = dataDirty = false;
   }
   requestAnimationFrame(frame);
 }
@@ -540,14 +437,13 @@ function onWheel(e) {
 }
 
 export function initSpectrum() {
-  palette = buildPalette();
   wrap = $('#spec-wrap');
   plotC = document.createElement('canvas'); wfC = document.createElement('canvas'); ovC = document.createElement('canvas');
   ovC.className = 'ov'; ovC.tabIndex = 0; ovC.setAttribute('role', 'img');
   ovC.setAttribute('aria-label', 'Espectro y cascada. Clic para sintonizar, rueda para cambiar de frecuencia, Ctrl+rueda para el zoom, flechas para ajustar.');
   wrap.append(plotC, wfC, ovC);
-  px = plotC.getContext('2d'); ox = ovC.getContext('2d');
-  startWaterfall(false);
+  ox = ovC.getContext('2d');
+  startRenderer(false);
   new ResizeObserver(() => layout()).observe(wrap);
   ovC.addEventListener('pointerdown', onDown);
   ovC.addEventListener('pointermove', onMove);
@@ -567,12 +463,13 @@ export function initSpectrum() {
   ra.addEventListener('change', () => { auto = ra.checked; rmin.disabled = rmax.disabled = auto; dirty = true; });
   const man = () => { if (!auto) { rangeLo = +rmin.value - dispOff(); rangeHi = Math.max(+rmax.value - dispOff(), rangeLo + 5); dirty = true; } };
   rmin.addEventListener('input', man); rmax.addEventListener('input', man);
-  $('#peak-hold').addEventListener('change', (e) => { holdOn = e.target.checked; hold.fill(-200); dirty = true; });
+  $('#peak-hold').addEventListener('change', (e) => { holdOn = e.target.checked; dirty = true; });
 
   bus.on('bin:spectrum', (b) => { S.sweepPct = null; onSpectrum(b, false); });
   bus.on('bin:sweep', (b) => {
     // progreso para la cabecera; los bytes [2] y [3] los lee onSpectrum / sweep.js
     if (b.byteLength >= 4) S.sweepPct = new Uint8Array(b, 3, 1)[0];
+    dirty = true;
     onSpectrum(b, true);
   });
   const dbm = $('#dbm-on');
@@ -599,4 +496,6 @@ export function initSpectrum() {
   // El teclado sobre el lienzo (flechas) lo gestiona main.js: el lienzo es «libre» para los atajos.
   requestAnimationFrame(frame);
 }
-export const spectrumReady = () => !!wf;
+export const spectrumReady = () => !!R;
+/** Diagnóstico para las pruebas: ¿worker?, ¿WebGL? y tiempo medio de dibujo (solo en este hilo). */
+export const specRenderInfo = () => ({ worker: !!worker, gl: glKind === 'WebGL', stats: R ? R.stats() : null, inflight, dropped });
