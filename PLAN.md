@@ -173,42 +173,48 @@ prueba en placa la hace Opus en RAM.
 Objetivo: un artículo publicable en una revista del primer cuartil (JCR). Corre
 en paralelo a las fases 2–5 y reutiliza su trabajo.
 
-### 5.1 Qué se publica (propuesta tras una primera búsqueda bibliográfica)
+### 5.1 Qué se publica (tesis revisada el 2026-11-20 tras la revisión P1)
 
-**Tesis: etiquetado automático de espectro real verificado por decodificación.**
-Los conjuntos de datos con los que se entrenan los detectores y clasificadores
-de señales son casi todos sintéticos (RadioML, Sig53, WBSig53, CSRD2025) y la
-literatura reconoce que con capturas reales «no se puede determinar la verdad
-de terreno». Este proyecto puede darla: 21 decodificadores propios que solo
-emiten un evento cuando el CRC o el FEC cuadran, sobre una captura de banda
-ancha. Cada evento es una etiqueta exacta (protocolo, instante, frecuencia,
-ancho, SNR) sin anotación humana.
+P1 dejó la idea original («etiquetar con decodificaciones verificadas») como
+incremental: el mecanismo ya existe para un protocolo (Tu et al. 2022) y su
+punto débil es el sesgo de selección. La tesis nueva convierte ese punto débil
+en la contribución.
+
+**Tesis: verdad de terreno calibrada y consciente del sesgo para espectro real.**
+Una etiqueta por decodificación solo dice «aquí hay X»; no dice cuánto se ha
+quedado sin etiquetar. Este proyecto puede medirlo porque tiene, para los
+mismos 21 protocolos, **el modulador y el decodificador emparejados**: se
+inyectan señales conocidas sobre capturas reales y se mide cuándo el
+etiquetador las encuentra.
 
 Contribuciones que el artículo debe sostener con medidas:
 
-1. **Método**: etiquetas tiempo-frecuencia derivadas de decodificaciones
-   verificadas, con su precisión y su cobertura medidas (señales inyectadas de
-   posición conocida y contraste con decodificadores de referencia).
-2. **Sistema abierto y reproducible**: un único binario sin dependencias de
-   DSP, con DDC por lotes en GPU y motor de espectro en la FPGA, sobre un SDR
-   de menos de 1000 USD.
-3. **Conjunto de datos**: capturas reales de varias bandas con etiquetas
-   verificadas, publicado con DOI.
-4. **Evaluación**: detectores entrenados con datos sintéticos frente a datos
-   reales etiquetados así; cuantificar la diferencia.
+1. **Etiquetado en tres niveles**: positivo verificado (CRC/FEC correcto),
+   energía detectada sin decodificar («desconocido», no negativo) y vacío
+   verificado (por debajo del umbral del detector). Ningún conjunto de datos
+   revisado en P1 distingue el segundo nivel.
+2. **Calibración por inyección**: probabilidad de etiquetado de cada protocolo
+   en función de la SNR, de la interferencia y de la ocupación, medida
+   inyectando señales de los moduladores propios en fondo real; con ella cada
+   captura lleva una estimación de su cobertura, y cada etiqueta su error de
+   tiempo y de frecuencia.
+3. **Aprendizaje con el sesgo corregido**: usar esa probabilidad como
+   propensión (aprendizaje positivo-no etiquetado, ponderación inversa) al
+   entrenar un detector, y demostrar que mejora frente a tratar lo no
+   etiquetado como fondo, evaluado sobre verdad de terreno inyectada y sobre
+   otro receptor.
+4. **Sistema y datos abiertos**: binario único reproducible sobre un SDR de
+   menos de 1000 USD y conjunto de datos con DOI, con las tres clases de
+   etiqueta y las curvas de calibración.
 
-Trabajos cercanos que hay que diferenciar (encontrados en la primera búsqueda;
-P1 debe leerlos y ampliar): WBSig53 y Sig53 (sintéticos), WRIST/SPREAD
-(5 tecnologías, etiquetado iterativo con modelo), Tu et al. 2022 (solo ADS-B,
-etiquetado por decodificación), RFMLS (WiFi y ADS-B), CorteXforge 2026 (bancos
-de pruebas controlados), SigChord/Sums (inspección de cabeceras multibanda).
-**Veredicto de P1 (2026-11-20): incremental.** Etiquetar por decodificación con CRC ya está publicado para un solo protocolo (Tu et al. 2022, ADS-B) y como supervisión en un OFDM de laboratorio (Luostari et al. 2026). Lo nuevo es la combinación: muchos protocolos coexistiendo en banda ancha real, etiquetas tiempo-frecuencia con precisión y cobertura medidas, y la brecha sintético→real. El artículo debe matizar que la verdad de terreno real «no se puede» obtener (Fonseca 2020, Uvaydov 2024) citando a Tu, y tratar de frente el **sesgo de selección**: solo se etiqueta lo decodificable, y lo no decodificado no es un negativo. Revista con mejor encaje según lo verificado: IEEE OJ-COMS (cuartil pendiente de confirmar en JCR). Detalle en `paper/related_work.md`.
+Trabajos que hay que diferenciar: los de `paper/related_work.md` (Tu 2022,
+WRIST/SPREAD, Uvaydov 2024, Fonseca 2020, Luostari 2026, WBSig53, CorteXforge).
+**Pendiente de comprobar (P1b)**: si ya hay trabajos de aprendizaje
+positivo-no etiquetado, de sesgo de selección de etiquetas o de calibración por
+inyección aplicados a conjuntos de datos de RF. Si los hay, la contribución 3
+se ajusta; las 1 y 2 se sostienen por los moduladores emparejados.
 
-**La novedad no está confirmada del todo**: si P1 encuentra un trabajo que ya hace
-etiquetado por decodificación multiprotocolo en banda ancha, se replantea.
-
-Alternativa de reserva (menos novedosa): artículo de sistema sobre la
-arquitectura FPGA + GPU para decodificación multiprotocolo simultánea.
+Alternativa de reserva: artículo de sistema sobre la arquitectura FPGA + GPU.
 
 ### 5.2 Revistas candidatas
 
@@ -245,15 +251,18 @@ de páginas de terceros.
 |---|---|---|---|
 | P0 | Decisiones del usuario: revista (cuartil comprobado en JCR), autoría y afiliación, política de IA, alcance de los datos publicables | **Usuario** + Opus | Decisiones anotadas aquí |
 | P1 | Revisión bibliográfica sistemática: 40–60 referencias leídas, tabla comparativa (datos reales o sintéticos, nº de protocolos, origen de las etiquetas, ancho de banda, disponibilidad) y veredicto de novedad | **Sonnet**; Opus comprueba cada cita contra su fuente | `paper/related_work.md` sin citas sin verificar |
-| P2 | Exportar etiquetas: cada evento con instante de muestra inicial y final, frecuencia central, ancho ocupado y SNR, escrito como anotaciones SigMF junto a la grabación | **Sonnet** | Los 21 decodificadores lo emiten; test con señales inyectadas en posición conocida |
-| P3 | Validar las etiquetas: error de tiempo y frecuencia con señales sintéticas inyectadas sobre ruido real, cobertura frente a decodificadores de referencia, tasa de etiquetas falsas sobre ruido | **Sonnet** | Tabla de precisión y cobertura por protocolo |
+| P1b | Búsqueda dirigida: aprendizaje positivo-no etiquetado, sesgo de selección de etiquetas y calibración por inyección en RF; mismo rigor que P1 | **Sonnet** | Sección nueva en `paper/related_work.md` con veredicto sobre la tesis revisada |
+| P3a | Piloto sin tocar `src/`: curvas de probabilidad de decodificación frente a SNR para 4–5 protocolos, inyectando `--gen` sobre ruido y sobre una grabación real | **Sonnet** | `paper/exp/piloto/` con guion reproducible, curvas y conclusión de viabilidad |
+| P2 | Exportar etiquetas en tres niveles: evento verificado con muestra inicial y final, frecuencia, ancho y SNR; regiones del detector sin decodificar como «desconocido»; resto como vacío. Anotaciones SigMF | **Sonnet** | Los 21 decodificadores lo emiten; test con señales inyectadas en posición conocida |
+| P2b | Inyector: herramienta que suma a una captura real señales de los moduladores con SNR, instante y frecuencia sorteados y guarda su verdad de terreno | **Sonnet** | Test: lo inyectado se recupera donde se puso |
+| P3 | Calibración completa: probabilidad de etiquetado por protocolo frente a SNR, interferencia y ocupación; error de tiempo y frecuencia; falsos positivos sobre ruido; contraste con decodificadores de referencia | **Sonnet** | Curvas y tabla por protocolo con intervalos de confianza |
 | P4 | Campaña de captura: bandas y horarios planificados, con USB 3 y las antenas adecuadas; registro de condiciones | **Opus** (placa) + usuario (antenas) | ≥ 20 h repartidas en ≥ 8 bandas |
 | P5 | Anonimización y empaquetado del conjunto de datos según 5.3, con ficha de datos y suma de comprobación | **Sonnet** | Revisión de Opus sin identificadores en claro |
-| P6 | Experimentos: detector de referencia entrenado con sintético frente a real (fuera del binario; aquí sí se usan bibliotecas de aprendizaje), con semillas y guiones reproducibles | **Sonnet** | Resultados repetidos con 3 semillas |
+| P6 | Experimentos: detector entrenado (a) tratando lo no etiquetado como fondo, (b) con corrección por propensión, (c) solo con sintético; evaluado en verdad inyectada y en otro receptor (fuera del binario; aquí sí se usan bibliotecas de aprendizaje), con semillas y guiones reproducibles | **Sonnet** | Resultados repetidos con 3 semillas |
 | P7 | Figuras y tablas del artículo, generadas por guion | **Haiku** | Una orden las regenera todas |
 | P8 | Redacción en LaTeX con la plantilla de la revista | **Opus** | Borrador completo; cada cifra enlazada al guion que la produce |
 | P9 | Revisión interna simulando tres revisores y corrección | **Sonnet** (revisores) + **Opus** | Lista de objeciones cerrada |
 | P10 | Publicar datos y código con DOI, y enviar | **Usuario** | Enviado |
 
-Dependencias: P2 necesita la fase 1 cerrada; P4 necesita USB 3 (H2) y gana
+Dependencias: P1b y P3a pueden empezar ya; P2 y P2b necesitan la fase 1 cerrada; P4 necesita USB 3 (H2) y gana
 con F1, F3 y N4; P6 necesita P4 y P5. P1 puede empezar ya.
