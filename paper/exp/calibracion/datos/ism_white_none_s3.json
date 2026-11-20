@@ -1,0 +1,1 @@
+{"tag": "ism_white_none_s3", "proto": "ism", "bg": "white", "cond": "none", "seed": 3, "fs": 250000.0, "copies": 180, "pasadas": 15, "segundos_senal": 201.45150000000004, "eventos_ajenos": 0, "gaps": 1, "pasadas_escaladas": 0, "segundos_cpu": 32.6, "nominal_n_por_punto": 10, "paso_db": 2, "fondo": "blanco sigma=60"}

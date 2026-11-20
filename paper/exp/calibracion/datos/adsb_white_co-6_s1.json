@@ -1,0 +1,1 @@
+{"tag": "adsb_white_co-6_s1", "proto": "adsb", "bg": "white", "cond": "co-6", "seed": 1, "fs": 2000000.0, "copies": 360, "pasadas": 6, "segundos_senal": 7.401960000000001, "eventos_ajenos": 0, "gaps": 0, "pasadas_escaladas": 0, "segundos_cpu": 49.3, "nominal_n_por_punto": 20, "paso_db": 2.0, "fondo": "blanco sigma=60"}

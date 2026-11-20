@@ -1,0 +1,1 @@
+{"tag": "lora_real_none_s2", "proto": "lora", "bg": "real", "cond": "none", "seed": 2, "fs": 500000.0, "copies": 1224, "pasadas": 1224, "segundos_senal": 367.2000000000082, "eventos_ajenos": 0, "gaps": 1173, "pasadas_escaladas": 663, "segundos_cpu": 619.7, "nominal_n_por_punto": 34, "paso_db": 1, "fondo": "lte_500k.sigmf-meta+gsm_500k.sigmf-meta"}

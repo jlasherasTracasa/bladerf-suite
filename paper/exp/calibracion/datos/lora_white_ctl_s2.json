@@ -1,0 +1,1 @@
+{"tag": "lora_white_ctl_s2", "proto": "lora", "bg": "white", "cond": "ctl", "seed": 2, "fs": 1000000.0, "copies": 360, "pasadas": 6, "segundos_senal": 127.187478, "eventos_ajenos": 0, "gaps": 6, "pasadas_escaladas": 0, "segundos_cpu": 68.2, "nominal_n_por_punto": 20, "paso_db": 2.0, "fondo": "blanco sigma=60"}

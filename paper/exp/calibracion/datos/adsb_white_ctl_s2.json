@@ -1,0 +1,1 @@
+{"tag": "adsb_white_ctl_s2", "proto": "adsb", "bg": "white", "cond": "ctl", "seed": 2, "fs": 2000000.0, "copies": 360, "pasadas": 6, "segundos_senal": 6.441479999999999, "eventos_ajenos": 0, "gaps": 0, "pasadas_escaladas": 0, "segundos_cpu": 24.2, "nominal_n_por_punto": 20, "paso_db": 2.0, "fondo": "blanco sigma=60"}

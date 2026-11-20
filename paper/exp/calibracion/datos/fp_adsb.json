@@ -1,0 +1,21 @@
+[
+ {
+  "fam": "adsb",
+  "proto": "adsb",
+  "fondo": "blanco",
+  "segundos": 600.0,
+  "eventos": 0
+ },
+ {
+  "fam": "adsb",
+  "proto": "adsb",
+  "fondo": "real_rf",
+  "segundos": 0.30380050000000003,
+  "eventos": 0,
+  "ficheros": [
+   "lte_2M.sigmf-meta",
+   "gsm_2M.sigmf-meta",
+   "wifi_2M.sigmf-meta"
+  ]
+ }
+]

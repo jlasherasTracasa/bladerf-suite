@@ -1,0 +1,1 @@
+{"tag": "adsb_real_none_s1", "proto": "adsb", "bg": "real", "cond": "none", "seed": 1, "fs": 2000000.0, "copies": 1224, "pasadas": 24, "segundos_senal": 7.291212000000003, "eventos_ajenos": 0, "gaps": 1, "pasadas_escaladas": 24, "segundos_cpu": 10.4, "nominal_n_por_punto": 34, "paso_db": 1, "fondo": "lte_2M.sigmf-meta+gsm_2M.sigmf-meta+wifi_2M.sigmf-meta"}

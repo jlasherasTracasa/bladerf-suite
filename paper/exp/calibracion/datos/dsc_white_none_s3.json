@@ -1,0 +1,1 @@
+{"tag": "dsc_white_none_s3", "proto": "dsc", "bg": "white", "cond": "none", "seed": 3, "fs": 48000.0, "copies": 180, "pasadas": 15, "segundos_senal": 1141.128125, "eventos_ajenos": 0, "gaps": 0, "pasadas_escaladas": 0, "segundos_cpu": 33.8, "nominal_n_por_punto": 10, "paso_db": 2, "fondo": "blanco sigma=60"}

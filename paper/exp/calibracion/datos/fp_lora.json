@@ -1,0 +1,20 @@
+[
+ {
+  "fam": "lora",
+  "proto": "lora",
+  "fondo": "blanco",
+  "segundos": 900.0,
+  "eventos": 0
+ },
+ {
+  "fam": "lora",
+  "proto": "lora",
+  "fondo": "real_rf",
+  "segundos": 0.3,
+  "eventos": 0,
+  "ficheros": [
+   "lte_500k.sigmf-meta",
+   "gsm_500k.sigmf-meta"
+  ]
+ }
+]

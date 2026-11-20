@@ -1,0 +1,26 @@
+[
+ {
+  "fam": "f250",
+  "proto": "ism",
+  "fondo": "blanco",
+  "segundos": 900.0,
+  "eventos": 0
+ },
+ {
+  "fam": "f250",
+  "proto": "ism",
+  "fondo": "real_rf",
+  "segundos": 2.144288,
+  "eventos": 7,
+  "ficheros": [
+   "ism_acurite592txr.sigmf-meta",
+   "ism_f007th.sigmf-meta",
+   "ism_nexus.sigmf-meta",
+   "ism_oregon_thgr122n.sigmf-meta",
+   "ism_oregon_thn132n.sigmf-meta",
+   "ism_tx141bv2.sigmf-meta",
+   "ism_tx141bv3.sigmf-meta",
+   "ism_wh1080.sigmf-meta"
+  ]
+ }
+]

@@ -1,0 +1,1 @@
+{"tag": "pocsag_white_adj_s2", "proto": "pocsag", "bg": "white", "cond": "adj", "seed": 2, "fs": 250000.0, "copies": 360, "pasadas": 6, "segundos_senal": 620.03088, "eventos_ajenos": 0, "gaps": 1, "pasadas_escaladas": 0, "segundos_cpu": 127.2, "nominal_n_por_punto": 20, "paso_db": 2.0, "fondo": "blanco sigma=60"}
