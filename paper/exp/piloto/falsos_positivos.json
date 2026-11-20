@@ -1,0 +1,62 @@
+[
+ {
+  "proto": "adsb",
+  "bg": "real",
+  "seconds": 60.0,
+  "events": 0
+ },
+ {
+  "proto": "adsb",
+  "bg": "white",
+  "seconds": 60.0,
+  "events": 0
+ },
+ {
+  "proto": "ais",
+  "bg": "real",
+  "seconds": 60.0,
+  "events": 0
+ },
+ {
+  "proto": "ais",
+  "bg": "white",
+  "seconds": 60.0,
+  "events": 0
+ },
+ {
+  "proto": "aprs",
+  "bg": "real",
+  "seconds": 60.0,
+  "events": 0
+ },
+ {
+  "proto": "aprs",
+  "bg": "white",
+  "seconds": 60.0,
+  "events": 0
+ },
+ {
+  "proto": "lora",
+  "bg": "real",
+  "seconds": 60.0,
+  "events": 0
+ },
+ {
+  "proto": "lora",
+  "bg": "white",
+  "seconds": 60.0,
+  "events": 0
+ },
+ {
+  "proto": "pocsag",
+  "bg": "real",
+  "seconds": 60.0,
+  "events": 0
+ },
+ {
+  "proto": "pocsag",
+  "bg": "white",
+  "seconds": 60.0,
+  "events": 0
+ }
+]
