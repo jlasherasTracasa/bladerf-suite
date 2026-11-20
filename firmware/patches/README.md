@@ -15,9 +15,11 @@ git -C firmware/bladeRF checkout -b lab 35174c3
 git -C firmware/bladeRF am ../patches/*.patch
 # 2b. Parche 0003 (lab 1.2, FPGA 0.16.102): es un `git diff` sin commit; se aplica con
 git -C firmware/bladeRF apply ../patches/0003-*.diff
+# 2c. Parche 0004 (lab 1.3, FPGA 0.16.103, F11: GAIN8/CNT_SAT8): también `git diff`, sobre el resultado de 0003
+git -C firmware/bladeRF apply ../patches/0004-*.diff
 
 # 3. Compilar (Quartus Prime Lite 20.1.1 en ~/altera_lite/20.1; ver docs/hardware/FIRMWARE.md)
-firmware/build_lab.sh          # firmware/out/hosted-xA9-lab-0.16.102.rbf + .sha256 + reports_lab/
+firmware/build_lab.sh          # firmware/out/hosted-xA9-lab-0.16.103.rbf + .sha256 + reports_lab/
 ```
 
 `firmware/model/` y `firmware/sim/` ya están en el repositorio del proyecto. `lab_rom_p.vhd` (ventana y twiddles) viene

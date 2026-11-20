@@ -1,0 +1,366 @@
+diff --git a/hdl/fpga/platforms/bladerf-micro/software/bladeRF_nios/src/fpga_version.h b/hdl/fpga/platforms/bladerf-micro/software/bladeRF_nios/src/fpga_version.h
+index f52455d..6666ca5 100644
+--- a/hdl/fpga/platforms/bladerf-micro/software/bladeRF_nios/src/fpga_version.h
++++ b/hdl/fpga/platforms/bladerf-micro/software/bladeRF_nios/src/fpga_version.h
+@@ -8,10 +8,10 @@
+ #define FPGA_VERSION_ID         0x7777
+ #define FPGA_VERSION_MAJOR      0
+ #define FPGA_VERSION_MINOR      16
+-/* BladeRF Lab: la imagen "lab" se distingue de la de serie por el parche (102 = lab 1.2).
++/* BladeRF Lab: la imagen "lab" se distingue de la de serie por el parche (103 = lab 1.3).
+  * build_bladerf.sh compila el software del Nios con LAB_BUILD=1 cuando rev = lab. */
+ #ifdef BLADERF_LAB_BUILD
+-#define FPGA_VERSION_PATCH      102
++#define FPGA_VERSION_PATCH      103
+ #else
+ #define FPGA_VERSION_PATCH      0
+ #endif
+diff --git a/hdl/fpga/platforms/bladerf-micro/vhdl/bladerf-lab.vhd b/hdl/fpga/platforms/bladerf-micro/vhdl/bladerf-lab.vhd
+index b68b2a0..7dcf0bc 100644
+--- a/hdl/fpga/platforms/bladerf-micro/vhdl/bladerf-lab.vhd
++++ b/hdl/fpga/platforms/bladerf-micro/vhdl/bladerf-lab.vhd
+@@ -54,7 +54,9 @@ architecture lab_bladerf of bladerf is
+     signal lab_cfg_k           : unsigned(15 downto 0);
+     signal lab_cfg_pad         : std_logic;
+     signal lab_cfg_clear       : unsigned(7 downto 0);
+-    signal lab_cfg_rx          : std_logic_vector(28 downto 0);
++    signal lab_cfg_rx          : std_logic_vector(30 downto 0);
++    signal lab_cfg_gain8       : unsigned(1 downto 0);
++    signal rx_cnt_sat8         : unsigned(31 downto 0);
+     signal rx_cnt_samples, rx_cnt_ovf, rx_cnt_fft, rx_cnt_spec, rx_cnt_late, rx_cnt_words : unsigned(31 downto 0);
+     signal rx_spec_active      : std_logic;
+     signal lab_cnt_rx          : std_logic_vector(192 downto 0);
+@@ -62,8 +64,8 @@ architecture lab_bladerf of bladerf is
+     -- F10: saturación, tramas perdidas y marca de tiempo (cruce propio; el bus de 64 bit es atómico)
+     signal rx_cnt_sat, rx_cnt_satwin, rx_cnt_sdrop : unsigned(31 downto 0);
+     signal rx_time             : unsigned(63 downto 0);
+-    signal lab_cnt2_rx         : std_logic_vector(159 downto 0);
+-    signal lab_cnt2_sys        : std_logic_vector(159 downto 0);
++    signal lab_cnt2_rx         : std_logic_vector(191 downto 0);
++    signal lab_cnt2_sys        : std_logic_vector(191 downto 0);
+ 
+     signal sys_clock           : std_logic;
+     signal sys_clock_out       : std_logic;
+@@ -525,6 +527,7 @@ begin
+             cfg_k      => lab_cfg_k,
+             cfg_pad    => lab_cfg_pad,
+             cfg_clear  => lab_cfg_clear,
++            cfg_gain8  => lab_cfg_gain8,
+             c_samples  => unsigned(lab_cnt_sys(31 downto 0)),
+             c_ovf      => unsigned(lab_cnt_sys(63 downto 32)),
+             c_fft      => unsigned(lab_cnt_sys(95 downto 64)),
+@@ -535,14 +538,15 @@ begin
+             c_sat      => unsigned(lab_cnt2_sys(31 downto 0)),
+             c_satwin   => unsigned(lab_cnt2_sys(63 downto 32)),
+             c_sdrop    => unsigned(lab_cnt2_sys(95 downto 64)),
+-            c_time     => unsigned(lab_cnt2_sys(159 downto 96))
++            c_time     => unsigned(lab_cnt2_sys(159 downto 96)),
++            c_sat8     => unsigned(lab_cnt2_sys(191 downto 160))
+         );
+ 
+     U_lab_cdc_cfg : entity work.lab_cdc_bus
+-        generic map (W => 29)
++        generic map (W => 31)
+         port map (
+             src_clk  => sys_clock, src_rst => sys_reset,
+-            src_data => std_logic_vector(lab_cfg_clear) & lab_cfg_pad & std_logic_vector(lab_cfg_k) & std_logic_vector(lab_cfg_log2n),
++            src_data => std_logic_vector(lab_cfg_gain8) & std_logic_vector(lab_cfg_clear) & lab_cfg_pad & std_logic_vector(lab_cfg_k) & std_logic_vector(lab_cfg_log2n),
+             dst_clk  => rx_clock,  dst_rst => rx_reset,
+             dst_data => lab_cfg_rx
+         );
+@@ -560,11 +564,11 @@ begin
+             dst_data => lab_cnt_sys
+         );
+ 
+-    lab_cnt2_rx <= std_logic_vector(rx_time) & std_logic_vector(rx_cnt_sdrop) &
++    lab_cnt2_rx <= std_logic_vector(rx_cnt_sat8) & std_logic_vector(rx_time) & std_logic_vector(rx_cnt_sdrop) &
+                    std_logic_vector(rx_cnt_satwin) & std_logic_vector(rx_cnt_sat);
+ 
+     U_lab_cdc_cnt2 : entity work.lab_cdc_bus
+-        generic map (W => 160)
++        generic map (W => 192)
+         port map (
+             src_clk  => rx_clock,  src_rst => rx_reset,
+             src_data => lab_cnt2_rx,
+@@ -803,7 +807,9 @@ begin
+             c_adc_sat              => rx_cnt_sat,
+             c_adc_satwin           => rx_cnt_satwin,
+             c_spec_drop            => rx_cnt_sdrop,
+-            c_time                 => rx_time
++            c_time                 => rx_time,
++            cfg_gain8              => unsigned(lab_cfg_rx(30 downto 29)),
++            c_sat8                 => rx_cnt_sat8
+         );
+ 
+     adc_assignment_proc : process( all )
+diff --git a/hdl/fpga/platforms/bladerf-micro/vhdl/lab/lab_regs.vhd b/hdl/fpga/platforms/bladerf-micro/vhdl/lab/lab_regs.vhd
+index c3e1559..2e12fd7 100644
+--- a/hdl/fpga/platforms/bladerf-micro/vhdl/lab/lab_regs.vhd
++++ b/hdl/fpga/platforms/bladerf-micro/vhdl/lab/lab_regs.vhd
+@@ -7,7 +7,7 @@
+ --
+ -- Mapa (índice de palabra):
+ --   0  ID         RO  0x4C414231 "LAB1"
+---   1  VERSION    RO  0x00010002 (mayor.menor de la lab = 1.2; parche de FPGA 102)
++--   1  VERSION    RO  0x00010003 (mayor.menor de la lab = 1.3; parche de FPGA 103)
+ --   2  FEATURES   RO  bit0 motor de espectro; [7:4]=10 (log2 Nmin); [11:8]=13 (log2 Nmax)
+ --   3  SCRATCH    RW  32 bit
+ --   4  SCRATCH_N  RO  ~SCRATCH
+@@ -21,10 +21,10 @@
+ --  12  CNT_LATE     RO  tramas descartadas por lectura tardía
+ --  13  CNT_WORDS    RO  palabras de espectro emitidas
+ --  14  STATUS       RO  bit0 motor activo (rx_mux = 3 y RX habilitado)
+---  15  CLEAR        WO  cualquier escritura pone a cero los contadores 8..13 y 18..20 (lee el nº de borrados)
++--  15  CLEAR        WO  cualquier escritura pone a cero los contadores 8..13 y 18..20 y 24 (lee el nº de borrados)
+ -- Nuevos en la versión 1.2 (F10; los anteriores no cambian de dirección):
+ --  16  CAPS         RO  mapa de capacidades: bit0 espectro, bit1 saturación ADC, bit2 marca de tiempo,
+---                       bit3 tramas de espectro perdidas; bits 8..14 reservados F11..F17 (0 = ausente)
++--                       bit3 tramas de espectro perdidas, bit8 (F11) ganancia digital en SC8; bits 9..14 reservados F12..F17
+ --  17  SYNTH        RO  parámetros de síntesis: [7:0] bits del ADC (12), [15:8] log2 Nmax (13),
+ --                       [23:16] log2 Nmin (10), [31:24] bits por componente de la palabra de espectro (16)
+ --  18  CNT_ADC_SAT  RO  muestras con |I| o |Q| en fondo de escala (0x7FF / 0x800) desde el último CLEAR
+@@ -33,6 +33,10 @@
+ --  21  TIME_LO      RO  marca de tiempo libre (muestras válidas del canal 0), parte baja;
+ --                       LEERLA captura la parte alta en TIME_HI (lectura atómica de 64 bit)
+ --  22  TIME_HI      RO  parte alta capturada en la última lectura de TIME_LO
++-- Nuevos en la versión 1.3 (F11):
++--  23  GAIN8        RW  [1:0] desplazamiento a la izquierda (0..3 = +0/+6/+12/+18 dB) aplicado, con saturación,
++--                       a I y Q ANTES de quedarse con los 8 bits altos en el formato SC8; sin efecto en SC16/12 bit
++--  24  CNT_SAT8     RO  muestras SC8 con I o Q recortadas por esa ganancia desde el último CLEAR
+ 
+ library ieee;
+     use ieee.std_logic_1164.all;
+@@ -54,6 +58,7 @@ entity lab_regs is
+         cfg_k      : out unsigned(15 downto 0);
+         cfg_pad    : out std_logic;
+         cfg_clear  : out unsigned(7 downto 0);
++        cfg_gain8  : out unsigned(1 downto 0);
+         -- contadores desde el dominio de RX (ya sincronizados a clk)
+         c_samples  : in  unsigned(31 downto 0);
+         c_ovf      : in  unsigned(31 downto 0);
+@@ -66,15 +71,17 @@ entity lab_regs is
+         c_sat      : in  unsigned(31 downto 0);
+         c_satwin   : in  unsigned(31 downto 0);
+         c_sdrop    : in  unsigned(31 downto 0);
+-        c_time     : in  unsigned(63 downto 0)
++        c_time     : in  unsigned(63 downto 0);
++        -- F11
++        c_sat8     : in  unsigned(31 downto 0)
+     );
+ end entity;
+ 
+ architecture rtl of lab_regs is
+     constant ID_VALUE      : std_logic_vector(31 downto 0) := x"4C414231";
+-    constant VERSION_VALUE : std_logic_vector(31 downto 0) := x"00010002";
++    constant VERSION_VALUE : std_logic_vector(31 downto 0) := x"00010003";
+     constant FEATURES      : std_logic_vector(31 downto 0) := x"00000DA1";
+-    constant CAPS_VALUE    : std_logic_vector(31 downto 0) := x"0000000F";
++    constant CAPS_VALUE    : std_logic_vector(31 downto 0) := x"0000010F";
+     constant SYNTH_VALUE   : std_logic_vector(31 downto 0) := x"100A0D0C";
+     signal time_hi_lat : std_logic_vector(31 downto 0) := (others => '0');
+ 
+@@ -83,6 +90,7 @@ architecture rtl of lab_regs is
+     signal r_k       : unsigned(15 downto 0) := to_unsigned(16, 16);
+     signal r_pad     : std_logic := '1';
+     signal r_clear   : unsigned(7 downto 0) := (others => '0');
++    signal r_gain8   : unsigned(1 downto 0) := (others => '0');
+     signal cyc_d     : std_logic := '0';
+ begin
+ 
+@@ -90,6 +98,7 @@ begin
+     cfg_k     <= r_k;
+     cfg_pad   <= r_pad;
+     cfg_clear <= r_clear;
++    cfg_gain8 <= r_gain8;
+ 
+     process(clk)
+         variable idx : natural range 0 to 255;
+@@ -129,6 +138,8 @@ begin
+                     when 21 => rv := std_logic_vector(c_time(31 downto 0));
+                                 time_hi_lat <= std_logic_vector(c_time(63 downto 32));
+                     when 22 => rv := time_hi_lat;
++                    when 23 => rv := x"0000000" & "00" & std_logic_vector(r_gain8);
++                    when 24 => rv := std_logic_vector(c_sat8);
+                     when others => rv := x"BAD0BAD0";
+                 end case;
+                 if wb_we = '1' then
+@@ -138,6 +149,7 @@ begin
+                         when 6  => r_k     <= unsigned(wb_dat_w(15 downto 0));
+                         when 7  => r_pad   <= wb_dat_w(0);
+                         when 15 => r_clear <= r_clear + 1;
++                        when 23 => r_gain8 <= unsigned(wb_dat_w(1 downto 0));
+                         when others => null;
+                     end case;
+                 end if;
+diff --git a/hdl/fpga/platforms/bladerf-micro/vhdl/lab/rx_lab.vhd b/hdl/fpga/platforms/bladerf-micro/vhdl/lab/rx_lab.vhd
+index 304b41c..67b273a 100644
+--- a/hdl/fpga/platforms/bladerf-micro/vhdl/lab/rx_lab.vhd
++++ b/hdl/fpga/platforms/bladerf-micro/vhdl/lab/rx_lab.vhd
+@@ -119,7 +119,11 @@ entity rx_lab is
+         c_adc_sat              : out   unsigned(31 downto 0);
+         c_adc_satwin           : out   unsigned(31 downto 0);
+         c_spec_drop            : out   unsigned(31 downto 0);
+-        c_time                 : out   unsigned(63 downto 0)
++        c_time                 : out   unsigned(63 downto 0);
++
++        -- F11: ganancia digital del formato SC8 (desplazamiento 0..3 bit, con saturación) y su contador
++        cfg_gain8              : in    unsigned(1 downto 0) := (others => '0');
++        c_sat8                 : out   unsigned(31 downto 0)
+     );
+ end entity;
+ 
+@@ -152,6 +156,11 @@ architecture arch of rx_lab is
+     signal rx_gen_valid             : std_logic;
+ 
+     signal mux_streams              : sample_streams_t(adc_streams'range) := (others => ZERO_SAMPLE);
++    signal gain_streams             : sample_streams_t(adc_streams'range) := (others => ZERO_SAMPLE);
++    signal cs_sat8                  : unsigned(31 downto 0) := (others => '0');
++    signal sat8_flag                : std_logic := '0';
++    signal sat_ce_r                 : std_logic := '0';
++    signal sat_i_r, sat_q_r         : signed(11 downto 0) := (others => '0');
+ 
+     signal trigger_signal_out       : std_logic;
+     signal trigger_signal_out_sync  : std_logic;
+@@ -176,6 +185,7 @@ architecture arch of rx_lab is
+     signal frame_lost : std_logic := '0';
+     signal spec_frames_d, c_spec_frames_i : unsigned(31 downto 0) := (others => '0');
+     signal clear_prev2 : unsigned(7 downto 0) := (others => '0');
++    signal clear_prev3 : unsigned(7 downto 0) := (others => '0');
+ 
+ begin
+ 
+@@ -310,7 +320,7 @@ begin
+             meta_fifo_write     =>  meta_fifo.wreq,
+ 
+             in_sample_controls  =>  adc_controls,
+-            in_samples          =>  mux_streams,
++            in_samples          =>  gain_streams,
+ 
+             overflow_led        =>  rx_overflow_led,
+             overflow_count      =>  open,
+@@ -452,6 +462,92 @@ begin
+ 
+ 
+     -- ========================================================================
++    -- ========================================================================
++    -- F11: ganancia digital para el formato SC8 (combinacional, entre el multiplexor y fifo_writer)
++    --
++    -- SC8_Q7 de serie conserva los 8 bit ALTOS de los 12 del ADC (data >> 4): una señal débil
++    -- (p. ej. -50 dBFS) usa solo 1-2 bit y se pierde en el ruido de cuantificación de 8 bit
++    -- (SQNR = 6,02·b + 1,76 dB). Multiplicar antes por 2^s (s = 0..3, +0/+6/+12/+18 dB) y
++    -- recortar a 12 bit con saturación recoloca la señal débil en los bits altos; el coste es
++    -- que una señal fuerte se recorta (cuenta en c_sat8). El host divide por 2^s al convertir.
++    -- Solo actúa con eight_bit_mode_en = '1' y s /= 0; con s = 0 o en SC16/12 bit es la identidad
++    -- (la ruta es combinacional: no cambia latencias ni marcas de tiempo).
++    -- ========================================================================
++    gain8_comb : process(all)
++        -- Saturación explícita por bits altos (en vez de desplazar a 16 bit y comparar con
++        -- +/-2048, que Quartus sintetizaba en 4-5 niveles de LUT y daba -0,06 ns con 0 C en
++        -- lento): con ganancia g el valor v de 12 bit se sale de rango si sus g+1 bit altos no
++        -- son todos iguales; entonces la salida es 0x7FF (v>0) u 0x800 (v<0), y si no, v<<g.
++        function gsat(v : signed(11 downto 0); g : natural) return signed is
++            variable r : signed(11 downto 0);
++            variable t : std_logic_vector(3 downto 0);
++            variable ovf : boolean;
++        begin
++            t := std_logic_vector(v(11 downto 8));
++            case g is
++                when 1      => ovf := t(3) /= t(2);                                   r := v(10 downto 0) & '0';
++                when 2      => ovf := not (t(3 downto 1) = "000" or t(3 downto 1) = "111"); r := v(9 downto 0) & "00";
++                when others => ovf := not (t = "0000" or t = "1111");                 r := v(8 downto 0) & "000";
++            end case;
++            if ovf then
++                if v(11) = '1' then r := x"800"; else r := x"7FF"; end if;
++            end if;
++            return r;
++        end function;
++    begin
++        gain_streams <= mux_streams;
++        if eight_bit_mode_en = '1' and cfg_gain8 /= 0 then
++            for i in mux_streams'range loop
++                gain_streams(i).data_i <= resize(gsat(mux_streams(i).data_i(11 downto 0), to_integer(cfg_gain8)), gain_streams(i).data_i'length);
++                gain_streams(i).data_q <= resize(gsat(mux_streams(i).data_q(11 downto 0), to_integer(cfg_gain8)), gain_streams(i).data_q'length);
++            end loop;
++        end if;
++    end process;
++
++    -- Contador de recortes en DOS etapas: la detección de recorte (bits altos no uniformes)
++    -- se registra en sat8_flag y el sumador del contador cuelga de ese registro. Todo en una etapa
++    -- dio -0,5 ns de holgura (camino cfg_gain8 -> comparador -> sumador de 32 bit).
++    sat8_proc : process(rx_clock)
++        variable sv : boolean;
++        variable ti, tq : std_logic_vector(3 downto 0);
++
++        -- Hay recorte con ganancia g (1..3) si los g+1 bit altos del valor de 12 bit no son todos
++        -- iguales (el desplazamiento a la izquierda se sale de [-2048, 2047]). Se mira el dato de
++        -- entrada directamente: 2-3 niveles de lógica en vez de comparar contra gain_streams.
++        function clip(t : std_logic_vector(3 downto 0); g : natural) return boolean is
++        begin
++            case g is
++                when 1      => return t(3) /= t(2);
++                when 2      => return not (t(3 downto 1) = "000" or t(3 downto 1) = "111");
++                when others => return not (t = "0000" or t = "1111");
++            end case;
++        end function;
++    begin
++        if rising_edge(rx_clock) then
++            sv := false;
++            if rx_enable = '1' and eight_bit_mode_en = '1' and cfg_gain8 /= 0 then
++                for i in mux_streams'range loop
++                    if mux_streams(i).data_v = '1' and adc_controls(i).enable = '1' then
++                        ti := std_logic_vector(mux_streams(i).data_i(11 downto 8));
++                        tq := std_logic_vector(mux_streams(i).data_q(11 downto 8));
++                        if clip(ti, to_integer(cfg_gain8)) or clip(tq, to_integer(cfg_gain8)) then
++                            sv := true;
++                        end if;
++                    end if;
++                end loop;
++            end if;
++            if sv then sat8_flag <= '1'; else sat8_flag <= '0'; end if;
++
++            if spec_cfg_clear /= clear_prev3 then
++                clear_prev3 <= spec_cfg_clear;
++                cs_sat8     <= (others => '0');
++            elsif sat8_flag = '1' then
++                cs_sat8 <= cs_sat8 + 1;
++            end if;
++        end if;
++    end process;
++    c_sat8 <= cs_sat8;
++
+     -- Motor de espectro (activo solo con rx_mux = 3 y RX habilitado)
+     -- ========================================================================
+     spec_run    <= '1' when (rx_mux_mode = RX_MUX_ENTROPY and rx_enable = '1') else '0';
+@@ -549,6 +645,17 @@ begin
+     --   del canal 0 del ADC (tasa de muestra), sin reinicio por CLEAR ni por rx_reset
+     --   (solo vale 0 al cargar la FPGA). 2^64 muestras a 122,88 Msps = 4760 años.
+     -- ------------------------------------------------------------------------
++    -- Etapa de registro de entrada de la saturación (la selección de canal sel_ch depende de
++    -- adc_controls, que llega con lógica combinacional de la IP de ADI: cerraba a -0,26 ns).
++    sat_in_proc : process(rx_clock)
++    begin
++        if rising_edge(rx_clock) then
++            sat_ce_r <= rx_enable and adc_streams(sel_ch).data_v;
++            sat_i_r  <= adc_streams(sel_ch).data_i(11 downto 0);
++            sat_q_r  <= adc_streams(sel_ch).data_q(11 downto 0);
++        end if;
++    end process;
++
+     diag2_proc : process(rx_clock)
+         variable sv, lost : boolean;
+     begin
+@@ -571,11 +678,9 @@ begin
+                 cs_sdrop    <= (others => '0');
+                 frame_lost  <= '0';
+             else
+-                if rx_enable = '1' and adc_streams(sel_ch).data_v = '1' then
+-                    sv := adc_streams(sel_ch).data_i(11 downto 0) = x"7FF" or
+-                          adc_streams(sel_ch).data_i(11 downto 0) = x"800" or
+-                          adc_streams(sel_ch).data_q(11 downto 0) = x"7FF" or
+-                          adc_streams(sel_ch).data_q(11 downto 0) = x"800";
++                if sat_ce_r = '1' then
++                    sv := sat_i_r = x"7FF" or sat_i_r = x"800" or
++                          sat_q_r = x"7FF" or sat_q_r = x"800";
+                     win_cnt <= win_cnt + 1;
+                     if sv then
+                         cs_sat  <= cs_sat + 1;

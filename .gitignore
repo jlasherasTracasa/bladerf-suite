@@ -19,3 +19,4 @@ firmware/out/*.rbf
 firmware/out/logs/
 firmware/out/reports*/
 firmware/model/spec_tool
+firmware/model/pack_tool

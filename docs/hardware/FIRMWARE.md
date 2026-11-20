@@ -878,3 +878,57 @@ con el K nuevo y la cabecera lo refleja (palabra 2). El host debe resincronizar 
 
 * Repetir las medidas de caudal con la placa en USB 3 (SuperSpeed).
 * No incluido: DDC, modo oversample de 122,88 Msps, dos canales, ventanas distintas, umbral/detección en FPGA; CRC de la trama e indicador de saturación del ADC por trama.
+
+## 17. Más ancho de banda por el mismo USB (F11, lab 1.3, FPGA 0.16.103)
+
+### 17.1 Análisis de viabilidad (sin tocar el FX3 ni libbladeRF)
+
+Pregunta: ¿puede la FPGA empaquetar 12 bit por componente (3 bytes por muestra IQ) dentro del flujo de palabras de 32 bit que ya lee el FX3, de modo que el host lo reciba como datos «crudos» y los desempaquete? **Sí, y ya existe en la imagen de serie 0.16: no hay que inventarlo.**
+
+* **FPGA.** `fifo_writer.vhd` (`hdl/fpga/ip/nuand/synthesis/`) implementa `pack_sc12q11` («Highly Packed Mode»): 8 pares IQ de 24 bit cada 3 palabras de 64 bit, activado por el bit 21 de `config_gpio` (`highly_packed_en`, cableado en `bladerf-hosted.vhd` → `rx.vhd`). El FX3 solo ve palabras; no interpreta el contenido.
+* **libbladeRF 2.6.1.** `BLADERF_FORMAT_SC16_Q11_PACKED` (`libbladeRF.h`): `board/bladerf2/common.c` (`perform_format_config`) pone el bit 21 y no pide marcas de tiempo; `streaming/format.h` cuenta 3 bytes por muestra; `streaming/sync.c` (`SYNC_STATE_USING_BUFFER`) **desempaqueta a SC16_Q11 dentro de `bladerf_sync_rx()`** y exige `buffer_size` múltiplo de 3 × el tamaño de mensaje del GPIF. El host no toca nada más: pide ese formato y recibe SC16 normal.
+* **Limitaciones.** (1) Solo la interfaz síncrona (`bladerf.c:1124` rechaza la asíncrona). (2) **Sin metadatos**: no existe `SC16_Q11_PACKED_META`, así que no hay marca de tiempo por mensaje ni indicador de *overrun* por búfer; es el mismo régimen que `SC16_Q11` sin META (el barrido por marca de tiempo del motor actual, `source.c` usa `*_META`, no puede usar este formato; para medir pérdidas sirven `CNT_SAMPLES`/`TIME_LO/HI` de la lab, §11). (3) Un solo canal activo por `bladerf_sync_config` en este uso (RX_X1).
+* **Modo SC8 de la 0.16.** `SC8_Q7` (bit 20) ya sale en 2 bytes por muestra y sí admite `META`; los 8 bit son `data >> 4` fijos. En la 0.16 el «sobremuestreo» (122,88 Msps) es SC8 con el reloj de datos del AD9361 al doble; no cambia el empaquetado.
+* **Conclusión.** La idea del empaquetado de 12 bit es correcta y está resuelta aguas arriba. **Lo que la lab 1.3 añade** (único hueco real): **ganancia digital seleccionable para SC8**. SC8 de serie tira los 4 bit bajos de los 12 del ADC, de modo que una señal a −50 dBFS (≈ ±6 códigos) llega con 1–2 bit y queda enterrada en el ruido de cuantificación de 8 bit; multiplicar antes por 2^s la recoloca en los bits altos.
+
+### 17.2 Caudal teórico por USB 2 (≈ 45,2 MB/s útiles medidos, §16.3)
+
+| Formato | B/muestra | Msps máx. a 45,2 MB/s | Metadatos |
+|---|---|---|---|
+| SC16_Q11 | 4 | 11,3 | sí (`_META`) |
+| SC16_Q11_PACKED (12 bit) | 3 | **15,1** (×1,33) | no |
+| SC8_Q7 (+ ganancia lab 1.3) | 2 | **22,6** (×2) | sí (`_META`) |
+
+Tasas prácticas: 15,0 Msps empaquetado (15,36 Msps necesitarían 46,1 MB/s, algo por encima de lo medido) y 20 Msps en SC8 (40 MB/s; sirve para un canal de 20 MHz). Con USB 3 ninguno de los dos hace falta hasta 61,44 Msps (SC16 = 246 MB/s).
+
+### 17.3 Lo que añade la lab 1.3
+
+* **Registro 23 `GAIN8`** (RW): bits [1:0] = s; I y Q se multiplican por 2^s (s = 0…3 → +0/+6/+12/+18 dB), se saturan a 12 bit con signo y después `pack_eight_bit_mode` toma los 8 bit altos. Solo actúa con `eight_bit_mode_en = 1` y s ≠ 0; en SC16 y 12 bit empaquetado es la identidad. La ruta es combinacional (`rx_lab.vhd`, proceso `gain8_comb`, entre el multiplexor de RX y `fifo_writer`): no cambia latencias ni marcas de tiempo. No se modificó `fifo_writer.vhd` (IP compartida con la imagen de serie). Persiste ante `sys_reset`, como el resto de la configuración.
+* **Registro 24 `CNT_SAT8`** (RO): muestras SC8 con I o Q recortadas por la ganancia desde el último `CLEAR` (el registro 15 también lo borra). Una cuenta alta = s demasiado grande.
+* **`CAPS` bit 8 = 1** (`0x0000010F`); `VERSION` = `0x00010003`; parche de FPGA 103. El registro 25 sigue sin mapear (`0xBAD0BAD0`).
+* **Uso desde el host**: (1) comprobar `VERSION ≥ 0x00010003` y `CAPS & 0x100`; (2) `sync_config(RX_X1, BLADERF_FORMAT_SC8_Q7[_META], …)`; (3) escribir `GAIN8` (dirección de byte 4·23 = 92) **antes** de habilitar RX; (4) leer `CNT_SAT8` (byte 96) ~1 vez/s; subir s mientras `CNT_SAT8` ≈ 0 y la señal ocupe < ¼ de la escala; (5) convertir con `unpack_sc8_to_sc16(…, s)`, que deshace la ganancia (+½ LSB: la FPGA trunca).
+* **Host (no enlazado)**: `firmware/host/unpack12.{h,c}` y `test_unpack12.c`. `unpack_sc12_to_sc16()` hace en 3 lecturas de 32 bit lo que libbladeRF hace con máscaras de 16 bit (útil solo si algún día se lee el formato sin pasar por `bladerf_sync_rx`); `unpack_sc8_to_sc16()` deshace la ganancia de SC8. Disposición, LSB primero: `I0 Q0 I1 Q1…` de 12 bit; 4 muestras = 3 palabras. El test compara con una copia literal de la fórmula de libbladeRF y con un empaquetador de flujo de bits: OK.
+
+### 17.4 Verificación
+
+`firmware/sim/run_lab_pack.sh [semilla [tramas]]` (nuevo; `tb_rx_pack.vhd` + modelo `firmware/model/pack_tool.c`, bajo Questa FSE): inyecta tramas de 64 muestras (ruido uniforme, señal débil, fondo de escala y rampas) a través de `rx_lab.vhd`, vuelca las palabras de 32 bit de la FIFO hacia el FX3 y las compara al bit con el modelo.
+**1 000 tramas (64 000 muestras) por caso, semillas 20260101 y 7: 0 diferencias** en SC8 con s = 0, 1, 2, 3 (y `CNT_SAT8` idéntico al modelo: 36 602 / 43 732 / 46 322 con la primera semilla para s = 1, 2, 3) y en SC16_Q11_PACKED (48 000 palabras; **esto confirma por simulación que el empaquetado de serie coincide con lo que desempaqueta libbladeRF**). `run_lab_regs.sh`: OK con `GAIN8` (solo 2 bit, cruce a `rx_clock`, persistencia ante reset), `CNT_SAT8`, `CAPS` y registro 25 sin mapear.
+
+**Temporización (F11b).** Reloj rx (`pll_sclk`, 125 MHz, periodo 8 ns). Origen de los incumplimientos de la primera versión: el recorte se detectaba comparando `gain_streams` con el desplazado a 16 bit (6 niveles de LUT: `data_q` -> desplazador -> saturación -> `sat8_flag`, -0,196 ns) y la ganancia misma entraba en `fifo_writer` por un desplazador de 16 bit (-0,06 ns con 0 C). No había ninguna señal de configuración cruzando de dominio en el camino peor: `GAIN8` ya pasa por `lab_cdc_bus` (`dst_data`, registrado en `rx_clock`) y es casi estática, de modo que no hizo falta `set_false_path` ni `set_multicycle_path` (no se ha tocado ningún .sdc). Correcciones, sin cambio funcional (la simulación sigue dando 0 diferencias):
+
+* `gain8_comb`: saturación explícita por bits altos (`gsat`): con ganancia g el valor sale de rango si sus g+1 bit altos no son iguales; entonces 0x7FF/0x800, si no `v << g`. 2-3 niveles de LUT; sigue siendo combinacional (misma latencia y marcas de tiempo).
+* `sat8_proc`: el detector de recorte mira directamente los 4 bit altos de la entrada (no compara contra `gain_streams`); el contador de 32 bit sigue colgando del registro `sat8_flag` (una etapa intermedia, el contador va un ciclo retrasado: irrelevante).
+* Etapa de entrada `sat_ce_r/sat_i_r/sat_q_r` en el contador de saturación del ADC (`diag2_proc`), que ya existía de 1.2.
+
+Resultados de `build_lab.sh -S <semilla>` (Quartus 20.1.1, 8-49 min según semilla; peor holgura de setup / hold sobre los 4 modelos, todos los relojes):
+
+| Semilla | Setup (lento 85 C / lento 0 C / rápido 0 C / rápido 85 C) | Hold peor | Veredicto |
+|---|---|---|---|
+| 11 | -0,706 / -0,378 / 2,585 / 2,416 | +0,023 | no cierra |
+| 33 | -0,292 / +0,169 / 2,542 / 2,358 | +0,050 | no cierra |
+| 22 | +0,246 / +0,462 / 2,555 / 2,378 | +0,055 | cierra |
+| **44** | **+0,368 / +0,355 / 2,429 / 2,230** | **+0,071** | **cierra (elegida)** |
+
+La temporización sigue dependiendo de la colocación (camino peor con la semilla 44: `loopback_fifo_control:remaining` -> `loopback_streams`, de serie; con otras semillas: comparador de 64 bit de `time_tamer.timestamp` -> `fifo_reader.meta_time_go` en TX, también de serie). Por eso `build_lab.sh` fija ahora `-S 44` (`LAB_SEED` lo cambia): **no cambiar la semilla sin repetir el análisis**. Con la semilla 44 la holgura es >= +0,35 ns en los cuatro modelos. Recursos (semilla 44): 9 858 / 113 560 ALM (9 %), 19 634 registros, 4 033 858 / 12 492 800 bit de memoria (32 %), 42 / 342 DSP, 173 / 224 pines.
+
+Imagen final: `firmware/out/hosted-xA9-lab-0.16.103.rbf`, SHA-256 `452872280275b66cf627558cbfa55851b42b96a65a0f7b9d45c841ab72776c04` (semilla 44; informes en `firmware/out/logs/{sta,fit}_s{11,22,33,44}.summary`). Simulaciones tras el cambio: `run_lab_pack.sh 7` 0 diferencias (SC8 s = 0..3 y SC16 empaquetado; `CNT_SAT8` 37 366 / 45 382 / 48 242), `run_lab_regs.sh` OK, `run_rx_timestamp_lab.sh` OK. El parche `patches/0004-lab-1.3-ganancia-SC8-CNT_SAT8.diff` se ha regenerado con este RTL. Sin cargar nada en la placa.

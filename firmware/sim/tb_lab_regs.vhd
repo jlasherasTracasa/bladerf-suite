@@ -25,7 +25,9 @@ architecture sim of tb_lab_regs is
     signal cfg_k : unsigned(15 downto 0);
     signal cfg_pad : std_logic;
     signal cfg_clear : unsigned(7 downto 0);
-    signal rx_cfg : std_logic_vector(28 downto 0);
+    signal cfg_gain8 : unsigned(1 downto 0);
+    signal rx_gain8 : unsigned(1 downto 0);
+    signal rx_cfg : std_logic_vector(30 downto 0);
     signal rx_log2n : unsigned(3 downto 0);
     signal rx_k : unsigned(15 downto 0);
     signal rx_pad : std_logic;
@@ -39,7 +41,7 @@ architecture sim of tb_lab_regs is
     signal rx_time    : unsigned(63 downto 0) := x"00000000FFFFFFF0";
     signal time_load : std_logic := '0';
     signal rx_sat     : unsigned(31 downto 0) := x"00001234";
-    signal cnt2_rx, cnt2_sys : std_logic_vector(159 downto 0);
+    signal cnt2_rx, cnt2_sys : std_logic_vector(191 downto 0);
 
     signal fails : natural := 0;
     signal rst_pulse : std_logic := '0';
@@ -72,24 +74,26 @@ begin
             clk => clk, rst => rst,
             wb_cyc => wb_cyc, wb_adr => wb_adr, wb_dat_w => wb_dat_o, wb_we => wb_we,
             wb_dat_r => wb_dat_i, wb_ack => wb_ack,
-            cfg_log2n => cfg_log2n, cfg_k => cfg_k, cfg_pad => cfg_pad, cfg_clear => cfg_clear,
+            cfg_log2n => cfg_log2n, cfg_k => cfg_k, cfg_pad => cfg_pad, cfg_clear => cfg_clear, cfg_gain8 => cfg_gain8,
             c_samples => unsigned(cnt_sys(31 downto 0)), c_ovf => unsigned(cnt_sys(63 downto 32)),
             c_fft => unsigned(cnt_sys(95 downto 64)), c_spec => unsigned(cnt_sys(127 downto 96)),
             c_late => unsigned(cnt_sys(159 downto 128)), c_words => unsigned(cnt_sys(191 downto 160)),
             st_active => cnt_sys(192),
             c_sat => unsigned(cnt2_sys(31 downto 0)), c_satwin => unsigned(cnt2_sys(63 downto 32)),
-            c_sdrop => unsigned(cnt2_sys(95 downto 64)), c_time => unsigned(cnt2_sys(159 downto 96))
+            c_sdrop => unsigned(cnt2_sys(95 downto 64)), c_time => unsigned(cnt2_sys(159 downto 96)),
+            c_sat8 => unsigned(cnt2_sys(191 downto 160))
         );
 
     -- Cruce sys -> rx (configuración)
     u_cfg : entity work.lab_cdc_bus
-        generic map (W => 29)
-        port map (src_clk => clk, src_rst => rst, src_data => std_logic_vector(cfg_clear) & cfg_pad & std_logic_vector(cfg_k) & std_logic_vector(cfg_log2n),
+        generic map (W => 31)
+        port map (src_clk => clk, src_rst => rst, src_data => std_logic_vector(cfg_gain8) & std_logic_vector(cfg_clear) & cfg_pad & std_logic_vector(cfg_k) & std_logic_vector(cfg_log2n),
                   dst_clk => rxclk, dst_rst => rst, dst_data => rx_cfg);
     rx_log2n <= unsigned(rx_cfg(3 downto 0));
     rx_k     <= unsigned(rx_cfg(19 downto 4));
     rx_pad   <= rx_cfg(20);
     rx_clear <= unsigned(rx_cfg(28 downto 21));
+    rx_gain8 <= unsigned(rx_cfg(30 downto 29));
 
     -- Cruce rx -> sys (contadores): el contador de prueba corre en rxclk
     cnt_rx <= '1' & x"00000000" & x"00000000" & x"00000000" & x"00000000" & x"00000000" & std_logic_vector(rx_counter);
@@ -103,9 +107,9 @@ begin
         end if;
     end process;
 
-    cnt2_rx <= std_logic_vector(rx_time) & x"0000BEEF" & x"00005A5A" & std_logic_vector(rx_sat);
+    cnt2_rx <= x"00005EC8" & std_logic_vector(rx_time) & x"0000BEEF" & x"00005A5A" & std_logic_vector(rx_sat);
     u_cnt2 : entity work.lab_cdc_bus
-        generic map (W => 160)
+        generic map (W => 192)
         port map (src_clk => rxclk, src_rst => rst, src_data => cnt2_rx,
                   dst_clk => clk, dst_rst => rst, dst_data => cnt2_sys);
 
@@ -152,7 +156,7 @@ begin
     begin
         wait for 300 ns;
         avread(0, r);  expect("ID", r, x"4C414231");
-        avread(1, r);  expect("VERSION (lab 1.2)", r, x"00010002");
+        avread(1, r);  expect("VERSION (lab 1.3)", r, x"00010003");
         avread(2, r);  expect("FEATURES", r, x"00000DA1");
         avwrite(3, x"A5C3F00D");
         avread(3, r);  expect("SCRATCH", r, x"A5C3F00D");
@@ -184,12 +188,22 @@ begin
 
         -- ---- F10: capacidades y telemetría (versión 1.2) ----
         avread(2, r);  expect("FEATURES (sin cambios)", r, x"00000DA1");
-        avread(16, r); expect("CAPS", r, x"0000000F");
+        avread(16, r); expect("CAPS (bit 8 = F11)", r, x"0000010F");
         avread(17, r); expect("SYNTH (ADC 12, log2Nmax 13, log2Nmin 10, 16 b)", r, x"100A0D0C");
         avread(18, r); expect("CNT_ADC_SAT", r, x"00001234");
         avread(19, r); expect("SAT_WIN", r, x"00005A5A");
         avread(20, r); expect("CNT_SPEC_DROP", r, x"0000BEEF");
-        avread(23, r); expect("no mapeado 23", r, x"BAD0BAD0");
+        -- F11: ganancia digital SC8 (RW, cruza a rx) y contador de recortes
+        avread(23, r); expect("GAIN8 defecto", r, x"00000000");
+        avwrite(23, x"FFFFFFFE");
+        avread(23, r); expect("GAIN8 (solo 2 bit)", r, x"00000002");
+        wait for 2 us;
+        assert rx_gain8 = 2 report "FALLO cruce de GAIN8 a rx" severity error;
+        if rx_gain8 /= 2 then fails <= fails + 1; end if;
+        rst_pulse <= '1'; wait for 300 ns; rst_pulse <= '0'; wait for 300 ns;
+        avread(23, r); expect("GAIN8 tras reset", r, x"00000002");
+        avread(24, r); expect("CNT_SAT8", r, x"00005EC8");
+        avread(25, r); expect("no mapeado 25", r, x"BAD0BAD0");
 
         -- Atomicidad: leer TIME_LO y, más tarde, TIME_HI. El contador cruza 0xFFFFFFFF -> 0x1_00000000
         -- (a 125 MHz: 256 cuentas = 2 us). Esperar a que LO esté a punto de desbordar,

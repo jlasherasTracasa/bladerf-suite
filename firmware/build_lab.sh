@@ -4,10 +4,11 @@
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/env.sh"
-VER="0.16.102"
+VER="0.16.103"
+# Semilla del fitter: 44 cierra con holgura >= +0,35 ns (semillas 11 y 33 no cierran; ver FIRMWARE.md 17.4)
 cd "$HERE/bladeRF/hdl/quartus"
 start=$(date +%s)
-./build_bladerf.sh -b bladeRF-micro -r lab -s A9 -D "$@" 2>&1 | tee "$HERE/out/logs/build_lab_xA9.log"
+./build_bladerf.sh -b bladeRF-micro -r lab -s A9 -D -S "${LAB_SEED:-44}" "$@" 2>&1 | tee "$HERE/out/logs/build_lab_xA9.log"
 rc=${PIPESTATUS[0]}
 echo "RC=$rc TIEMPO_S=$(( $(date +%s) - start ))" | tee -a "$HERE/out/logs/build_lab_xA9.log"
 if [ "$rc" = 0 ] && [ -f labxA9/labxA9.rbf ]; then
