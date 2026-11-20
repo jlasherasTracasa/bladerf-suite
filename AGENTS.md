@@ -188,7 +188,11 @@ const decoder_desc_t *decoder_find(const char *id);
   símbolo del mensaje respecto al inicio del bloque. El host lo convierte en
   `sample`, `sample_end` (índice absoluto en la fuente), `sample_src`,
   `rssi_dbfs` y `snr_db`. Sin marca, `sample` es el inicio del bloque. Todo
-  decodificador nuevo debe marcar. Hoy marcan ais, adsb, aprs y lora.
+  decodificador nuevo debe marcar. Hoy marcan ais, adsb, aprs, lora, pocsag y dmr.
+  **Convención** (P3d, `decoder.h`): `sample` = primer símbolo modulado de la
+  transmisión, preámbulo/banderas/entrenamiento incluidos y sin la portadora sin
+  modular; `sample_end` = último símbolo del mensaje. El inyector del artículo usa
+  la misma verdad.
 
 ### 4.2 Host de decodificadores — `src/decoders/host.{h,c}` (A1)
 
