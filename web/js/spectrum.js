@@ -207,6 +207,12 @@ export function zoomToChan() {
   const c = (S.chan.freq - fLo()) / rate;
   view.span = span; view.start = clamp(c - span / 2, 0, 1 - span); dirty = true;
 }
+/** Centra la vista en la frecuencia f; con la vista completa (span > 0,5) acerca además a un cuarto de la banda. */
+export function centerViewOn(f) {
+  const rate = S.spec.rate || 1;
+  if (view.span > 0.5) view.span = clamp(0.25, minSpan(), 1);
+  view.start = clamp((f - fLo()) / rate - view.span / 2, 0, 1 - view.span); dirty = true;
+}
 function centerOnChan() {
   const c = (S.chan.freq - fLo()) / (S.spec.rate || 1);
   view.start = clamp(c - view.span / 2, 0, 1 - view.span); dirty = true;
@@ -376,6 +382,10 @@ function drawOverlay() {
       c.fillStyle = col; c.textAlign = 'left'; c.fillText(d.proto, x + 3, plotH + 3);
     }
   }
+  if (drag && drag.type === 'edge') {
+    const t = `Ancho ${fmtHz(S.chan.bw, 2)}`; c.font = '11px ui-monospace, monospace'; const tw = c.measureText(t).width + 10, tx = clamp((xl + xh) / 2 - tw / 2, 0, W - tw);
+    c.fillStyle = 'rgba(20,18,24,.9)'; c.fillRect(tx, plotH + 6, tw, 16); c.fillStyle = '#d0bcff'; c.textAlign = 'left'; c.textBaseline = 'middle'; c.fillText(t, tx + 5, plotH + 14);
+  }
   drawHover(c);
 }
 
@@ -404,12 +414,32 @@ function frame() {
 const ptrs = new Map();
 let drag = null;
 
-function hitEdge(x) {
+function hitEdge(x, tol = 7) {
   if (sweeping()) return null;
   const [lo, hi] = filterEdges(), xl = freqToX(lo), xh = freqToX(hi);
-  if (Math.abs(x - xl) <= 7) return 'lo';
-  if (Math.abs(x - xh) <= 7) return 'hi';
+  // con filtro muy estrecho los dos bordes se solapan: gana el más cercano
+  const dl = Math.abs(x - xl), dh = Math.abs(x - xh);
+  if (dl <= tol && dl <= dh) return 'lo';
+  if (dh <= tol) return 'hi';
   return null;
+}
+/* Inercia del desplazamiento: al soltar con velocidad, la vista sigue y se frena exponencialmente (τ ≈ 0,25 s) hasta que le queden menos de 0,4 px por recorrer. */
+const reduceMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+let inertia = null;
+function stopInertia() { inertia = null; }
+function startInertia(v) {            // v: fracción de banda de la vista por ms
+  if (reduceMotion() || Math.abs(v) < 2e-5) return;
+  inertia = { v, t: performance.now() };
+  const step = (now) => {
+    if (!inertia) return;
+    const dt = Math.min(50, now - inertia.t); inertia.t = now;
+    const ns = clamp(view.start + inertia.v * dt, 0, 1 - view.span);
+    if (ns === view.start) { inertia = null; return; }
+    view.start = ns; inertia.v *= Math.exp(-dt / 250); dirty = true;
+    if (Math.abs(inertia.v) * 250 < 0.4 * view.span / W) { inertia = null; return; }
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 function hitSignal(x, y) {
   if (y > 22) return null;
@@ -435,15 +465,19 @@ function onDown(e) {
   ovC.setPointerCapture(e.pointerId);
   const p = localPt(e); ptrs.set(e.pointerId, p);
   if (ptrs.size === 2) { drag = { type: 'pinch', d0: dist(), span0: view.span, start0: view.start }; return; }
-  const edge = hitEdge(p.x), sig = edge ? null : hitSignal(p.x, p.y);
-  drag = { type: edge ? 'edge' : sig ? 'sig' : 'pan', edge, sig, x0: p.x, y0: p.y, start0: view.start, moved: false, cx: e.clientX, cy: e.clientY };
+  stopInertia();
+  // botón central o Mayús: desplazar la vista siempre (sin sintonizar al soltar)
+  const force = e.button === 1 || e.shiftKey;
+  if (e.button === 1) e.preventDefault();
+  const edge = force ? null : hitEdge(p.x, e.pointerType === 'touch' ? 16 : 7), sig = edge || force ? null : hitSignal(p.x, p.y);
+  drag = { type: edge ? 'edge' : sig ? 'sig' : 'pan', force, edge, sig, x0: p.x, y0: p.y, start0: view.start, moved: false, cx: e.clientX, cy: e.clientY, hist: [[performance.now(), p.x]] };
 }
 const dist = () => { const [a, b] = [...ptrs.values()]; return Math.hypot(a.x - b.x, a.y - b.y) || 1; };
 function onMove(e) {
   const p = localPt(e);
   if (!ptrs.has(e.pointerId)) {
     hover = e.pointerType === 'mouse' ? p : null;
-    ovC.style.cursor = hitEdge(p.x) ? 'ew-resize' : hitSignal(p.x, p.y) ? 'pointer' : 'crosshair';
+    ovC.style.cursor = e.shiftKey ? 'grab' : hitEdge(p.x) ? 'ew-resize' : hitSignal(p.x, p.y) ? 'pointer' : 'crosshair';
     dirty = true; return;
   }
   ptrs.set(e.pointerId, p);
@@ -458,6 +492,7 @@ function onMove(e) {
   else if (drag.moved && (drag.type === 'pan' || drag.type === 'sig')) {
     drag.type = 'pan';
     view.start = clamp(drag.start0 - ((p.x - drag.x0) / W) * view.span, 0, 1 - view.span); dirty = true;
+    const hs = drag.hist, now = performance.now(); hs.push([now, p.x]); while (hs.length > 2 && now - hs[0][0] > 100) hs.shift();
   }
   hover = e.pointerType === 'mouse' ? p : null; dirty = true;
 }
@@ -465,17 +500,33 @@ function onUp(e) {
   ptrs.delete(e.pointerId);
   if (drag && drag.type === 'pinch') { if (ptrs.size < 2) drag = ptrs.size ? { type: 'none' } : null; return; }
   const d = drag; drag = null;
-  if (!d || d.moved) return;
+  if (d && d.moved && d.type === 'pan' && d.hist && d.hist.length > 1) {
+    const [t0, x0] = d.hist[0], [t1, x1] = d.hist[d.hist.length - 1];
+    if (performance.now() - t1 < 80 && t1 > t0) startInertia(-((x1 - x0) / W) * view.span / (t1 - t0));   // soltó en movimiento
+  }
+  if (!d || d.moved || d.force) return;
   if (d.type === 'sig') bus.emit('sig-menu', { sig: d.sig, x: d.cx, y: d.cy });
   else if (d.type === 'pan') {
     if (sweeping()) { sweepPick = Math.round(xToFreq(d.x0)); bus.emit('sweep-pick', sweepPick); dirty = true; }
     else setChannel({ freq: snap(xToFreq(d.x0)) }, { user: true });
   }
 }
+/* Rueda: sin modificador cambia la frecuencia un paso (el del modo); Ctrl (o el pellizco del panel táctil, que llega como Ctrl+rueda)
+ * hace zoom alrededor del cursor. En modo barrido no hay canal y la rueda hace zoom directamente. Los paneles táctiles envían muchos
+ * deltas pequeños: se acumulan hasta 40 unidades para dar un paso; una muesca de ratón (≥ 50) da siempre uno. */
+let wheelAcc = 0;
 function onWheel(e) {
-  e.preventDefault();
+  e.preventDefault(); stopInertia();
   const p = localPt(e), frac = view.start + (p.x / W) * view.span;
-  zoomAt(frac, e.deltaY < 0 ? 1.25 : 0.8);
+  const dy = e.deltaY || e.deltaX;
+  if (e.ctrlKey || sweeping()) {
+    zoomAt(frac, Math.abs(dy) >= 50 ? (dy < 0 ? 1.25 : 0.8) : Math.exp(-dy * 0.02));
+    return;
+  }
+  let n;
+  if (Math.abs(dy) >= 50) { n = Math.sign(-dy); wheelAcc = 0; }
+  else { wheelAcc += dy; n = 0; while (wheelAcc <= -40) { n++; wheelAcc += 40; } while (wheelAcc >= 40) { n--; wheelAcc -= 40; } }
+  if (n) setChannel({ freq: S.chan.freq + n * getStep() * (e.shiftKey ? 10 : 1) }, { user: true });
 }
 
 export function initSpectrum() {
@@ -483,7 +534,7 @@ export function initSpectrum() {
   wrap = $('#spec-wrap');
   plotC = document.createElement('canvas'); wfC = document.createElement('canvas'); ovC = document.createElement('canvas');
   ovC.className = 'ov'; ovC.tabIndex = 0; ovC.setAttribute('role', 'img');
-  ovC.setAttribute('aria-label', 'Espectro y cascada. Clic para sintonizar; flechas para ajustar la frecuencia.');
+  ovC.setAttribute('aria-label', 'Espectro y cascada. Clic para sintonizar, rueda para cambiar de frecuencia, Ctrl+rueda para el zoom, flechas para ajustar.');
   wrap.append(plotC, wfC, ovC);
   px = plotC.getContext('2d'); ox = ovC.getContext('2d');
   startWaterfall(false);
@@ -494,7 +545,8 @@ export function initSpectrum() {
   ovC.addEventListener('pointercancel', onUp);
   ovC.addEventListener('pointerleave', () => { hover = null; dirty = true; });
   ovC.addEventListener('wheel', onWheel, { passive: false });
-  ovC.addEventListener('dblclick', () => zoomReset());
+  ovC.addEventListener('dblclick', (e) => { if (!sweeping()) centerViewOn(xToFreq(localPt(e).x)); });
+  ovC.addEventListener('auxclick', (e) => e.preventDefault());   // el botón central desplaza; no debe abrir nada
 
   $('#z-in').addEventListener('click', () => zoomBy(1.6));
   $('#z-out').addEventListener('click', () => zoomBy(1 / 1.6));
@@ -533,12 +585,7 @@ export function initSpectrum() {
     }
   });
   bus.on('msg:status', () => { updateInfo(); dirty = true; });
-  // teclado sobre el lienzo
-  ovC.addEventListener('keydown', (e) => {
-    const step = getStep() * (e.shiftKey ? 10 : 1);
-    if (e.key === 'ArrowLeft') { setChannel({ freq: S.chan.freq - step }, { user: true }); e.preventDefault(); }
-    else if (e.key === 'ArrowRight') { setChannel({ freq: S.chan.freq + step }, { user: true }); e.preventDefault(); }
-  });
+  // El teclado sobre el lienzo (flechas) lo gestiona main.js: el lienzo es «libre» para los atajos.
   requestAnimationFrame(frame);
 }
 export const spectrumReady = () => !!wf;

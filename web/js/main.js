@@ -13,6 +13,7 @@ import { initMessages } from './messages.js';
 import { initRds } from './rds.js';
 import { initTx } from './tx.js';
 import { initTv } from './tv.js';
+import { initPalette, openPalette } from './palette.js';
 
 /* ---- pestañas ---- */
 let curTab = 'receptor';
@@ -75,23 +76,30 @@ function renderTop() {
 
 /* ---- atajos de teclado ---- */
 function shortcuts(e) {
+  // Ctrl/⌘+K abre la paleta de órdenes incluso desde un campo de texto
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); openPalette(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const t = e.target;
+  // nunca con el foco en un campo de texto, selector, diálogo o zona editable
   if (t.closest && t.closest('input:not([type=checkbox]):not([type=range]), textarea, select, dialog, [contenteditable]')) return;
   if (t.matches && t.matches('button, [role=tab], summary, a') && (e.key === ' ' || e.key === 'Enter')) return;
   const free = t.tagName === 'BODY' || (t.classList && t.classList.contains('ov'));
-  const step = getStep();
+  const step = getStep() * (e.shiftKey ? 10 : 1);
   switch (e.key) {
     case 'ArrowLeft': if (!free) return; tuneBy(-step); break;
     case 'ArrowRight': if (!free) return; tuneBy(step); break;
-    case 'ArrowUp': if (!free) return; tuneBy(step * 10); break;
-    case 'ArrowDown': if (!free) return; tuneBy(-step * 10); break;
+    case 'ArrowUp': case 'ArrowDown': {
+      if (!free) return;
+      const v = $('#vol'); v.value = Math.min(1, Math.max(0, +v.value + (e.key === 'ArrowUp' ? 0.05 : -0.05))).toFixed(2);
+      v.dispatchEvent(new Event('input', { bubbles: true })); break;
+    }
     case ' ': toggleListen(); break;
-    case 'm': case 'M': { const i = MODES.findIndex((m) => m[0] === S.chan.mode); setChannel({ mode: MODES[(i + 1) % MODES.length][0] }, { user: true }); break; }
+    case 'm': case 'M': { const i = MODES.findIndex((m) => m[0] === S.chan.mode); setChannel({ mode: MODES[(i + (e.shiftKey ? MODES.length - 1 : 1)) % MODES.length][0] }, { user: true }); break; }
+    case 's': case 'S': setChannel({ squelch: S.chan.squelch != null ? null : (+$('#rx-sql').value || -90) }); break;
     case '+': case '=': zoomBy(1.6); break;
     case '-': case '_': zoomBy(1 / 1.6); break;
-    case '0': zoomReset(); break;
-    case 'f': case 'F': $('#freq-input').focus(); break;
+    case '0': case 'f': case 'F': case 'Home': zoomReset(); break;
+    case 'g': case 'G': $('#freq-input').focus(); break;
     case 'r': case 'R': toggleRecording(); break;
     case '?': $('#help-dlg').showModal(); break;
     default: {
@@ -107,7 +115,7 @@ function shortcuts(e) {
 }
 
 function boot() {
-  initAudio(); initReceiver(); initSpectrum(); initSweep(); initHardware(); initProtocols(); initDecoders(); initMap(); initMessages(); initRds(); initTx(); initTv();
+  initAudio(); initReceiver(); initSpectrum(); initSweep(); initHardware(); initProtocols(); initDecoders(); initMap(); initMessages(); initRds(); initTx(); initTv(); initPalette();
   buildTabs(); showTab(decodeURIComponent(location.hash.slice(1)) || 'receptor');
   bus.on('tabs-changed', () => { buildTabs(); showTab(curTab); });
   window.addEventListener('hashchange', () => showTab(decodeURIComponent(location.hash.slice(1)) || 'receptor'));

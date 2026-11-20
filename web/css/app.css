@@ -170,6 +170,14 @@ kbd { background: var(--s4); border-radius: 5px; padding: 1px 6px; font-size: 12
 .menu button { display: block; width: 100%; text-align: left; background: transparent; border: 0; color: var(--on); padding: 8px 10px; border-radius: 8px; cursor: pointer; font: inherit; }
 .menu button:hover, .menu button:focus-visible { background: var(--primary-c); }
 dialog { background: var(--s2); color: var(--on); border: 1px solid var(--outline); border-radius: 20px; max-width: min(520px, 94vw); padding: 20px; }
+dialog h3.sub { margin: 14px 0 6px; font-size: 13px; color: var(--on-var); }
+dialog.palette { padding: 0; width: min(560px, 94vw); max-width: none; margin-top: 12vh; overflow: hidden; }
+.palette input { width: 100%; box-sizing: border-box; border: 0; border-bottom: 1px solid var(--outline); background: var(--s3); color: var(--on); font: inherit; font-size: 15px; padding: 14px 16px; outline: none; }
+.palette ul { list-style: none; margin: 0; padding: 6px; max-height: 50vh; overflow-y: auto; }
+.palette li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+.palette li small { color: var(--on-var); font-size: 12px; white-space: nowrap; }
+.palette li.sel { background: var(--primary-c); }
+.palette li.none { cursor: default; color: var(--on-var); }
 dialog::backdrop { background: rgba(8,6,12,.7); backdrop-filter: blur(4px); }
 .toasts { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 70; display: flex; flex-direction: column; gap: 6px; width: min(480px, 94vw); pointer-events: none; }
 .toast { background: var(--s4); border-left: 4px solid var(--info); padding: 10px 14px; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.5); font-size: 13px; }

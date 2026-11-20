@@ -24,6 +24,7 @@
     <span class="chip hide-sm" id="st-clients" title="Clientes conectados">— cli.</span>
     <span class="chip" id="st-over" title="Desbordamientos (muestras perdidas)">OVR 0</span>
   </div>
+  <button class="icon-btn" id="btn-palette" aria-label="Paleta de órdenes" title="Paleta de órdenes (Ctrl+K)">⌘</button>
   <button class="icon-btn" id="btn-help" aria-label="Atajos de teclado" title="Atajos de teclado (?)">?</button>
 </header>
 
@@ -261,18 +262,34 @@
 <div class="menu" id="sig-menu" role="menu" hidden></div>
 <dialog id="help-dlg" aria-labelledby="help-t"><h2 id="help-t">Atajos de teclado</h2>
   <table class="tbl keys"><tbody>
-  <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Sintonía fina (paso actual)</td></tr>
-  <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Sintonía ×10</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Paleta de órdenes: perfiles, modos, decodificadores, pestañas, «100.3m»…</td></tr>
+  <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Sintonía: un paso (el del modo)</td></tr>
+  <tr><td><kbd>Mayús</kbd>+<kbd>←</kbd> <kbd>→</kbd></td><td>Sintonía ×10</td></tr>
+  <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Volumen</td></tr>
   <tr><td><kbd>Espacio</kbd></td><td>Activar / silenciar audio</td></tr>
-  <tr><td><kbd>M</kbd></td><td>Cambiar de modo</td></tr>
-  <tr><td><kbd>+</kbd> <kbd>−</kbd> <kbd>0</kbd></td><td>Acercar, alejar, ver todo</td></tr>
-  <tr><td><kbd>F</kbd></td><td>Editar la frecuencia</td></tr>
+  <tr><td><kbd>M</kbd> · <kbd>Mayús</kbd>+<kbd>M</kbd></td><td>Modo siguiente / anterior</td></tr>
+  <tr><td><kbd>S</kbd></td><td>Squelch activado / desactivado</td></tr>
+  <tr><td><kbd>+</kbd> <kbd>−</kbd></td><td>Acercar, alejar el espectro</td></tr>
+  <tr><td><kbd>F</kbd> · <kbd>Inicio</kbd> · <kbd>0</kbd></td><td>Vista completa del espectro</td></tr>
+  <tr><td><kbd>G</kbd></td><td>Editar la frecuencia</td></tr>
   <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>Cambiar de panel</td></tr>
   <tr><td><kbd>R</kbd></td><td>Iniciar / parar grabación</td></tr>
   <tr><td><kbd>?</kbd></td><td>Esta ayuda</td></tr>
   </tbody></table>
-  <p class="muted">En el espectro: clic para sintonizar, arrastrar para desplazar, arrastrar los bordes del filtro para cambiar la anchura, rueda o pellizco para el zoom, clic en una señal marcada para «decodificar como…».</p>
+  <h3 class="sub">En el espectro y la cascada</h3>
+  <table class="tbl keys"><tbody>
+  <tr><td>Clic</td><td>Sintonizar · clic en una señal marcada: «decodificar como…»</td></tr>
+  <tr><td>Rueda</td><td>Cambiar la frecuencia un paso (según el modo)</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+rueda · pellizco</td><td>Zoom alrededor del cursor</td></tr>
+  <tr><td>Arrastrar bordes del filtro</td><td>Cambiar la anchura del canal</td></tr>
+  <tr><td>Arrastrar · botón central · <kbd>Mayús</kbd>+arrastrar</td><td>Desplazar la vista (con inercia; en el móvil, un dedo)</td></tr>
+  <tr><td>Doble clic</td><td>Centrar la vista en esa frecuencia</td></tr>
+  </tbody></table>
   <form method="dialog"><button class="btn primary">Cerrar</button></form>
+</dialog>
+<dialog id="palette" class="palette" aria-label="Paleta de órdenes">
+  <input id="pal-input" type="text" role="combobox" aria-expanded="true" aria-controls="pal-list" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="Escribe una orden o una frecuencia (100.3m)…" aria-label="Buscar orden">
+  <ul id="pal-list" role="listbox" aria-label="Órdenes"></ul>
 </dialog>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <script type="module" src="js/main.js"></script>

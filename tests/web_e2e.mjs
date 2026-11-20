@@ -121,12 +121,20 @@ export class Page {
     const r = await this.rect(sel); if (!r) throw new Error('no existe ' + sel);
     await this.click(r.x + r.w / 2, r.y + r.h / 2);
   }
-  async drag(x0, y0, x1, y1, steps = 8) {
-    await this.mouse('mouseMoved', x0, y0, { buttons: 0 }); await this.mouse('mousePressed', x0, y0);
-    for (let i = 1; i <= steps; i++) await this.mouse('mouseMoved', x0 + (x1 - x0) * i / steps, y0 + (y1 - y0) * i / steps);
-    await this.mouse('mouseReleased', x1, y1);
+  /** opts.button: 'left'|'middle'; opts.modifiers: máscara CDP (Alt 1, Ctrl 2, Meta 4, Mayús 8); opts.hold: no soltar (devuelve sin mouseReleased). */
+  async drag(x0, y0, x1, y1, steps = 8, opts = {}) {
+    const b = opts.button || 'left', mask = b === 'middle' ? 4 : 1, mod = { modifiers: opts.modifiers || 0 };
+    await this.mouse('mouseMoved', x0, y0, { buttons: 0, ...mod }); await this.mouse('mousePressed', x0, y0, { button: b, buttons: mask, ...mod });
+    for (let i = 1; i <= steps; i++) await this.mouse('mouseMoved', x0 + (x1 - x0) * i / steps, y0 + (y1 - y0) * i / steps, { button: b, buttons: mask, ...mod });
+    await this.mouse('mouseReleased', x1, y1, { button: b, buttons: 0, ...mod });
   }
-  async wheel(x, y, dy) { await this.front(); await this.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: 0, deltaY: dy }); }
+  async dblclick(x, y) {
+    await this.mouse('mouseMoved', x, y, { buttons: 0 });
+    for (const c of [1, 2]) { await this.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: c }); await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: c }); }
+  }
+  async wheel(x, y, dy, modifiers = 0) { await this.front(); await this.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: 0, deltaY: dy, modifiers }); }
+  /** Táctil: puntos = [{x,y}...] en cada fase. */
+  async touch(type, pts) { await this.front(); await this.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map((p, i) => ({ x: p.x, y: p.y, id: i + 1 })) }); }
   async key(key, opts = {}) {
     await this.front();
     const code = { ArrowLeft: 37, ArrowRight: 39, ArrowUp: 38, ArrowDown: 40, Enter: 13, Escape: 27, Tab: 9, Backspace: 8, ' ': 32 }[key] || (key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0);
@@ -329,10 +337,10 @@ suites.sintonia = async (ctx) => {
   await pg.ev(`(()=>{const e=document.querySelector('#rx-step');e.value='10000';e.dispatchEvent(new Event('change',{bubbles:true}));document.activeElement.blur()})()`); const f0 = await S_(pg, 'S.chan.freq');
   await pg.key('ArrowRight'); await sleep(80); const f1 = await S_(pg, 'S.chan.freq');
   await pg.key('ArrowLeft'); await sleep(80); const f2 = await S_(pg, 'S.chan.freq');
-  await pg.key('ArrowUp'); await sleep(80); const f3 = await S_(pg, 'S.chan.freq');
+  await pg.key('ArrowRight', { modifiers: 8 }); await sleep(80); const f3 = await S_(pg, 'S.chan.freq');
   check('flechas ←/→ mueven un paso', f1 > f0 && f2 === f0, `${f0} ${f1} ${f2}`);
-  check('flecha ↑ mueve ×10', f3 - f2 === 10 * (f1 - f0), `${f3 - f2} vs ${f1 - f0}`);
-  await pg.key('ArrowDown');
+  check('Mayús+→ mueve ×10', f3 - f2 === 10 * (f1 - f0), `${f3 - f2} vs ${f1 - f0}`);
+  await pg.key('ArrowLeft', { modifiers: 8 }); await sleep(80);
   // clic en el espectro
   const ov = await pg.rect('#spec-wrap');
   const target = await S_(pg, 'S.status.center+300000'); const x = await pg.ev(`__app.freqToX(${target})`);
@@ -373,8 +381,8 @@ suites.zoom = async (ctx) => {
   check('botón + acerca', span1 < span0, `${span0} → ${span1}`);
   await pg.clickSel('#z-out'); check('botón − aleja', (await pg.ev('__app.getView().span')) > span1);
   await pg.clickSel('#z-reset'); check('Todo restablece', (await pg.ev('__app.getView().span')) === 1);
-  await pg.wheel(ov.x + ov.w / 2, ov.y + 60, -120); await pg.wheel(ov.x + ov.w / 2, ov.y + 60, -120); await sleep(100);
-  const sp = await pg.ev('__app.getView().span'); check('rueda acerca', sp < 0.7, sp);
+  await pg.wheel(ov.x + ov.w / 2, ov.y + 60, -120, 2); await pg.wheel(ov.x + ov.w / 2, ov.y + 60, -120, 2); await sleep(100);
+  const sp = await pg.ev('__app.getView().span'); check('Ctrl+rueda acerca', sp < 0.7, sp);
   const st0 = await pg.ev('__app.getView().start');
   await pg.drag(ov.x + 400, ov.y + 60, ov.x + 250, ov.y + 60); await sleep(100);
   const st1 = await pg.ev('__app.getView().start'); check('arrastrar desplaza la vista', Math.abs(st1 - st0) > 0.01, `${st0} → ${st1}`);
@@ -388,6 +396,137 @@ suites.zoom = async (ctx) => {
   await pg.clickSel('#peak-hold'); await sleep(300); await pg.clickSel('#peak-hold');
   await pg.clickSel('#rng-auto'); await pg.fill('#rng-min', '-120', false); await pg.fill('#rng-max', '-40', false); await sleep(200);
   check('rango manual aplicable', true); await pg.clickSel('#rng-auto');
+};
+
+// Manipulación directa (W8): rueda, zoom con Ctrl, bordes del filtro, desplazamiento con inercia, doble clic, teclas, paleta y táctil.
+suites.manipulacion = async (ctx) => {
+  const pg = ctx.pg;
+  const mode = (m) => pg.ev(`[...document.querySelectorAll('#mode-seg button')].find(b=>b.textContent==='${m}').click()`);
+  const view = () => pg.ev('__app.getView()');
+  await pg.ev(`document.activeElement.blur();0`); await pg.clickSel('#z-reset'); await mode('WFM');
+  await pg.fill('#freq-input', '100.4'); await pg.ev(`document.activeElement.blur();0`); await sleep(150);
+  const ov = await pg.rect('#spec-wrap'), cx = ov.x + ov.w / 2, cy = ov.y + 60;
+  // rueda = paso de sintonía del modo
+  const f0 = await S_(pg, 'S.chan.freq'), st0 = await pg.ev(`+document.querySelector('#rx-step').value`);
+  await pg.wheel(cx, cy, -100); await sleep(120);
+  check(`rueda arriba sube un paso en WFM (${st0} Hz)`, (await S_(pg, 'S.chan.freq')) === f0 + st0, await S_(pg, 'S.chan.freq'));
+  await pg.wheel(cx, cy, 100); await sleep(120);
+  check('rueda abajo lo baja', (await S_(pg, 'S.chan.freq')) === f0);
+  check('la rueda sola no hace zoom', (await view()).span === 1);
+  await mode('NFM'); await sleep(100); const stN = await pg.ev(`+document.querySelector('#rx-step').value`), fn = await S_(pg, 'S.chan.freq');
+  await pg.wheel(cx, cy, -100); await sleep(120);
+  check(`rueda en NFM usa su paso (${stN} Hz, distinto del de WFM)`, stN !== st0 && (await S_(pg, 'S.chan.freq')) === fn + stN, `${stN} ${await S_(pg, 'S.chan.freq')}`);
+  // Ctrl+rueda = zoom alrededor del cursor (la frecuencia bajo el cursor no se mueve)
+  const fq = await pg.ev(`__app.xToFreq(${cx - ov.x - 200})`), fch = await S_(pg, 'S.chan.freq');
+  await pg.wheel(cx - 200, cy, -120, 2); await pg.wheel(cx - 200, cy, -120, 2); await sleep(120);
+  const fq2 = await pg.ev(`__app.xToFreq(${cx - ov.x - 200})`), v1 = await view();
+  check('Ctrl+rueda acerca', v1.span < 0.7, v1.span);
+  check('el zoom conserva la frecuencia bajo el cursor (±0,5 % de la banda)', Math.abs(fq2 - fq) < 0.005 * (await S_(pg, 'S.spec.rate')), `${fq} → ${fq2}`);
+  check('Ctrl+rueda no cambia la frecuencia del canal', (await S_(pg, 'S.chan.freq')) === fch);
+  // arrastrar el borde del filtro: ancho NFM
+  await pg.clickSel('#z-reset'); await sleep(80);
+  const bw0 = await S_(pg, 'S.chan.bw'), ex = await pg.ev(`__app.freqToX(__app.S.chan.freq+__app.S.chan.bw/2)`);
+  await pg.drag(ov.x + ex, ov.y + 60, ov.x + ex + 24, ov.y + 60); await sleep(150);
+  const bw1 = await S_(pg, 'S.chan.bw');
+  check('arrastrar el borde derecho ensancha el filtro (simétrico)', bw1 > bw0 + 5000, `${bw0} → ${bw1}`);
+  check('… sin mover la frecuencia del canal', (await S_(pg, 'S.chan.freq')) === fch + 0 || Math.abs((await S_(pg, 'S.chan.freq')) - fch) === 0, await S_(pg, 'S.chan.freq'));
+  const ex1 = await pg.ev(`__app.freqToX(__app.S.chan.freq-__app.S.chan.bw/2)`);
+  await pg.drag(ov.x + ex1, ov.y + 60, ov.x + ex1 + 12, ov.y + 60); await sleep(150);
+  check('arrastrar el borde izquierdo hacia dentro lo estrecha', (await S_(pg, 'S.chan.bw')) < bw1, await S_(pg, 'S.chan.bw'));
+  // Mayús+arrastre y botón central: desplazan sin sintonizar
+  await pg.clickSel('#z-in'); await pg.clickSel('#z-in'); await pg.clickSel('#z-in'); await sleep(80);
+  const fz = await S_(pg, 'S.chan.freq'), s0 = (await view()).start;
+  await pg.drag(cx, ov.y + 90, cx - 120, ov.y + 90, 8, { modifiers: 8 }); await sleep(900);
+  const s1 = (await view()).start;
+  check('Mayús+arrastre desplaza la vista', s1 > s0 + 0.005, `${s0} → ${s1}`);
+  check('… y no sintoniza', (await S_(pg, 'S.chan.freq')) === fz);
+  await pg.drag(cx, ov.y + 90, cx + 120, ov.y + 90, 8, { button: 'middle' }); await sleep(900);
+  const s2 = (await view()).start;
+  check('botón central + arrastre desplaza la vista', s2 < s1 - 0.005, `${s1} → ${s2}`);
+  check('… y no sintoniza', (await S_(pg, 'S.chan.freq')) === fz);
+  // inercia: tras soltar, la vista sigue moviéndose un rato
+  await pg.ev(`document.activeElement.blur();0`);
+  const a0 = (await view()).start; await pg.drag(cx + 100, ov.y + 90, cx - 100, ov.y + 90, 6); const a1 = (await view()).start;
+  await sleep(120); const a2 = (await view()).start; await sleep(700); const a3 = (await view()).start;
+  check('inercia: la vista sigue desplazándose tras soltar', a2 > a1 + 1e-4 || a3 > a1 + 1e-4, `${a0} → ${a1} → ${a2} → ${a3}`);
+  await sleep(900); const a4 = (await view()).start; await sleep(400);
+  check('… y acaba frenando', Math.abs((await view()).start - a4) < 0.002);
+  // doble clic = centrar la vista en esa frecuencia
+  await pg.clickSel('#z-reset'); await sleep(80);
+  const target = (await S_(pg, 'S.status.center')) + 500000, tx = await pg.ev(`__app.freqToX(${target})`);
+  await pg.dblclick(ov.x + tx, ov.y + 90); await sleep(150);
+  const v2 = await view(), mid = await pg.ev(`__app.xToFreq(${ov.w / 2})`);
+  check('doble clic acerca y centra la vista en esa frecuencia', v2.span < 0.6 && Math.abs(mid - target) < 0.02 * (await S_(pg, 'S.spec.rate')), `span ${v2.span}, centro ${mid} vs ${target}`);
+  // teclas
+  await pg.ev(`document.activeElement.blur();0`);
+  const vol0 = await pg.ev(`+document.querySelector('#vol').value`);
+  await pg.key('ArrowUp'); await sleep(60); const vol1 = await pg.ev(`+document.querySelector('#vol').value`);
+  await pg.key('ArrowDown'); await pg.key('ArrowDown'); await sleep(60); const vol2 = await pg.ev(`+document.querySelector('#vol').value`);
+  check('↑/↓ cambian el volumen', vol1 > vol0 && vol2 < vol1, `${vol0} ${vol1} ${vol2}`);
+  const m0 = await S_(pg, 'S.chan.mode'); await pg.key('m', { modifiers: 8 }); await sleep(80);
+  check('Mayús+M va al modo anterior', (await S_(pg, 'S.chan.mode')) !== m0 && (await S_(pg, 'S.chan.mode')) !== 'nfm' || m0 !== 'nfm', await S_(pg, 'S.chan.mode')); await mode('NFM');
+  const sq0 = await S_(pg, 'S.chan.squelch'); await pg.key('s'); await sleep(80); const sq1 = await S_(pg, 'S.chan.squelch'); await pg.key('s'); await sleep(80);
+  check('S activa y desactiva el squelch', (sq0 == null) !== (sq1 == null) && ((await S_(pg, 'S.chan.squelch')) == null) === (sq0 == null), `${sq0} ${sq1}`);
+  check('F: vista completa', (await pg.key('f'), await sleep(60), (await view()).span === 1));
+  await pg.clickSel('#z-in'); await pg.key('Home'); await sleep(60); check('Inicio: vista completa', (await view()).span === 1);
+  await pg.key('+'); await pg.key('+'); await sleep(60); const sz = (await view()).span; await pg.key('-'); await sleep(60);
+  check('+ y − hacen zoom', sz < 0.5 && (await view()).span > sz);
+  await pg.key('0');
+  // ninguna tecla actúa con el foco en un campo de texto
+  await pg.ev(`document.querySelector('#freq-input').focus();0`);
+  const snap = JSON.stringify(await S_(pg, '[S.chan.mode,S.chan.squelch,S.chan.freq]')), vw = (await view()).span, vv = await pg.ev(`+document.querySelector('#vol').value`);
+  for (const k of ['m', 's', 'f', 'g', '+', 'r', ' ', 'ArrowUp', 'ArrowRight']) await pg.key(k);
+  check('con el foco en un campo de texto los atajos no se disparan', JSON.stringify(await S_(pg, '[S.chan.mode,S.chan.squelch,S.chan.freq]')) === snap && (await view()).span === vw && (await pg.ev(`+document.querySelector('#vol').value`)) === vv);
+  await pg.key('Escape'); await pg.ev(`document.activeElement.blur();0`);
+  // paleta de órdenes
+  await pg.key('k', { modifiers: 2 }); await sleep(200);
+  check('Ctrl+K abre la paleta con el foco en la búsqueda', (await pg.ev(`document.querySelector('#palette').open`)) && (await pg.ev(`document.activeElement.id`)) === 'pal-input');
+  const n0 = await pg.ev(`document.querySelectorAll('#pal-list li').length`);
+  check('la paleta lista acciones (perfiles, modos, decodificadores, pestañas)', n0 >= 20, n0);
+  await pg.key('ArrowDown'); await sleep(40);
+  check('↓ mueve la selección (aria-activedescendant)', (await pg.ev(`document.querySelector('#pal-input').getAttribute('aria-activedescendant')`)) === 'pal-1');
+  await pg.key('Escape'); await sleep(150); check('Esc cierra la paleta', !(await pg.ev(`document.querySelector('#palette').open`)));
+  await pg.fill('#freq-input', '99.6', false); await pg.key('k', { modifiers: 2 }); await sleep(150);
+  check('Ctrl+K funciona también desde un campo de texto', await pg.ev(`document.querySelector('#palette').open`));
+  await pg.type('100.3m'); await sleep(100);
+  check('«100.3m»: primera opción «Ir a 100.3000 MHz»', /Ir a 100\.3000 MHz/.test(await pg.ev(`document.querySelector('#pal-list li').textContent`)), await pg.ev(`document.querySelector('#pal-list li').textContent`));
+  await pg.key('Enter'); await sleep(200);
+  check('Intro sintoniza 100,3 MHz y cierra', (await S_(pg, 'S.chan.freq')) === 100300000 && !(await pg.ev(`document.querySelector('#palette').open`)), await S_(pg, 'S.chan.freq'));
+  await pg.ev(`document.activeElement.blur();0`); await pg.key('k', { modifiers: 2 }); await sleep(120); await pg.type('modo am'); await sleep(80);
+  check('«modo am» ofrece Modo AM primero', /Modo AM/.test(await pg.ev(`document.querySelector('#pal-list li').textContent`)));
+  await pg.key('Enter'); await sleep(150); check('… y lo aplica', (await S_(pg, 'S.chan.mode')) === 'am'); await mode('WFM');
+  await pg.key('k', { modifiers: 2 }); await sleep(120); await pg.type('graba'); await sleep(80);
+  check('búsqueda difusa «graba» encuentra la grabación', /Grab/i.test(await pg.ev(`document.querySelector('#pal-list li').textContent`)));
+  await pg.key('Escape'); await sleep(100);
+  // perfil y decodificador desde la paleta, en un servidor aparte
+  const p2 = await openApp(ctx.br, ctx.marine.port); await sleep(800);
+  await p2.key('k', { modifiers: 2 }); await sleep(150); await p2.type('perfil marin'); await sleep(100);
+  check('«perfil marin» propone el perfil marino', /Perfil: .*mar/i.test(await p2.ev(`document.querySelector('#pal-list li').textContent`)), await p2.ev(`document.querySelector('#pal-list li').textContent`));
+  await p2.key('Enter');
+  check('Intro aplica el perfil', await p2.waitFor(`__app.S.status.profile==='maritimo'`, 4000).then(() => true, () => false));
+  await p2.key('k', { modifiers: 2 }); await sleep(150); await p2.type('anadir ais'); await sleep(100);
+  check('«anadir ais» (sin tilde) propone añadir AIS', /Añadir decodificador: AIS/.test(await p2.ev(`document.querySelector('#pal-list li').textContent`)), await p2.ev(`document.querySelector('#pal-list li').textContent`));
+  const nd = await p2.ev('__app.S.decList.length'); await p2.key('Enter');
+  check('Intro crea la instancia', await p2.waitFor(`__app.S.decList.length>${nd}`, 4000).then(() => true, () => false));
+  check('la hoja de atajos documenta Ctrl+K y la rueda', await p2.ev(`(()=>{const t=document.querySelector('#help-dlg').textContent;return /Ctrl.{0,3}K/.test(t)&&/Rueda/.test(t)&&/Doble clic/.test(t)})()`));
+  p2.close();
+  // táctil: un dedo desplaza, dos dedos hacen zoom
+  const m = await openApp(ctx.br, ctx.fm.port, { w: 400, h: 800 }); await m.resize(400, 800, true); await sleep(600);
+  const mo = await m.rect('#spec-wrap'), my = mo.y + 60, mx = mo.x + mo.w / 2, mview = () => m.ev('__app.getView()');
+  await m.touch('touchStart', [{ x: mx - 40, y: my }, { x: mx + 40, y: my }]);
+  for (let i = 1; i <= 6; i++) await m.touch('touchMove', [{ x: mx - 40 - i * 15, y: my }, { x: mx + 40 + i * 15, y: my }]);
+  await m.touch('touchEnd', []); await sleep(150);
+  const tv = await mview(); check('pellizco (dos dedos separándose) acerca', tv.span < 0.8, tv.span);
+  const ts0 = tv.start, tf = await m.ev('__app.S.chan.freq');
+  await m.touch('touchStart', [{ x: mx + 60, y: my }]);
+  for (let i = 1; i <= 6; i++) await m.touch('touchMove', [{ x: mx + 60 - i * 15, y: my }]);
+  await m.touch('touchEnd', []); await sleep(900);
+  const ts1 = (await mview()).start;
+  check('un dedo arrastrando desplaza la vista', Math.abs(ts1 - ts0) > 0.005, `${ts0} → ${ts1}`);
+  check('… sin sintonizar', (await m.ev('__app.S.chan.freq')) === tf);
+  await m.shot(`${shotsDir()}/08_tactil_zoom.png`); m.close();
+  await pg.key('k', { modifiers: 2 }); await sleep(200); await pg.type('perfil'); await sleep(120); await pg.shot(`${shotsDir()}/07_paleta.png`); await pg.key('Escape'); await sleep(100);
+  await pg.clickSel('#z-reset');
 };
 
 suites.cascada = async (ctx) => {
@@ -682,8 +821,8 @@ suites.atajos = async (ctx) => {
   check('? abre la ayuda', await pg.ev(`document.querySelector('#help-dlg').open`));
   await pg.key('Escape'); await sleep(150);
   check('Esc cierra la ayuda', !(await pg.ev(`document.querySelector('#help-dlg').open`)));
-  await pg.key('f'); await sleep(100);
-  check('F enfoca la frecuencia', (await pg.ev(`document.activeElement.id`)) === 'freq-input');
+  await pg.key('g'); await sleep(100);
+  check('G enfoca la frecuencia', (await pg.ev(`document.activeElement.id`)) === 'freq-input');
   await pg.key('Escape'); await pg.ev(`document.activeElement.blur();0`);
   // Estado conocido: audio silenciado (un perfil «follow» anterior puede haberlo arrancado).
   if (await S_(pg, 'S.chan.audio')) { await pg.key(' '); await sleep(400); }

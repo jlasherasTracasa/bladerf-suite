@@ -163,15 +163,15 @@ async function main() {
   await task('T02', 'Cambiar de modo (NFM) y de ancho (25 kHz)', async (ctx) => {
     const s = server('fm'); await wait(s); const pg = await ctx.open(s.port), M = ctx.M;
     const t0 = t0clock();
-    await pg.clickSel('#mode-seg [data-m=nfm]');
+    // W8: sin campos de texto. M cambia de modo (WFM → NFM) y el borde del filtro se arrastra en el espectro (12,5 → 25 kHz).
+    await pg.key('m');
+    await until(ctx, `__app.S.chan.mode==='nfm'`, 2000);
     const bw0 = await pg.ev('__app.S.chan.bw');
-    const vis = await pg.ev(`(()=>{const r=document.querySelector('#rx-bw').getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight})()`);
-    if (!vis) M.dead.push('el campo «Anchura del filtro» queda fuera de la pantalla en 1440×900 (hay que desplazar)');
-    await pg.fill('#rx-bw', '25000'); await pg.key('Tab');
-    ctx.ok = await until(ctx, `__app.S.chan.mode==='nfm' && Math.abs(__app.S.chan.bw-25000)<=50`, 4000);
+    const ex = await pg.ev(`(()=>{const c=document.querySelector('#spec-wrap canvas.ov'),r=c.getBoundingClientRect();return {x:r.x+__app.freqToX(__app.S.chan.freq+__app.S.chan.bw/2),x2:r.x+__app.freqToX(__app.S.chan.freq+12500),y:r.y+60}})()`);
+    await pg.drag(ex.x, ex.y, ex.x2, ex.y);
+    ctx.ok = await until(ctx, `__app.S.chan.mode==='nfm' && Math.abs(__app.S.chan.bw-25000)<=2500`, 4000);
     ctx.ms = Date.now() - t0;
-    M.notes.push(`Ancho tras elegir NFM: ${bw0} Hz (¿el modo ya trae uno razonable?). Alternativa sin teclado: arrastrar el borde del filtro en el espectro (no medido, depende de la precisión del puntero).`);
-    M.notes.push('No hay preajustes de ancho (6 / 12,5 / 25 kHz) ni indicación de qué ancho es típico del modo.');
+    M.notes.push(`Ancho tras elegir NFM: ${bw0} Hz; tras arrastrar el borde: ${await pg.ev('__app.S.chan.bw')} Hz (sin teclear cifras).`);
     ctx.slug = 'modo_ancho'
   });
 
@@ -366,7 +366,7 @@ async function main() {
     if (over) M.dead.push('desbordamiento horizontal de la página a 360 px');
     const inView = await pg.ev(`(()=>{const q=(s)=>{const r=document.querySelector(s).getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth};return {freq:q('#freq-input'),listen:q('#btn-listen'),spec:q('#spec-wrap'),tabs:q('#tabs')}})()`);
     M.notes.push('A la vista sin desplazar: ' + JSON.stringify(inView));
-    await pg.fill('#freq-input', '100.4');
+    { const sg = await strongest(pg, 100.4e6), q = await sigX(pg, sg ? sg.f : 100.4e6); await pg.click(q.x, q.y + 80); }   // W8: un toque sobre la emisora en el espectro, sin teclear
     await pg.clickSel('#btn-listen'); M.clicks += 0;
     const tabY = await pg.ev(`Math.round(document.querySelector('#tab-decoders').getBoundingClientRect().top)`);
     if (tabY > 740 - 30) { M.dead.push(`las pestañas empiezan en y=${tabY}px de 740: en la primera pantalla no se ve ningún panel, hay que desplazar`); await pg.ev('window.scrollBy(0,500)'); M.wheels++; await sleep(300); }
