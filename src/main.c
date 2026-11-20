@@ -129,6 +129,30 @@ static bool get_num(const char *js, const jtok_t *t, const char *key, double *v)
     return i >= 0 && json_num(js, t, i, v);
 }
 
+/* Número JSON acotado: 1 si está y es válido, 0 si no está, −1 si está pero es NaN/fuera de rango
+ * (convertir a entero un valor fuera de rango es comportamiento indefinido en C). */
+static int num_in(const char *js, const jtok_t *t, const char *key, double lo, double hi, double *v)
+{
+    if (json_obj_get(js, t, 0, key) < 0)
+        return 0;
+    if (!get_num(js, t, key, v) || !(*v >= lo && *v <= hi))
+        return -1;
+    return 1;
+}
+
+/* Como num_in, pero avisa al cliente cuando el valor existe y no es válido. Devuelve igual que num_in. */
+static int num_chk(app_t *a, int client, const char *cmd, const char *js, const jtok_t *t, const char *key, double lo,
+                   double hi, double *v)
+{
+    int k = num_in(js, t, key, lo, hi, v);
+    if (k < 0) {
+        char m[96];
+        snprintf(m, sizeof m, "%s: '%s' no es un número finito en [%g, %g]", cmd, key, lo, hi);
+        send_error(a, client, m);
+    }
+    return k;
+}
+
 static bool get_bool(const char *js, const jtok_t *t, const char *key, bool *v)
 {
     int i = json_obj_get(js, t, 0, key);
@@ -197,15 +221,15 @@ static void load_config(const char *path, engine_cfg_t *c)
     double v;
     char s[16];
     bool b;
-    if (get_num(buf, t, "center", &v)) c->center_hz = (int64_t)v;
-    if (get_num(buf, t, "rate", &v)) c->rate = (uint32_t)v;
-    if (get_num(buf, t, "rf_bw", &v)) c->rf_bw = (uint32_t)v;
+    if (num_in(buf, t, "center", 0, 6e+09, &v) > 0) c->center_hz = (int64_t)v;
+    if (num_in(buf, t, "rate", 0, 1.2288e+08, &v) > 0) c->rate = (uint32_t)v;
+    if (num_in(buf, t, "rf_bw", 0, 1.2288e+08, &v) > 0) c->rf_bw = (uint32_t)v;
     if (get_str(buf, t, "gain_mode", s, sizeof s) && !gain_mode_parse(s, &c->gain_mode)) c->gain_mode = GAIN_AUTO;
-    if (get_num(buf, t, "gain", &v)) c->gain_db = (int)v;
+    if (num_in(buf, t, "gain", -100, 100, &v) > 0) c->gain_db = (int)v;
     if (get_bool(buf, t, "biastee", &b)) c->biastee = b;
-    if (get_num(buf, t, "fft", &v)) c->fft_size = (int)v;
-    if (get_num(buf, t, "fps", &v)) c->fps = (int)v;
-    if (get_num(buf, t, "det_snr", &v)) c->det_snr = (float)v;
+    if (num_in(buf, t, "fft", 0, 1.04858e+06, &v) > 0) c->fft_size = (int)v;
+    if (num_in(buf, t, "fps", 0, 1000, &v) > 0) c->fps = (int)v;
+    if (num_in(buf, t, "det_snr", -100, 200, &v) > 0) c->det_snr = (float)v;
     int l = json_obj_get(buf, t, 0, "loc");
     if (l >= 0 && t[l].type == J_OBJ) {
         double la, lo;
@@ -287,9 +311,9 @@ static void cmd_config(app_t *a, const char *js, const jtok_t *t)
     double v;
     char s[16];
     bool b;
-    if (get_num(js, t, "center", &v)) { c.center_hz = (int64_t)v; f |= CFG_CENTER; }
-    if (get_num(js, t, "rate", &v)) { c.rate = (uint32_t)v; f |= CFG_RATE; }
-    if (get_num(js, t, "rf_bw", &v)) { c.rf_bw = (uint32_t)v; f |= CFG_RFBW; }
+    if (num_chk(a, -1, "config", js, t, "center", 0, 6e+09, &v) > 0) { c.center_hz = (int64_t)v; f |= CFG_CENTER; }
+    if (num_chk(a, -1, "config", js, t, "rate", 0, 1.2288e+08, &v) > 0) { c.rate = (uint32_t)v; f |= CFG_RATE; }
+    if (num_chk(a, -1, "config", js, t, "rf_bw", 0, 1.2288e+08, &v) > 0) { c.rf_bw = (uint32_t)v; f |= CFG_RFBW; }
     /* "auto" | "manual" | "fast" | "slow" | "hybrid" (AGC rápida/lenta/híbrida del AD9361) */
     if (get_str(js, t, "gain_mode", s, sizeof s)) {
         if (gain_mode_parse(s, &c.gain_mode))
@@ -297,11 +321,11 @@ static void cmd_config(app_t *a, const char *js, const jtok_t *t)
         else
             send_error(a, -1, "gain_mode: use auto, manual, fast, slow o hybrid");
     }
-    if (get_num(js, t, "gain", &v)) { c.gain_db = (int)v; f |= CFG_GAIN; }
+    if (num_chk(a, -1, "config", js, t, "gain", -100, 100, &v) > 0) { c.gain_db = (int)v; f |= CFG_GAIN; }
     if (get_bool(js, t, "biastee", &b)) { c.biastee = b; f |= CFG_BIASTEE; }
-    if (get_num(js, t, "fft", &v)) { c.fft_size = (int)v; f |= CFG_FFT; }
-    if (get_num(js, t, "fps", &v)) { c.fps = (int)v; f |= CFG_FFT; }
-    if (get_num(js, t, "det_snr", &v)) { c.det_snr = (float)v; f |= CFG_DET; }
+    if (num_chk(a, -1, "config", js, t, "fft", 0, 1.04858e+06, &v) > 0) { c.fft_size = (int)v; f |= CFG_FFT; }
+    if (num_chk(a, -1, "config", js, t, "fps", 0, 1000, &v) > 0) { c.fps = (int)v; f |= CFG_FFT; }
+    if (num_chk(a, -1, "config", js, t, "det_snr", -100, 200, &v) > 0) { c.det_snr = (float)v; f |= CFG_DET; }
     int l = json_obj_get(js, t, 0, "loc");
     if (l >= 0) {
         f |= CFG_LOC;
@@ -341,30 +365,21 @@ static void cmd_channel(app_t *a, int client, const char *js, const jtok_t *t)
             mode_set = true;
         }
     }
-    if (get_num(js, t, "freq", &v)) p.freq_hz = (int64_t)v;
-    if (get_num(js, t, "bw", &v)) p.bw_hz = (int)v;
+    int kf = num_chk(a, client, "channel", js, t, "freq", 0, 6e9, &v);
+    if (kf > 0) p.freq_hz = (int64_t)v;
+    int kb = num_chk(a, client, "channel", js, t, "bw", 0, 2e6, &v);
+    if (kb > 0) p.bw_hz = (int)v;
     else if (mode_set) p.bw_hz = mode_default_bw(p.mode);
     p.bw_hz = CLAMP(p.bw_hz, 100, mode_max_bw(p.mode));
     int sq = json_obj_get(js, t, 0, "squelch");
     if (sq >= 0) {
         if (json_is_null(t, sq)) p.squelch_db = NAN;
-        else if (json_num(js, t, sq, &v)) p.squelch_db = (float)v;
+        else if (json_num(js, t, sq, &v) && v >= -200 && v <= 50) p.squelch_db = (float)v;
     }
-    if (get_num(js, t, "deemph", &v)) p.deemph_us = (int)v;
+    if (num_chk(a, client, "channel", js, t, "deemph", 0, 1000, &v) > 0) p.deemph_us = (int)v;
     if (get_bool(js, t, "stereo", &b)) p.stereo = b;
     if (get_bool(js, t, "audio", &b)) p.audio_on = b;
     engine_set_channel(a->eng, client, &p);
-}
-
-/* Número JSON acotado: 1 si está y es válido, 0 si no está, −1 si está pero es NaN/fuera de rango
- * (convertir a entero un valor fuera de rango es comportamiento indefinido en C). */
-static int num_in(const char *js, const jtok_t *t, const char *key, double lo, double hi, double *v)
-{
-    if (json_obj_get(js, t, 0, key) < 0)
-        return 0;
-    if (!get_num(js, t, key, v) || !(*v >= lo && *v <= hi))
-        return -1;
-    return 1;
 }
 
 /* "file" (por defecto), "loopback" o "air"; cualquier otra cosa es un error (no se degrada en silencio). */
@@ -565,8 +580,9 @@ static void on_text(void *app, int client, const char *msg, size_t len)
             send_error(a, client, err);
     } else if (strcmp(cmd, "dec_add") == 0) {
         char proto[24];
-        if (!get_str(msg, t, "proto", proto, sizeof proto) || !get_num(msg, t, "freq", &v)) {
-            send_error(a, client, "dec_add: 'proto' y 'freq' son obligatorios");
+        if (!get_str(msg, t, "proto", proto, sizeof proto) || num_chk(a, client, "dec_add", msg, t, "freq", 0, 6e9, &v) <= 0) {
+            if (json_obj_get(msg, t, 0, "freq") < 0 || !get_str(msg, t, "proto", proto, sizeof proto))
+                send_error(a, client, "dec_add: 'proto' y 'freq' son obligatorios");
         } else {
             char *opts = get_obj_text(msg, t, "opts");
             if (dec_host_add(a->host, proto, (int64_t)v, opts, 0, err, sizeof err) < 0)
@@ -574,11 +590,12 @@ static void on_text(void *app, int client, const char *msg, size_t len)
             free(opts);
         }
     } else if (strcmp(cmd, "dec_remove") == 0) {
-        if (!get_num(msg, t, "inst", &v) || dec_host_remove(a->host, (int)v) < 0)
+        if (num_in(msg, t, "inst", 0, 1e6, &v) <= 0 || dec_host_remove(a->host, (int)v) < 0)
             send_error(a, client, "dec_remove: instancia inexistente");
     } else if (strcmp(cmd, "dec_tune") == 0) {
         double f;
-        if (!get_num(msg, t, "inst", &v) || !get_num(msg, t, "freq", &f) || dec_host_retune(a->host, (int)v, (int64_t)f) < 0)
+        if (num_in(msg, t, "inst", 0, 1e6, &v) <= 0 || num_in(msg, t, "freq", 0, 6e9, &f) <= 0 ||
+            dec_host_retune(a->host, (int)v, (int64_t)f) < 0)
             send_error(a, client, "dec_tune: instancia o frecuencia no válida");
     } else if (strcmp(cmd, "record") == 0) {
         bool on = false;
@@ -601,9 +618,10 @@ static void on_text(void *app, int client, const char *msg, size_t len)
     } else if (strcmp(cmd, "sweep") == 0) {
         /* Barrido rápido: {"cmd":"sweep","start":Hz,"stop":Hz,"fft":N} (ver docs/hardware/HARDWARE.md) */
         double f0, f1, nfft = 1024;
-        get_num(msg, t, "fft", &nfft);
-        if (!get_num(msg, t, "start", &f0) || !get_num(msg, t, "stop", &f1))
-            send_error(a, client, "sweep: 'start' y 'stop' (Hz) son obligatorios");
+        if (num_chk(a, client, "sweep", msg, t, "fft", 0, 1 << 20, &nfft) < 0)
+            return;
+        if (num_in(msg, t, "start", 0, 6e9, &f0) <= 0 || num_in(msg, t, "stop", 0, 6e9, &f1) <= 0)
+            send_error(a, client, "sweep: 'start' y 'stop' (Hz, 0..6e9) son obligatorios");
         else if (engine_sweep_start(a->eng, (int64_t)f0, (int64_t)f1, (int)nfft, err, sizeof err) < 0)
             send_error(a, client, err);
     } else if (strcmp(cmd, "sweep_stop") == 0) {
@@ -611,14 +629,15 @@ static void on_text(void *app, int client, const char *msg, size_t len)
     } else if (strcmp(cmd, "tv") == 0) {
         /* {"cmd":"tv","freq":Hz[,"sid":N]}: sintoniza un múltiplex y crea la instancia "tdt" */
         double f, sid = 0;
-        get_num(msg, t, "sid", &sid);
-        if (!a->tv || !get_num(msg, t, "freq", &f))
-            send_error(a, client, "tv: 'freq' (Hz) es obligatorio");
+        if (num_chk(a, client, "tv", msg, t, "sid", 0, 65535, &sid) < 0)
+            return;
+        if (!a->tv || num_in(msg, t, "freq", 0, 6e9, &f) <= 0)
+            send_error(a, client, "tv: 'freq' (Hz, 0..6e9) es obligatorio");
         else if (tv_cmd_tune(a->tv, (int64_t)f, (int)sid, err, sizeof err) < 0)
             send_error(a, client, err);
     } else if (strcmp(cmd, "tv_service") == 0) {
-        if (!a->tv || !get_num(msg, t, "sid", &v))
-            send_error(a, client, "tv_service: 'sid' es obligatorio");
+        if (!a->tv || num_in(msg, t, "sid", 0, 65535, &v) <= 0)
+            send_error(a, client, "tv_service: 'sid' (0..65535) es obligatorio");
         else if (tv_cmd_service(a->tv, (int)v, err, sizeof err) < 0)
             send_error(a, client, err);
     } else if (strcmp(cmd, "tv_stop") == 0) {
@@ -627,8 +646,9 @@ static void on_text(void *app, int client, const char *msg, size_t len)
     } else if (strcmp(cmd, "tv_scan") == 0) {
         /* {"cmd":"tv_scan"[,"start":Hz,"stop":Hz]}: por omisión canales 21–48 */
         double f0 = 0, f1 = 0;
-        get_num(msg, t, "start", &f0);
-        get_num(msg, t, "stop", &f1);
+        if (num_chk(a, client, "tv_scan", msg, t, "start", 0, 6e9, &f0) < 0 ||
+            num_chk(a, client, "tv_scan", msg, t, "stop", 0, 6e9, &f1) < 0)
+            return;
         if (!a->tv || tv_cmd_scan(a->tv, (int64_t)f0, (int64_t)f1, err, sizeof err) < 0)
             send_error(a, client, a->tv ? err : "tv: no disponible");
     } else {

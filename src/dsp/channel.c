@@ -345,7 +345,12 @@ void channel_configure(channel_t *c, double fs, int64_t center_hz, const chan_pa
             free_chain(c); /* c->built = false; se reconstruye al activar el audio */
     }
     if (retune) {
-        int64_t off = p->freq_hz - center_hz;
+        /* Resta saturada: con frecuencias extremas (p. ej. INT64_MIN) la resta
+         * desbordaría (comportamiento indefinido); ±1e12 Hz ya queda fuera de banda. */
+        int64_t off;
+        if (__builtin_sub_overflow(p->freq_hz, center_hz, &off))
+            off = p->freq_hz < 0 ? -(int64_t)1000000000000LL : (int64_t)1000000000000LL;
+        off = CLAMP(off, -(int64_t)1000000000000LL, (int64_t)1000000000000LL);
         /* Conservamos el fasor actual para que retocar la sintonía no
          * produzca un salto de fase (clic) en el audio. */
         cf32 keep = c->mix_base;
