@@ -71,6 +71,10 @@ de nada; la 1 protege todo lo que viene después.
 
 ### Fase 1 — Red de seguridad
 
+**Cerrada el 2026-11-20.** `make ci` da los 9 pasos en verde en ~15 min. Queda
+anotado: `test_auto` falla de vez en cuando bajo TSan (sensibilidad de tiempos
+de `dec_host_auto_sync`, sin informe de carrera); se revisa en N2.
+
 | ID | Tarea | Modelo | Terminado cuando |
 |---|---|---|---|
 | Q1 | `make ci`: encadena las cuatro puertas de calidad, las simulaciones de la FPGA que no necesitan Quartus (modelo C) y el comprobador de enlaces; resumen final de una pantalla | **Haiku** | Una orden da verde o rojo con la lista de fallos |
