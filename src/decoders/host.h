@@ -5,7 +5,7 @@
  * frecuencia concreta. Cada instancia tiene su propio hilo, así 20
  * decodificadores aprovechan 20 núcleos y ninguno puede retrasar al resto.
  *
- * Reparto de muestras (ver docs/ARQUITECTURA.md):
+ * Reparto de muestras (ver docs/arquitectura/ARQUITECTURA.md):
  *
  *   hilo DSP ── dec_host_feed() ──► 1 bloque compartido (copiado UNA vez,
  *                                   con contador de referencias)

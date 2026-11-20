@@ -1,5 +1,5 @@
 /*
- * host.c — Host de decodificadores. Ver host.h y docs/ARQUITECTURA.md.
+ * host.c — Host de decodificadores. Ver host.h y docs/arquitectura/ARQUITECTURA.md.
  *
  * Hilos y cerrojos:
  *   - h->lock protege la tabla de instancias, la memoria de eventos, el
@@ -265,7 +265,7 @@ static void fmt_msps(char *out, size_t n, double hz)
 }
 
 /* ======================================================================= */
-/*  DDC en GPU (C1, ver docs/CUDA.md)                                      */
+/*  DDC en GPU (C1, ver docs/arquitectura/CUDA.md)                                    */
 /* ======================================================================= */
 #define GPU_MIN_NARROW 2 /* con menos instancias narrow no compensa */
 

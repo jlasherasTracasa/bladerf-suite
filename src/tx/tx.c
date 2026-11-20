@@ -824,9 +824,12 @@ static void cal_job(job_t *j)
                          m1.irr_db, m2.irr_db, m1.lo_dbc, m2.lo_dbc);
             }
         } else {
-            char tmp[300];
+            /* Búfer holgado: msg (300) más el prefijo; el truncado a sizeof msg sigue
+             * siendo el comportamiento de siempre, solo se evita el aviso de snprintf. */
+            char tmp[sizeof msg + 32];
             snprintf(tmp, sizeof tmp, "verificación: %s", msg);
             memcpy(msg, tmp, sizeof msg);
+            msg[sizeof msg - 1] = '\0';
         }
     }
     if (ok)
@@ -1164,7 +1167,8 @@ static int read_sigmf(const char *recdir, const char *name_in, iqbuf_t *out, int
         snprintf(err, errlen, "nombre de grabación no válido");
         return -1;
     }
-    char mp[600], dp[600];
+    /* recdir (≤ 511) + '/' + base (≤ 199) + extensión: 1024 holgados (evita -Wformat-truncation). */
+    char mp[1024], dp[1024];
     snprintf(mp, sizeof mp, "%s/%s.sigmf-meta", recdir, base);
     snprintf(dp, sizeof dp, "%s/%s.sigmf-data", recdir, base);
     off_t msize, dsize;

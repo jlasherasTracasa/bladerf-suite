@@ -114,6 +114,11 @@ run: $(BIN)
 # SOAK=600 alarga la prueba de fugas a 10 minutos. Usa el binario de BUILD (por defecto el de este make).
 webtest: $(BIN)
 	BIN=$(abspath $(BIN)) node tests/web_e2e.mjs --soak $(or $(SOAK),60) $(WEBARGS)
+	@# Estrés del host (add/move/remove deprisa con DDC de GPU) contra un servidor propio en 8807.
+	@mkdir -p $(BUILD)/webtest
+	$(BIN) --gen rds --gen-freq 100400000 --gen-center 100000000 --gen-rate 2400000 --out $(BUILD)/webtest/fm
+	$(BIN) --port 8807 --replay $(BUILD)/webtest/fm.sigmf-meta --config none --recdir $(BUILD)/webtest/rec --web web > $(BUILD)/webtest/stress_srv.log 2>&1 & echo $$! > $(BUILD)/webtest/stress.pid
+	sleep 2; node tests/stress_host.mjs ws://127.0.0.1:8807/ws 100; rc=$$?; kill -9 $$(cat $(BUILD)/webtest/stress.pid) 2>/dev/null; rm -f $(BUILD)/webtest/stress.pid; exit $$rc
 
 clean:
 	rm -rf $(BUILD)
