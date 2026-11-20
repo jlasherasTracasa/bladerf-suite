@@ -98,3 +98,13 @@ necesitan pasar el fragmento dos veces (el detector aprende el ruido en ≈ 8 ms
 </picture>
 
 *Figura 2. Grupo B. Las barras muestran decodificados / referencia solo donde la tabla da un recuento.*
+
+## Integración continua local (`make ci`)
+
+`make ci` ejecuta `tests/ci.sh`, la batería completa en un solo comando: `check` con CUDA y sin GPU,
+sanitizadores (ASan/UBSan), `webtest` (se omite si falta `node`), fuzzing corto (`FUZZ_SECONDS` o
+`CI_FUZZ_SECONDS`, 10 s por defecto), ThreadSanitizer, regresión con grabaciones reales, presupuesto de
+CPU por decodificador (falla si alguno supera el 30 % de un núcleo) y comprobación de enlaces relativos
+de los `.md`. Cada paso compila en `build/ci/<paso>` y deja su registro en `build/ci/logs/<paso>.log`.
+`CI_SKIP="tsan fuzz" make ci` salta pasos; `tests/ci.sh linkcheck` (o `make linkcheck`) ejecuta uno solo.
+Termina con una tabla paso → OK / FALLO / OMITIDO y el tiempo, y sale con código 1 si algún paso falla.

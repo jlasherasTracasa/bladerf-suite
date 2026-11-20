@@ -120,6 +120,27 @@ webtest: $(BIN)
 	$(BIN) --port 8807 --replay $(BUILD)/webtest/fm.sigmf-meta --config none --recdir $(BUILD)/webtest/rec --web web > $(BUILD)/webtest/stress_srv.log 2>&1 & echo $$! > $(BUILD)/webtest/stress.pid
 	sleep 2; node tests/stress_host.mjs ws://127.0.0.1:8807/ws 100; rc=$$?; kill -9 $$(cat $(BUILD)/webtest/stress.pid) 2>/dev/null; rm -f $(BUILD)/webtest/stress.pid; exit $$rc
 
+# Integración continua local (tests/ci.sh): cada paso compila en build/ci/<paso>.
+# CI_SKIP="tsan fuzz" make ci salta pasos; tests/ci.sh fuzz ejecuta solo ese paso.
+.PHONY: ci fuzz tsan realtest bench linkcheck
+ci:
+	tests/ci.sh
+
+fuzz:
+	tests/fuzz/run.sh
+
+tsan:
+	tests/tsan.sh
+
+realtest:
+	tests/realtest.sh
+
+bench:
+	tests/bench_decoders.sh
+
+linkcheck:
+	tests/ci.sh linkcheck
+
 clean:
 	rm -rf $(BUILD)
 
