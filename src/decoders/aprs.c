@@ -43,6 +43,8 @@
 
 #define FS 48000.0
 #define NSLICE 3
+#define SPS_APRS 40 /* muestras por símbolo: 48000/1200 */
+#define APRS_DELAY 18 /* FIR de 41 coef. (20) y correlador de símbolo, medido en tests/test_labels.c */
 #define MAX_FRAME_BITS (400 * 8 + 64)
 #define STATION_TTL 3600.0
 #define MAX_STATIONS 1024
@@ -552,6 +554,8 @@ typedef struct {
     void *ctx;
     double blk_now;
     int cur_slicer;
+    long blk_n0;              /* índice del flujo de la primera muestra de la llamada en curso */
+    int64_t mk0, mk1;         /* inicio/fin de la trama en curso (índice del flujo) */
     uint8_t buf[512];
 } aprs_t;
 
@@ -741,7 +745,7 @@ static void emit_pkt(aprs_t *a, const aprs_pkt_t *p, double now)
     update_station(a, p, now);
     a->total++;
     if (a->emit)
-        a->emit(a->ctx, e->data, e->len);
+        dec_emit_span(a->emit, a->ctx, a->mk0 - a->blk_n0, a->mk1 - a->blk_n0, e->data, e->len);
 }
 
 static uint32_t fnv(const uint8_t *b, int n)
@@ -777,8 +781,14 @@ static void on_level(void *ctx, int level)
 {
     aprs_t *a = ctx;
     chan_slice_t *s = &a->sl[a->cur_slicer];
+    s->hdlc.pos = afsk_index(s->demod);
     int nb = hdlc_rx_push_level(&s->hdlc, level);
     if (nb >= 17 * 8 && nb <= 400 * 8 && nb % 8 == 0) {
+        /* Bandera de apertura: empieza 7,5 símbolos antes del bit en que se detectó (8 bits, el
+         * último centrado en 'pos'); la de cierre acaba medio símbolo después. APRS_DELAY es el
+         * retardo del discriminador, del FIR y del correlador (calibrado en tests/test_labels.c). */
+        a->mk0 = s->hdlc.last_start - (int64_t)(7.5 * SPS_APRS) - APRS_DELAY;
+        a->mk1 = s->hdlc.last_end + SPS_APRS / 2 - APRS_DELAY;
         hdlc_rx_bytes(&s->hdlc, nb, a->buf);
         on_frame(a, a->buf, nb / 8);
     }
@@ -857,6 +867,7 @@ static void aprs_process(void *p, const cf32 *iq, int n, double now, dec_emit_fn
     }
     a->emit = emit;
     a->ctx = ctx;
+    a->blk_n0 = a->n;
     a->blk_now = now - (double)a->n / FS; /* tiempo de la muestra 0 del flujo */
     fmdisc_process(&a->disc, iq, n, a->tmp);
     /* paso alto de un polo (≈ 70 Hz): quita el desvío de portadora */

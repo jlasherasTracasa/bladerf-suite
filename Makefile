@@ -101,7 +101,7 @@ $(BUILD)/tests/%: tests/%.c $(LIB_OBJS) $(wildcard tests/*.h)
 	@echo "  TEST   $<"
 	@$(CC) $(CFLAGS) -Itests $< $(LIB_OBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
-test: $(TEST_BINS)
+test: $(BIN) $(TEST_BINS)
 	@tests/run_tests.sh $(BUILD)/tests $(TESTS)
 
 check:

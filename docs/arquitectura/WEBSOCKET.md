@@ -99,6 +99,35 @@ un evento por mensaje válido (máx. 200/s por instancia). En ADS-B, `msg.kind` 
 `new|callsign|squawk|emerg` (los eventos `raw` no lo llevan). `t` = hora Unix. Los últimos
 100 se reenvían al conectar con `"replay":true`.
 
+**Posición y nivel en `dec.msg`** (P2). Todo evento lleva, dentro de `msg`:
+`"sample"` (índice de muestra de la FUENTE, a la tasa de la captura, del inicio del mensaje:
+en fichero es el nº de muestra del fichero; el motor numera las muestras que lee desde 0),
+`"sample_src":"mark"|"block"` y, si el decodificador sabe dónde acaba, `"sample_end"`. Con
+`"mark"` el decodificador marcó la posición con precisión de muestra (ais, aprs, adsb, lora: ±1
+símbolo; AIS/APRS = inicio de la bandera de apertura, ADS-B/LoRa = inicio del preámbulo) y además salen
+`"rssi_dbfs"` (potencia media de la ventana en el ancho del canal del DDC, 0 dBFS = senoide
+compleja de amplitud 1) y `"snr_db"` ((P−P_suelo)/P_suelo con el suelo = percentil 25 de los 64 tramos
+previos). Con `"block"` (el resto de decodificadores) `sample` es la primera muestra del bloque en el que se
+emitió el evento (precisión de un bloque, ≈ 20 ms) y no hay `sample_end` ni nivel. Un decodificador pasa de `block` a
+`mark` llamando a `dec_emit_span()` (decoder.h) en vez de `emit()`. Con el DDC en GPU (varias instancias
+narrow con CUDA) no hay índice de muestra (los campos no salen); `--replay-fast` desactiva el DDC en GPU.
+
+**`gap`** (solo `--print`/`--log-events`, no va al WebSocket): `{"type":"gap","inst","proto","freq","t","sample","n"}`:
+la instancia no vio las `n` muestras desde `sample` (cola llena o anillo del motor desbordado). Con `--replay-fast`
+no debe aparecer ninguno.
+
+**Línea de órdenes de etiquetado** (`--replay F --replay-fast` y `--labels L.sigmf-meta`): `--replay-fast`
+reproduce el fichero una vez, sin ritmo real, con contrapresión (el lector espera al DSP y el DSP al host;
+no se descarta ningún bloque) y, al acabar el fichero y vaciarse las colas, sale con código 0. `--labels` lo
+implica y escribe un `.sigmf-meta` con anotaciones en tres niveles (`lab:level`):
+`verified` (un evento con CRC/FEC: `core:sample_start/count`, bordes de frecuencia = canal del decodificador,
+`lab:proto`, `lab:snr_db`, `lab:rssi_dbfs`, `lab:precision` = `sample`|`block`, `lab:text`), `unknown` (energía
+sostenida que detecta un detector propio, imagen cada 0,5 s de señal, y ningún evento verificado explica; tiempo con
+±1 s de incertidumbre por la constante de tiempo del detector y su histéresis; margen ≥ 1 s alrededor de cada
+evento verificado cuya banda solape) y `gap`. La clase `empty` NO se escribe: toda región tiempo-frecuencia sin
+anotación `verified` ni `unknown` es vacía (convención declarada en `global.lab:empty_convention`),
+salvo dentro de un `gap`.
+
 **`dec_state`** `{"inst","proto","t","state":{…}}` ~1 Hz por instancia con tabla
 (ADS-B: `{"msgs","rate","fps","fix1","fix2","crc","rej","rx","ac":[…]}`, ver ../protocolos/adsb.md:
 `fps` tramas válidas/s, `fix1`/`fix2` corregidas de 1 y 2 bits, `crc` recuperadas por

@@ -30,6 +30,11 @@ typedef struct {
     int ones;           /* unos consecutivos recibidos */
     int prev_level;     /* nivel NRZI previo */
     bool inframe;
+    /* Posición (opcional): el llamante pone en 'pos' el índice de muestra del bit que va a empujar.
+     * Al detectar una bandera se guarda en frame_start (último bit de la bandera de apertura);
+     * cuando la bandera cierra una trama, last_start/last_end son los 'pos' de las banderas de
+     * apertura y cierre de esa trama (para dec_emit_span). */
+    int64_t pos, frame_start, last_start, last_end;
     unsigned long frames_ok, frames_bad;   /* contadores: FCS correcto / incorrecto */
 } hdlc_rx_t;
 

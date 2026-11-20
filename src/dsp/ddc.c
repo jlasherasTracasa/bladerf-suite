@@ -125,6 +125,20 @@ fail:
     return NULL;
 }
 
+double ddc_delay_in(const ddc_t *d)
+{
+    double fs = d->fs_in, delay = 0;
+    for (int i = 0; i < d->nstages; i++) {
+        delay += 0.5 * (d->stage[i].ntaps - 1) * (d->fs_in / fs);
+        fs /= d->decim[i];
+    }
+    if (d->have_chan)
+        delay += 0.5 * (d->chan.ntaps - 1) * (d->fs_in / fs);
+    if (d->have_rs)
+        delay += 0.5 * (d->rs.L - 1) * (d->fs_in / fs);
+    return delay;
+}
+
 void ddc_destroy(ddc_t *d)
 {
     if (!d)

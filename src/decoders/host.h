@@ -57,6 +57,20 @@ void dec_host_feed(dec_host_t *h, const int16_t *iq, const cf32 *buf, unsigned n
  * recorrido de las instancias): el motor puede llamarlo cada bloque o cada ~0,25 s y pasar
  * buf = NULL a dec_host_feed() cuando devuelve false. */
 bool dec_host_needs_float(dec_host_t *h);
+
+/* --- Índice de muestra, contrapresión y huecos (etiquetado; ver docs/arquitectura/WEBSOCKET.md) ---
+ * Como dec_host_feed(), pero con el índice absoluto de la primera muestra del bloque en la tasa
+ * de la fuente (el motor numera las muestras que lee: en fichero, el nº de muestra del fichero).
+ * dec_host_feed() usa el índice que sigue al del bloque anterior (empieza en 0).
+ * Cada evento sale con "sample" (y "sample_end" si el decodificador lo sabe, ver dec_emit_span
+ * en decoder.h) en ese índice, "sample_src":"mark"|"block" y, con marca, "rssi_dbfs"/"snr_db".
+ * Si una instancia no recibe un bloque (cola llena o anillo del motor) emite por --print el evento
+ * {"type":"gap","inst","proto","freq","sample","n"}. */
+void dec_host_feed_at(dec_host_t *h, const int16_t *iq, const cf32 *buf, unsigned n, double fs, int64_t center,
+                      double now, uint64_t sample0);
+/* Contrapresión: con on=true dec_host_feed*() espera a que las colas tengan sitio en vez de
+ * descartar (solo para fuentes de fichero sin ritmo real, --replay-fast). Desactiva el DDC de GPU. */
+void dec_host_set_backpressure(dec_host_t *h, bool on);
 void dec_host_periodic(dec_host_t *h, double now);      /* dec_state ~1 Hz, dec_list */
 void dec_host_list_json(dec_host_t *h, sb_t *sb);       /* mensaje "dec_list" */
 void dec_host_catalog_json(sb_t *sb);                   /* mensaje "decoders" */

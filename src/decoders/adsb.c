@@ -44,6 +44,7 @@ struct adsb {
     struct { uint64_t pos; } recent[16]; /* últimas tramas aceptadas */
     int nrecent;
     int cur_fix;          /* bits corregidos de la trama en curso (0, 1, 2) */
+    int mk0, mk1;         /* trama en curso: inicio y fin (preámbulo incluido) respecto al inicio de la llamada */
     bool cur_crc;         /* la trama en curso viene del entramado CRC */
 };
 
@@ -524,7 +525,7 @@ static void emit_event(adsb_t *a, const aircraft_t *p, int df, const uint8_t *me
     sb_puts(s, ",\"text\":");
     sb_json_str(s, text);
     sb_puts(s, "}");
-    a->emit(a->emit_ctx, s->data, s->len);
+    dec_emit_span(a->emit, a->emit_ctx, a->mk0, a->mk1, s->data, s->len);
 }
 
 /* ---- Corrección de errores guiada por la confianza por bit --------------
@@ -616,7 +617,7 @@ static void emit_json(adsb_t *a, const char *kind, const aircraft_t *p, const ch
     sb_puts(s, ",\"text\":");
     sb_json_str(s, text);
     sb_puts(s, "}");
-    a->emit(a->emit_ctx, s->data, s->len);
+    dec_emit_span(a->emit, a->emit_ctx, a->mk0, a->mk1, s->data, s->len);
 }
 
 /* Modo por defecto: un evento solo cuando aparece una aeronave ADS-B nueva o
@@ -665,6 +666,7 @@ static int handle_frame(adsb_t *a, uint8_t *msg, double now, float rssi_db, cons
 {
     int df = (int)getbits(msg, 1, 5);
     int nbits = msg_bits_for_df(df);
+    a->mk1 = a->mk0 + PREAMBLE_SAMPLES + 2 * nbits; /* fin de la trama (mk0 lo fija el llamante) */
     uint32_t syn = syndrome(msg, nbits);
     uint32_t icao = 0;
     aircraft_t *p = NULL;
@@ -923,6 +925,7 @@ static int slide_try(adsb_t *a, const float *s, int j, double tj)
     uint64_t pos = a->base + (uint64_t)j + PREAMBLE_SAMPLES;
     if (recent_has(a, pos))
         return -1;
+    a->mk0 = j - a->tail; /* a->tail aún vale la cola del bloque anterior: inicio respecto al bloque */
     int ok = handle_frame(a, msg, tj, 20.f * log10f(level / 2048.f + 1e-9f), conf, true);
     if (ok >= 0)
         recent_add(a, pos);
@@ -970,6 +973,7 @@ void adsb_process(adsb_t *a, const int16_t *iq, int n, double now)
                 float level = (s[0] + s[2] + s[7] + s[9]) / 4.0f;
                 float rssi = 20.f * log10f(level / 2048.f + 1e-9f);
                 /* hora de la trama = hora del bloque + posición de la muestra */
+                a->mk0 = j - tail0;
                 ok = handle_frame(a, msg, tj, rssi, conf, false);
                 if (ok >= 0 && slide)
                     recent_add(a, pos);

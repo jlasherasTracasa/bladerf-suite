@@ -70,6 +70,7 @@ typedef struct {
     double cfo_hz;
     double sfo_ppm;
     double t_end;      /* segundos de señal de entrada hasta el final de la trama */
+    double t_start;    /* ídem hasta el inicio del preámbulo (supone 8 chirps de preámbulo) */
 } lora_frame_t;
 
 typedef void (*lora_frame_fn)(void *ctx, const lora_frame_t *f);

@@ -54,6 +54,8 @@ typedef struct {
     dec_emit_fn emit;
     void *ectx;
     double now;
+    double fs;      /* tasa de entrada (muestras/s) */
+    int64_t n_in;   /* muestras de entrada consumidas antes de la llamada en curso */
     sb_t sb;
     unsigned long frames, lorawan;
     lw_dev_t dev[MAX_DEV];
@@ -154,6 +156,7 @@ static void *lora_create(const dec_cfg_t *cfg, char *err, size_t errlen)
         snprintf(err, errlen, "sin memoria");
         return NULL;
     }
+    l->fs = cfg->rate;
     l->bw_hz = c.bw_hz;
     l->rx = lora_rx_create(&c, err, errlen);
     if (!l->rx) {
@@ -316,7 +319,10 @@ static void on_frame(void *ctx, const lora_frame_t *f)
     sb_puts(sb, ",\"text\":");
     sb_json_str(sb, text);
     sb_puts(sb, "}");
-    l->emit(l->ectx, sb->data, sb->len);
+    /* Posición: la capa PHY da el inicio del preámbulo y el fin de la trama en segundos de señal de
+     * entrada; se pasan a muestras relativas al inicio de esta llamada. */
+    dec_emit_span(l->emit, l->ectx, (int64_t)llround(f->t_start * l->fs) - l->n_in,
+                  (int64_t)llround(f->t_end * l->fs) - l->n_in, sb->data, sb->len);
 }
 
 static void lora_process(void *st, const cf32 *iq, int n, double now, dec_emit_fn emit, void *ctx)
@@ -326,6 +332,7 @@ static void lora_process(void *st, const cf32 *iq, int n, double now, dec_emit_f
     l->ectx = ctx;
     l->now = now;
     lora_rx_process(l->rx, iq, n, on_frame, l);
+    l->n_in += n;
 }
 
 static void lora_state(void *st, sb_t *sb, double now)

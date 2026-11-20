@@ -30,6 +30,7 @@
 #include "common.h"
 #include "dsp/channel.h"
 #include "decoders/host.h"
+#include "dsp/detector.h"
 #include "net/server.h"
 #include "sdr/source.h"
 #include "util/strbuf.h"
@@ -107,6 +108,24 @@ void engine_send_snapshot(engine_t *e, int client);
 /* Se llama (desde el hilo DSP) cada vez que la configuración aplicada cambia:
  * main.c lo usa para guardarla en disco y recuperarla al reiniciar. */
 void engine_on_config_change(engine_t *e, void (*fn)(void *ctx, const engine_cfg_t *cfg), void *ctx);
+
+/* --- Reproducción de fichero para etiquetar (--replay-fast, --labels) ---
+ * replay_fast: la fuente de fichero no guarda el ritmo real, no hace bucle y el lector espera al DSP
+ * en vez de descartar bloques (el host debe tener la contrapresión activada, ver host.h).
+ * engine_finished() pasa a true cuando se leyó TODO el fichero y todos los bloques se entregaron al
+ * host; después hay que esperar a dec_host_flush() para que las instancias terminen. Llamar antes de
+ * engine_start().
+ * engine_set_label_sink(): fn se llama desde el hilo DSP cada 0,5 s de señal con las señales que
+ * detecta un detector propio (independiente del de la interfaz); sample_end = índice de muestra del
+ * final del bloque en curso; las frecuencias son offsets respecto a center_hz. Activa el espectro
+ * aunque no haya clientes. Antes de engine_start(). */
+typedef void (*engine_label_fn)(void *ctx, uint64_t sample_end, double rate, int64_t center_hz,
+                                const det_signal_t *sigs, int n);
+void engine_set_replay_fast(engine_t *e, bool on);
+bool engine_finished(engine_t *e);
+/* Muestras leídas de la fuente hasta ahora (= índice de muestra del próximo bloque). */
+uint64_t engine_sample_count(engine_t *e);
+void engine_set_label_sink(engine_t *e, engine_label_fn fn, void *ctx);
 
 /* Host de decodificadores al que se alimenta cada bloque (puede ser NULL). */
 void engine_set_host(engine_t *e, dec_host_t *host);

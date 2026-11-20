@@ -90,6 +90,9 @@ int hdlc_rx_push_bit(hdlc_rx_t *h, int bit)
         else
             h->n = 0;
         ret = close_frame(h);
+        h->last_start = h->frame_start;
+        h->last_end = h->pos;
+        h->frame_start = h->pos;
         h->inframe = true;                 /* la bandera de cierre abre la siguiente */
         h->n = 0;
         return ret;

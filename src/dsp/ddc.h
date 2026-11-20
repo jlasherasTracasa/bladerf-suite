@@ -45,4 +45,10 @@ int ddc_process(ddc_t *d, const cf32 *in, int n, cf32 *out, int out_cap);
 /* Cota superior del nº de salidas que puede producir ddc_process(n). */
 size_t ddc_max_out(const ddc_t *d, int n);
 
+/* Retardo de grupo de toda la cadena, en muestras de ENTRADA. Todos los filtros son de fase
+ * lineal: cada FIR de n coeficientes retrasa (n−1)/2 muestras de SU tasa de entrada. La salida
+ * k del DDC refleja la entrada alrededor de k·fs_in/fs_out − retardo. Sirve para dar el índice de
+ * muestra de la fuente de un suceso detectado en la salida (decoders/host.c). */
+double ddc_delay_in(const ddc_t *d);
+
 #endif

@@ -111,6 +111,11 @@ struct engine {
     pthread_cond_t rg_ctl;      /* pausa/reanudación del lector */
     int16_t *ring;              /* rg_n bloques de rg_block muestras (I,Q Q11) */
     double *rg_t;               /* hora (Unix) a la que acabó de leerse cada bloque */
+    uint64_t *rg_s0;            /* índice de muestra (desde que arrancó la fuente) de la 1.ª muestra de cada bloque */
+    uint64_t rd_next;           /* próximo índice de muestra a leer (lo toca solo el lector) */
+    bool fast;                  /* --replay-fast: sin descartes, el lector espera al DSP; acaba en SOURCE_EOF */
+    bool rd_eof;                /* el lector llegó al final del fichero (bajo rg_m) */
+    atomic_bool finished;       /* fast: EOF y todos los bloques ya entregados al host */
     unsigned rg_n, rg_block;
     uint64_t rg_head, rg_tail;  /* sin leer = [head, tail); el módulo rg_n da la ranura */
     bool rg_busy;               /* el DSP trabaja con la ranura head−1 */
@@ -126,6 +131,13 @@ struct engine {
     /* --- propiedad exclusiva del hilo DSP --- */
     spectrum_t *spec;
     detector_t *det;
+    /* Detector de etiquetado (--labels): imagen propia a cada 0,5 s de SEÑAL (no de reloj), así que
+     * funciona igual con --replay-fast. Ver engine_set_label_sink(). */
+    engine_label_fn lab_fn;
+    void *lab_ctx;
+    detector_t *ldet;
+    unsigned lab_frames;
+    uint64_t cur_send;          /* índice de muestra tras el bloque en curso */
     double enbw_bins;           /* anchura de ruido equivalente de la ventana del espectro */
     double t_spec;              /* instante de la última trama de espectro */
     unsigned long rd_err_seen;
@@ -173,6 +185,30 @@ static void send_error(engine_t *e, int client, const char *msg)
 static void refresh_dbm(engine_t *e);
 
 source_t *engine_source(engine_t *e) { return e->src; }
+
+void engine_set_replay_fast(engine_t *e, bool on)
+{
+    e->fast = on;
+    source_set_fast(e->src, on);
+}
+
+bool engine_finished(engine_t *e) { return atomic_load(&e->finished); }
+
+uint64_t engine_sample_count(engine_t *e)
+{
+    pthread_mutex_lock(&e->rg_m);
+    uint64_t n = e->rd_next;
+    pthread_mutex_unlock(&e->rg_m);
+    return n;
+}
+
+void engine_set_label_sink(engine_t *e, engine_label_fn fn, void *ctx)
+{
+    e->lab_ctx = ctx;
+    e->lab_fn = fn;
+    if (fn && !e->ldet)
+        e->ldet = detector_create(e->cfg.fft_size);
+}
 
 void engine_set_host(engine_t *e, dec_host_t *host) { e->host = host; }
 
@@ -233,6 +269,17 @@ static void on_spectrum(void *ctx, const float *db_in, int n, int navg)
         db[c + k] = fill;
 
     detector_feed(e->det, db, n, (float)e->cfg.fps * 1.0f);
+    if (e->lab_fn && e->ldet) {
+        /* Etiquetado: una imagen del detector cada 0,5 s de señal (fps/2 tramas) */
+        detector_feed(e->ldet, db, n, (float)e->cfg.fps * 1.0f);
+        const unsigned every = (unsigned)MAX(1, e->cfg.fps / 2);
+        if (++e->lab_frames % every == 0) {
+            det_signal_t sg[MAX_SIGNALS];
+            float noise = 0;
+            int ns = detector_run(e->ldet, source_rate(e->src), e->cfg.det_snr, sg, MAX_SIGNALS, &noise);
+            e->lab_fn(e->lab_ctx, e->cur_send, (double)source_rate(e->src), source_frequency(e->src), sg, ns);
+        }
+    }
 
     /* S-meter de los clientes que NO escuchan: se calcula a partir de esta trama
      * (cero trabajo por muestra; ver channel_feed_spectrum). */
@@ -286,6 +333,9 @@ static void rebuild_spectrum(engine_t *e, const engine_cfg_t *c)
     detector_destroy(e->det);
     e->spec = spectrum_create(c->fft_size, c->rate, c->fps, e->use_gpu);
     e->det = detector_create(c->fft_size);
+    detector_destroy(e->ldet);
+    e->ldet = e->lab_fn ? detector_create(c->fft_size) : NULL;
+    e->lab_frames = 0;
     /* ENBW = N·Σw²/(Σw)² de la ventana del espectro (Blackman-Harris: ≈ 2,0044 bins) */
     {
         float *w = malloc(sizeof(float) * (size_t)c->fft_size);
@@ -326,11 +376,13 @@ static void ring_alloc(engine_t *e, unsigned block, double rate)
         return;
     free(e->ring);
     free(e->rg_t);
+    free(e->rg_s0);
     /* n+1 bloques: el último (índice n) es la ranura de derrame del lector cuando el
      * anillo está lleno y el DSP tiene la única ranura libre en uso (ver reader_main). */
     e->ring = malloc(sizeof(int16_t) * 2 * (size_t)block * (n + 1));
     e->rg_t = calloc(n + 1, sizeof(double));
-    if (!e->ring || !e->rg_t) {
+    e->rg_s0 = calloc(n + 1, sizeof(uint64_t));
+    if (!e->ring || !e->rg_t || !e->rg_s0) {
         LOG_E("Sin memoria para el anillo de lectura (%u bloques de %u muestras)", n, block);
         abort();
     }
@@ -349,6 +401,14 @@ static void *reader_main(void *arg)
     int consecutive_errors = 0;
     for (;;) {
         pthread_mutex_lock(&e->rg_m);
+        /* --replay-fast (rd_busy sigue en false: una pausa del DSP no se bloquea): con el anillo lleno se espera al DSP (no se pierde ni un bloque) */
+        while (e->fast && e->rd_run && e->rd_pause == 0 &&
+               (e->rg_busy ? (e->rg_tail - (e->rg_head - 1) >= e->rg_n) : (e->rg_tail - e->rg_head >= e->rg_n)))
+            pthread_cond_wait(&e->rg_ctl, &e->rg_m);
+        if (!e->rd_run) {
+            pthread_mutex_unlock(&e->rg_m);
+            break;
+        }
         while (e->rd_pause > 0 && e->rd_run)
             pthread_cond_wait(&e->rg_ctl, &e->rg_m);
         if (!e->rd_run) {
@@ -370,6 +430,7 @@ static void *reader_main(void *arg)
             atomic_fetch_add(&e->dsp_drops, 1);
         }
         unsigned slot = spill ? e->rg_n : (unsigned)(e->rg_tail % e->rg_n), block = e->rg_block;
+        const uint64_t s0 = e->rd_next; /* índice de la primera muestra de este bloque */
         pthread_mutex_unlock(&e->rg_m);
 
         unsigned ovr = 0;
@@ -382,11 +443,20 @@ static void *reader_main(void *arg)
         if (rc == 0) {
             consecutive_errors = 0;
             atomic_fetch_add(&e->rd_samples, block);
+            e->rd_next += block; /* también si el bloque se derrama: esas muestras se perdieron */
             if (!spill) {
                 e->rg_t[slot] = t;
+                e->rg_s0[slot] = s0;
                 e->rg_tail++;
                 pthread_cond_signal(&e->rg_data);
             }
+        } else if (rc == SOURCE_EOF) {
+            /* Fin del fichero (solo con --replay-fast): ya no hay más que leer */
+            e->rd_eof = true;
+            pthread_cond_broadcast(&e->rg_data);
+            pthread_cond_broadcast(&e->rg_ctl);
+            pthread_mutex_unlock(&e->rg_m);
+            break;
         } else {
             if (++consecutive_errors == 1 || consecutive_errors % 20 == 0) {
                 LOG_E("Error de lectura: %s", source_error(e->src));
@@ -450,7 +520,7 @@ static int ring_pop(engine_t *e, unsigned *slot, double timeout_s, unsigned *que
     pthread_mutex_lock(&e->rg_m);
     e->rg_busy = false;
     int rc = 0;
-    while (e->rg_head == e->rg_tail && e->rd_run && rc == 0)
+    while (e->rg_head == e->rg_tail && e->rd_run && !e->rd_eof && rc == 0)
         rc = pthread_cond_timedwait(&e->rg_data, &e->rg_m, &dl);
     if (e->rg_head == e->rg_tail) {
         pthread_mutex_unlock(&e->rg_m);
@@ -460,6 +530,7 @@ static int ring_pop(engine_t *e, unsigned *slot, double timeout_s, unsigned *que
     e->rg_head++;
     e->rg_busy = true; /* la ranura sigue siendo nuestra hasta el próximo ring_pop */
     *queued = (unsigned)(e->rg_tail - e->rg_head);
+    pthread_cond_broadcast(&e->rg_ctl);
     pthread_mutex_unlock(&e->rg_m);
     return 0;
 }
@@ -1240,6 +1311,11 @@ static void *dsp_main(void *arg)
             /* Sin datos (fuente parada o con error): se mantienen estado y avisos */
             double tn = now_monotonic();
             periodic(e, tn, &t_sig, &t_status, &samples, &t_rate);
+            pthread_mutex_lock(&e->rg_m);
+            bool done = e->fast && e->rd_eof && e->rg_head == e->rg_tail;
+            pthread_mutex_unlock(&e->rg_m);
+            if (done)
+                atomic_store(&e->finished, true); /* todo el fichero ya está en el host */
             continue;
         }
         double t1 = now_monotonic();
@@ -1265,6 +1341,7 @@ static void *dsp_main(void *arg)
             pthread_mutex_unlock(&e->lock);
             pthread_mutex_lock(&e->rg_m);
             e->rg_busy = false;
+            pthread_cond_broadcast(&e->rg_ctl);
             pthread_mutex_unlock(&e->rg_m);
             double t2f = now_monotonic();
             busy += t2f - t1;
@@ -1276,7 +1353,8 @@ static void *dsp_main(void *arg)
         bool chan_needs = sync_slots(e);
 
         /* 1) Espectro (trabaja con los enteros crudos) */
-        if (e->spec && server_client_count(e->srv) > 0)
+        e->cur_send = e->rg_s0[slot] + n;
+        if (e->spec && (server_client_count(e->srv) > 0 || e->lab_fn))
             spectrum_feed(e->spec, iq, (int)n, on_spectrum, e);
 
         /* 2) Grabación */
@@ -1313,8 +1391,8 @@ static void *dsp_main(void *arg)
          *    'now' es la hora de la primera muestra del bloque. */
         if (e->host) {
             double fs = (double)source_rate(e->src);
-            dec_host_feed(e->host, iq, need_float ? e->buf : NULL, n, fs, source_frequency(e->src),
-                          t_blk - n / fs);
+            dec_host_feed_at(e->host, iq, need_float ? e->buf : NULL, n, fs, source_frequency(e->src),
+                             t_blk - n / fs, e->rg_s0[slot]);
         }
 
         /* 5) Canales de audio (los que no escuchan ya han recibido su nivel con la
@@ -1332,6 +1410,7 @@ static void *dsp_main(void *arg)
         /* Fin del bloque: la ranura vuelve al lector */
         pthread_mutex_lock(&e->rg_m);
         e->rg_busy = false;
+        pthread_cond_broadcast(&e->rg_ctl);
         pthread_mutex_unlock(&e->rg_m);
 
         double t2 = now_monotonic();
@@ -1421,9 +1500,11 @@ void engine_destroy(engine_t *e)
         channel_destroy(e->slots[i].ch);
     spectrum_destroy(e->spec);
     detector_destroy(e->det);
+    detector_destroy(e->ldet);
     recorder_destroy(e->rec);
     free(e->ring);
     free(e->rg_t);
+    free(e->rg_s0);
     free(e->buf);
     free(e->specmsg);
     free(e->fpga_db);

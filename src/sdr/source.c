@@ -73,6 +73,7 @@ struct source {
     bool tx_on;
     bool oversample;      /* feature OVERSAMPLE activa: SC8_Q7 a > 61,44 Msps */
     bool low_latency;     /* búferes pequeños (barrido) */
+    bool fast;            /* fichero: sin ritmo real ni bucle, acaba con SOURCE_EOF (--replay-fast) */
     qt_entry_t qt[QT_MAX];
     int qt_n;
     /* fichero */
@@ -92,6 +93,7 @@ int64_t source_frequency(const source_t *s) { return s->freq; }
 uint32_t source_rate(const source_t *s) { return s->rate; }
 bool source_oversample(const source_t *s) { return s->oversample; }
 void source_set_low_latency(source_t *s, bool on) { s->low_latency = on; }
+void source_set_fast(source_t *s, bool on) { s->fast = on && !s->dev; }
 
 const char *source_format(const source_t *s)
 {
@@ -587,6 +589,18 @@ static int file_read(source_t *s, int16_t *iq, unsigned n)
                  * volver al principio esos bytes sueltos desplazarían I/Q para siempre
                  * (I↔Q intercambiados). Se descarta la muestra incompleta del final. */
                 got -= got % bps;
+                if (s->fast) {
+                    /* Una sola pasada: el último bloque se rellena con 'silencio' (cero de la
+                     * fuente) y la lectura siguiente devuelve SOURCE_EOF. */
+                    if (got == 0)
+                        return SOURCE_EOF;
+                    if (s->fmt == FMT_CU8)
+                        memset(s->raw + got, 128, need - got);
+                    else
+                        memset(s->raw + got, 0, need - got);
+                    got = need;
+                    break;
+                }
                 empty_passes = got > pass_start ? 0 : empty_passes + 1;
                 if (empty_passes < 2) {
                     pass_start = got;
@@ -620,6 +634,8 @@ static int file_read(source_t *s, int16_t *iq, unsigned n)
     }
     /* Ritmo real: dormir hasta que "toque" entregar estas muestras */
     s->delivered += n;
+    if (s->fast)
+        return 0; /* sin ritmo real */
     double due = s->t0 + (double)s->delivered / s->rate;
     double wait = due - now_monotonic();
     if (wait > 0) {

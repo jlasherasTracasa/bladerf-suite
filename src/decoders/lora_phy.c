@@ -668,6 +668,8 @@ static void finish_frame(lora_rx_t *rx, sf_rx_t *s, lora_frame_fn cb, void *ctx,
     f.cfo_hz = s->eps * rx->cfg.bw_hz / s->N;
     f.sfo_ppm = s->slope0 / s->N * 1e6;
     f.t_end = (double)(s->frame_t0) / (2.0 * rx->cfg.bw_hz);
+    /* D = inicio del primer símbolo de datos; delante van 8 upchirps, 2 de sincronía y 2,25 downchirps */
+    f.t_start = ((double)s->D - 12.25 * (double)s->N * 2.0) / (2.0 * rx->cfg.bw_hz);
     if (s->hdr_crc && !ok) {
         rx->n_crc_bad++;
         return;

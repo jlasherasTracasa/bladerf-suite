@@ -100,6 +100,12 @@ void source_set_low_latency(source_t *s, bool on);
  * gobierna la fuente (el DSP del motor, con el lector en pausa). */
 int source_fpga_lab_io(source_t *s, fpga_lab_io_t *io);
 
+/* Fichero a máxima velocidad (--replay-fast): sin dormir para guardar el ritmo real y sin bucle.
+ * Al llegar al final source_read() devuelve SOURCE_EOF (el último bloque va completado con ceros).
+ * Sin efecto en el bladeRF. Llamar antes de source_start(). */
+#define SOURCE_EOF (-2000)
+void source_set_fast(source_t *s, bool on);
+
 /* Arranca/para el flujo de recepción. */
 int source_start(source_t *s);
 int source_stop(source_t *s);

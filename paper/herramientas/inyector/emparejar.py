@@ -15,6 +15,9 @@ Emparejado
     hace falta el instante t0 de reloj en que arrancó la reproducción: se da con --t0 o se
     estima (por defecto) buscando el desfase que maximiza los emparejamientos con
     |t - t0 - inicio| <= tol-s. Además |f_evento - f_copia| <= max(bw/2, 5 kHz).
+  * Si TODOS los eventos traen "sample" (índice de muestra de la fuente, `bladerf-lab --replay`),
+    el tiempo del evento es sample/fs y no hace falta t0 (se fuerza 0): la latencia de bloque
+    desaparece y dt_s es el error de posición. Es el caso normal desde que el binario lo escribe.
   * Eventos sin copia: filas con kind=extra (falsos positivos o duplicados de otra copia).
 
 CSV (una fila por copia y una por evento sobrante), columnas:
@@ -126,6 +129,9 @@ def main():
     events = load_events(a.events)
     if a.proto: events = [e for e in events if e["proto"] == a.proto]
     t0 = a.t0
+    if events and all("sample" in e.get("msg", {}) for e in events):
+        for e in events: e["t"] = e["msg"]["sample"] / fs   # tiempo de señal, no de reloj
+        t0 = 0.0
     if t0 is None:
         # con ID: mediana de (t - inicio) de los emparejados; si no, búsqueda por tiempo
         ds = []

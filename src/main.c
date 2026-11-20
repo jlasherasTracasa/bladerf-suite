@@ -30,6 +30,7 @@
 #include "tx/tx.h"
 #include "tv/tv.h"
 #include "util/json.h"
+#include "util/labels.h"
 #include "util/strbuf.h"
 
 #include <errno.h>
@@ -63,6 +64,7 @@ typedef struct {
     pthread_mutex_t out_lock;
     bool print_events;
     FILE *log_events;
+    labels_t *labels;     /* --labels: reúne eventos y señales para las anotaciones SigMF */
     bool tx_enabled;      /* --enable-tx: sin él tx_cal se rechaza y no se toca el receptor */
     pthread_mutex_t cal_lock; /* una calibración a la vez */
     /* Hilo de tx_cal: se une al cerrar (antes iba detached y podía usar a->eng/a->tx
@@ -298,6 +300,8 @@ static void on_dec_event(void *ctx, const char *line)
         fflush(a->log_events);
     }
     pthread_mutex_unlock(&a->out_lock);
+    if (a->labels)
+        labels_on_event(a->labels, line);
 }
 
 /* ======================================================================= */
@@ -758,6 +762,10 @@ static void usage(const char *prog)
            "  --decode ID[@Hz]     añade un decodificador (repetible)\n"
            "  --print              imprime los eventos de decodificadores por stdout (JSONL)\n"
            "  --log-events DIR     guarda los eventos en DIR/events_<fecha>.jsonl\n"
+           "  --replay-fast        con --replay: sin ritmo real ni bucle, sin descartar bloques (contrapresion);\n"
+           "                       al acabar el fichero vacia las colas y sale con 0\n"
+           "  --labels F.sigmf-meta  con --replay: escribe anotaciones SigMF en tres niveles (verified/unknown/\n"
+           "                       empty implicito, ver docs); implica --replay-fast\n"
            "  --duration S         termina tras S segundos\n"
            "  --tv-ts FICHERO      reproduce un .ts (H.264 + MP2) en bucle en la pestaña TV, sin radio\n"
            "  --gen ID             genera una señal SigMF con el modulador ID y termina\n"
@@ -773,7 +781,7 @@ static void usage(const char *prog)
 enum {
     O_HOST = 256, O_PORT, O_SERIAL, O_REPLAY, O_RATE, O_FREQ, O_NOGPU, O_WEB, O_RECDIR, O_CONFIG, O_PROFILE,
     O_DECODE, O_PRINT, O_LOGEV, O_DURATION, O_GEN, O_GENP, O_GENF, O_GENC, O_GENR, O_OUT, O_ETX, O_ETXA, O_CALL,
-    O_TXG, O_TVTS
+    O_TXG, O_TVTS, O_RFAST, O_LABELS
 };
 
 static const struct option LONGOPTS[] = {
@@ -783,7 +791,7 @@ static const struct option LONGOPTS[] = {
     {"print", 0, 0, O_PRINT}, {"log-events", 1, 0, O_LOGEV}, {"duration", 1, 0, O_DURATION}, {"gen", 1, 0, O_GEN},
     {"gen-params", 1, 0, O_GENP}, {"gen-freq", 1, 0, O_GENF}, {"gen-center", 1, 0, O_GENC},
     {"gen-rate", 1, 0, O_GENR}, {"out", 1, 0, O_OUT}, {"enable-tx", 0, 0, O_ETX}, {"enable-tx-air", 0, 0, O_ETXA},
-    {"callsign", 1, 0, O_CALL}, {"tx-max-gain", 1, 0, O_TXG}, {"tv-ts", 1, 0, O_TVTS}, {"help", 0, 0, 'h'}, {0, 0, 0, 0},
+    {"callsign", 1, 0, O_CALL}, {"tx-max-gain", 1, 0, O_TXG}, {"tv-ts", 1, 0, O_TVTS}, {"replay-fast", 0, 0, O_RFAST}, {"labels", 1, 0, O_LABELS}, {"help", 0, 0, 'h'}, {0, 0, 0, 0},
 };
 
 static bool is_dir(const char *p)
@@ -831,6 +839,21 @@ static void *duration_thread(void *arg)
     return NULL;
 }
 
+/* --replay-fast: cuando el motor ha leído todo el fichero y lo ha entregado al host, espera a que
+ * las instancias vacíen sus colas y pide el cierre (salida 0 tras volcar eventos y etiquetas). */
+static void *finish_thread(void *arg)
+{
+    app_t *a = arg;
+    while (!g_stop && !engine_finished(a->eng))
+        usleep(5000);
+    if (!g_stop)
+        dec_host_flush(a->host, 600.0);
+    g_stop = 1;
+    if (g_srv)
+        server_stop(g_srv);
+    return NULL;
+}
+
 int main(int argc, char **argv)
 {
     const char *host = "127.0.0.1", *serial = NULL, *replay = NULL, *web = NULL, *recdir = "recordings";
@@ -838,7 +861,8 @@ int main(int argc, char **argv)
     const char *decodes[32], *tv_ts = NULL;
     int ndec = 0, port = DEFAULT_PORT;
     int64_t rate_opt = 0, freq_opt = 0, gen_freq = 0, gen_center = 0, gen_rate = 0;
-    bool no_gpu = false, print = false;
+    bool no_gpu = false, print = false, replay_fast = false;
+    const char *labels_path = NULL;
     double duration = 0;
     tx_policy_t pol = {0};
     int c;
@@ -868,6 +892,8 @@ int main(int argc, char **argv)
         case O_GENC: if (!parse_hz(optarg, &gen_center)) { fprintf(stderr, "--gen-center no válido\n"); return 2; } break;
         case O_GENR: if (!parse_hz(optarg, &gen_rate)) { fprintf(stderr, "--gen-rate no válido\n"); return 2; } break;
         case O_OUT: out = optarg; break;
+        case O_RFAST: replay_fast = true; break;
+        case O_LABELS: labels_path = optarg; replay_fast = true; break;
         case O_ETX: pol.enabled = true; break;
         case O_ETXA: pol.air = true; pol.enabled = true; break;
         case O_CALL: snprintf(pol.callsign, sizeof pol.callsign, "%s", optarg); break;
@@ -902,6 +928,10 @@ int main(int argc, char **argv)
         load_config(app.cfg_path, &cfg);
     app.saved_center = cfg.center_hz;
     app.saved_rate = cfg.rate;
+    if ((replay_fast || labels_path) && !replay) {
+        fprintf(stderr, "--replay-fast y --labels exigen --replay FICHERO\n");
+        return 2;
+    }
     if (freq_opt && !replay) cfg.center_hz = freq_opt;
     if (rate_opt && !replay) cfg.rate = (uint32_t)rate_opt;
 
@@ -951,6 +981,29 @@ int main(int argc, char **argv)
         return 1;
     }
     engine_set_host(app.eng, app.host);
+    if (replay_fast) {
+        /* Sin ritmo real: el lector espera al DSP y el DSP al host (nunca se descarta un bloque) */
+        engine_set_replay_fast(app.eng, true);
+        dec_host_set_backpressure(app.host, true);
+    }
+    if (labels_path) {
+        const char *fmt = source_format(app.src);
+        const char *dt = !strcmp(fmt, "cs8") || !strcmp(fmt, "sc8q7") ? "ci8" : !strcmp(fmt, "cu8") ? "cu8" : "ci16_le";
+        char ds[700];
+        const char *base = strrchr(replay, '/');
+        base = base ? base + 1 : replay;
+        snprintf(ds, sizeof ds, "%s", base);
+        char *dot = strstr(ds, ".sigmf-meta");
+        if (dot)
+            strcpy(dot, ".sigmf-data");
+        app.labels = labels_create(dt, ds);
+        if (!app.labels) {
+            fprintf(stderr, "Sin memoria al iniciar\n");
+            return 1;
+        }
+        labels_set_source(app.labels, (double)source_rate(app.src), source_frequency(app.src));
+        engine_set_label_sink(app.eng, labels_on_signals, app.labels);
+    }
     tv_ops_t tvops = {.app = &app, .tune = tv_op_tune, .untune = tv_op_untune};
     app.tv = tv_create(app.srv, &tvops);
     tv_set_global(app.tv);
@@ -1022,6 +1075,10 @@ int main(int argc, char **argv)
         fprintf(stderr, "No se pudo arrancar el motor DSP\n");
         return 1;
     }
+    pthread_t fin;
+    bool fin_started = false;
+    if (replay_fast && pthread_create(&fin, NULL, finish_thread, &app) == 0)
+        fin_started = true;
     pthread_t dur;
     bool dur_started = false;
     if (duration > 0 && pthread_create(&dur, NULL, duration_thread, &duration) == 0)
@@ -1035,6 +1092,8 @@ int main(int argc, char **argv)
     g_stop = 1;
     if (dur_started)
         pthread_join(dur, NULL);
+    if (fin_started)
+        pthread_join(fin, NULL);
     /* La calibración usa el motor y el TX: se señaliza y se une antes de pararlos. */
     app.closing = 1;
     if (app.cal_started) {
@@ -1045,7 +1104,18 @@ int main(int argc, char **argv)
     if (app.tv)
         tv_quiesce(app.tv);
     engine_stop(app.eng);
-    dec_host_flush(app.host, 1.0);
+    dec_host_flush(app.host, replay_fast ? 600.0 : 1.0);
+    int rc = 0;
+    if (app.labels) {
+        int nv = 0, nu = 0, ng = 0;
+        char lerr[300] = "";
+        if (labels_write(app.labels, labels_path, engine_sample_count(app.eng), lerr, sizeof lerr, &nv, &nu, &ng) < 0) {
+            fprintf(stderr, "--labels: %s\n", lerr);
+            rc = 1;
+        } else {
+            fprintf(stderr, "%s: %d verified, %d unknown, %d gap (empty implicito)\n", labels_path, nv, nu, ng);
+        }
+    }
     dec_host_destroy(app.host);
     tv_destroy(app.tv);
     tx_destroy(app.tx);
@@ -1055,5 +1125,6 @@ int main(int argc, char **argv)
     source_close(app.src);
     if (app.log_events)
         fclose(app.log_events);
-    return 0;
+    labels_destroy(app.labels);
+    return rc;
 }

@@ -32,5 +32,8 @@ typedef void (*afsk_bit_fn)(void *ctx, int bit);
 afsk_t *afsk_create(double fs, double baud, double f1, double f0, double gain0, double inertia);
 void afsk_destroy(afsk_t *a);
 void afsk_process(afsk_t *a, const float *x, int n, afsk_bit_fn fn, void *ctx);
+/* Índice (desde la creación) de la muestra que se está procesando; válido dentro del callback
+ * de afsk_process: la muestra del bit que se entrega. Sirve para dar la posición de los mensajes. */
+long afsk_index(const afsk_t *a);
 
 #endif

@@ -42,6 +42,7 @@ typedef struct block {
     unsigned n;
     double fs, now;
     int64_t center;
+    uint64_t s0; /* índice absoluto (en muestras de la fuente) de la primera muestra */
     /* Qué datos son válidos en ESTE uso del bloque. Los bloques se reciclan en un
      * pool y conservan punteros (y capacidades) del uso anterior: un 'buf' rancho
      * de una salida 'mid' (pocas muestras) leído con n = 8192 es un desbordamiento.
@@ -65,6 +66,7 @@ typedef struct inst {
     block_t *q[QDEPTH];
     int qh, qn;
     bool stop, cfg_dirty, want_state, loc_dirty, working;
+    bool configuring; /* el hilo ya recogió cfg_dirty y aún no terminó reconfigure(): sigue recibiendo bloques */
     int64_t freq;
     bool loc_valid;
     double lat, lon;
@@ -91,6 +93,17 @@ typedef struct inst {
     bool cfg_pending, create_failed, ever_cfg;
     double tokens, tok_t;
     sb_t evsb;
+    /* --- índice de muestra (hilo de la instancia; ver dec_emit_span en decoder.h) ---
+     * Las muestras que recibe el decodificador (salida del DDC) se numeran desde el último
+     * reinicio de la posición: out_total cuenta las ya entregadas y base_s es el índice de
+     * muestra de la fuente que corresponde a la salida 0. La salida k equivale a la entrada
+     * base_s + k·ratio − retardo_del_DDC (filtros de fase lineal: retardo = Σ (taps−1)/2). */
+    bool have_pos, blk_valid;
+    uint64_t expect_s0, out_total, blk_out0;
+    double base_s, blk_src0, blk_ratio;
+    float *pw;      /* anillo de potencia por muestra del decodificador (potencia de 2) */
+    size_t pw_cap;  /* 0 = sin anillo (tasa demasiado alta) */
+    double pw_scale;
 } inst_t;
 
 #define AUTO_RULES 8
@@ -141,6 +154,8 @@ struct dec_host {
     ddc_mgr_t *mgr;
     bool gpu_tried, gpu_enabled;
     atomic_ulong gpu_drops;
+    uint64_t next_sample; /* índice esperado del próximo bloque de dec_host_feed() */
+    bool backpressure;    /* --replay-fast: esperar en vez de descartar */
 };
 
 /* ======================================================================= */
@@ -194,6 +209,97 @@ static void block_unref(dec_host_t *h, block_t *b)
 /* ======================================================================= */
 /*  Eventos                                                                */
 /* ======================================================================= */
+/* --- Nivel del mensaje en el canal ---------------------------------------
+ * rssi_dbfs: potencia media (dBFS, 0 dB = senoide compleja de amplitud 1) de la
+ * ventana [o0,o1] de salidas del DDC, es decir, DENTRO del ancho del canal del
+ * decodificador. snr_db: (P_ventana − P_suelo)/P_suelo en dB, con el suelo de ruido
+ * estimado en los 64 tramos previos a la ventana como el percentil 25 de la
+ * potencia media de cada tramo (los mensajes vecinos caen en el percentil alto y no
+ * lo contaminan). Sin ≥ 4 tramos previos no hay SNR. No se resta ninguna ganancia:
+ * es SNR de canal, que la calibración por inyección (paper/herramientas/inyector)
+ * relaciona con la SNR en el ancho ocupado. */
+static int cmp_f(const void *a, const void *b)
+{
+    float x = *(const float *)a, y = *(const float *)b;
+    return (x > y) - (x < y);
+}
+
+static double pw_mean(const inst_t *in, uint64_t a, uint64_t b) /* media en [a,b) */
+{
+    double s = 0;
+    for (uint64_t i = a; i < b; i++)
+        s += in->pw[i & (in->pw_cap - 1)];
+    return b > a ? s / (double)(b - a) : 0.0;
+}
+
+static void level_est(const inst_t *in, int64_t o0, int64_t o1, double *rssi, double *snr, bool *have_snr)
+{
+    *have_snr = false;
+    *rssi = -999;
+    if (!in->pw_cap || o1 < o0 || in->out_total == 0)
+        return;
+    uint64_t oldest = in->out_total > in->pw_cap ? in->out_total - in->pw_cap : 0;
+    int64_t a = MAX(o0, (int64_t)oldest), b = MIN(o1 + 1, (int64_t)in->out_total);
+    if (b - a < 4)
+        return;
+    double pw = pw_mean(in, (uint64_t)a, (uint64_t)b) * in->pw_scale;
+    *rssi = 10.0 * log10(pw + 1e-20);
+    int64_t len = b - a, seg = MAX(16, len / 8);
+    int64_t from = MAX((int64_t)oldest, a - 64 * seg);
+    int ns = (int)((a - from) / seg);
+    if (ns < 4)
+        return;
+    float m[64];
+    ns = MIN(ns, 64);
+    for (int i = 0; i < ns; i++)
+        m[i] = (float)pw_mean(in, (uint64_t)(a - (int64_t)(i + 1) * seg), (uint64_t)(a - (int64_t)i * seg));
+    qsort(m, (size_t)ns, sizeof m[0], cmp_f);
+    double pf = (double)m[ns / 4] * in->pw_scale;
+    if (pf <= 1e-20)
+        return;
+    *snr = 10.0 * log10(MAX(pw - pf, 1e-3 * pf) / pf);
+    *have_snr = true;
+}
+
+/* Difunde una línea ya construida: historia (si hist), callback --print y WebSocket (si ws). */
+static void publish_line(dec_host_t *h, const char *line, size_t len, bool hist, bool ws)
+{
+    pthread_mutex_lock(&h->lock);
+    if (hist) {
+        char *copy = strdup(line);
+        if (copy) {
+            int slot = (h->hist_head + h->hist_n) % HIST_N;
+            if (h->hist_n == HIST_N) {
+                free(h->hist[h->hist_head]);
+                slot = h->hist_head;
+                h->hist_head = (h->hist_head + 1) % HIST_N;
+            } else {
+                h->hist_n++;
+            }
+            h->hist[slot] = copy;
+        }
+    }
+    if (h->ev_fn)
+        h->ev_fn(h->ev_ctx, line);
+    pthread_mutex_unlock(&h->lock);
+    if (ws && h->srv)
+        server_send_text(h->srv, -1, line, len);
+}
+
+/* Tramo de la fuente que esta instancia NO vio (bloques descartados por cola llena o por
+ * el anillo del motor). Solo va a --print/--log-events: el etiquetador lo necesita. */
+static void emit_gap(inst_t *in, uint64_t s0, uint64_t n)
+{
+    char line[256];
+    pthread_mutex_lock(&in->m);
+    int64_t freq = in->freq;
+    pthread_mutex_unlock(&in->m);
+    int k = snprintf(line, sizeof line,
+                     "{\"type\":\"gap\",\"inst\":%d,\"proto\":\"%s\",\"freq\":%lld,\"t\":%.3f,\"sample\":%llu,\"n\":%llu}",
+                     in->id, in->d->id, (long long)freq, now_wall(), (unsigned long long)s0, (unsigned long long)n);
+    publish_line(in->h, line, (size_t)k, false, false);
+}
+
 /* emit() de los decodificadores: envuelve, limita, guarda y difunde. */
 static void inst_emit(void *ctx, const char *json, size_t len)
 {
@@ -218,31 +324,58 @@ static void inst_emit(void *ctx, const char *json, size_t len)
     freq = in->freq;
     pthread_mutex_unlock(&in->m);
 
+    /* Marca de posición del decodificador (dec_emit_span): {"smp0":a[,"smp1":b][,]...}.
+     * Se retira y se sustituye por "sample"/"sample_end"/"snr_db"/"rssi_dbfs" absolutos. */
+    const char *body = json;
+    size_t blen = len;
+    bool marked = false, have_end = false;
+    long long off0 = 0, off1 = 0;
+    if (len > 10 && strncmp(json, "{\"smp0\":", 8) == 0) {
+        char *e;
+        off0 = strtoll(json + 8, &e, 10);
+        marked = true;
+        if (strncmp(e, ",\"smp1\":", 8) == 0) {
+            off1 = strtoll(e + 8, &e, 10);
+            have_end = true;
+        }
+        if (*e == ',')
+            e++;
+        body = e; /* campos restantes seguidos de '}' */
+        blen = len - (size_t)(e - json);
+    } else if (len > 0 && json[0] == '{') {
+        body = json + 1;
+        blen = len - 1;
+    }
     sb_t *s = &in->evsb;
     sb_clear(s);
-    sb_printf(s, "{\"type\":\"dec\",\"inst\":%d,\"proto\":\"%s\",\"freq\":%lld,\"t\":%.3f,\"msg\":", in->id,
+    sb_printf(s, "{\"type\":\"dec\",\"inst\":%d,\"proto\":\"%s\",\"freq\":%lld,\"t\":%.3f,\"msg\":{", in->id,
               in->d->id, (long long)freq, now_wall());
-    sb_append(s, json, len);
-    sb_puts(s, "}");
-
-    pthread_mutex_lock(&h->lock);
-    char *copy = strdup(s->data);
-    if (copy) {
-        int slot = (h->hist_head + h->hist_n) % HIST_N;
-        if (h->hist_n == HIST_N) {
-            free(h->hist[h->hist_head]);
-            slot = h->hist_head;
-            h->hist_head = (h->hist_head + 1) % HIST_N;
-        } else {
-            h->hist_n++;
+    if (blen > 0 && body[blen - 1] == '}')
+        blen--;
+    sb_append(s, body, blen);
+    if (in->blk_valid) {
+        double r = in->blk_ratio;
+        double a = in->blk_src0 + (marked ? (double)off0 * r : 0.0);
+        if (a < 0)
+            a = 0;
+        sb_printf(s, "%s\"sample\":%.0f", blen > 0 ? "," : "", a);
+        if (marked && have_end) {
+            double b = in->blk_src0 + (double)off1 * r;
+            sb_printf(s, ",\"sample_end\":%.0f", MAX(b, a));
         }
-        h->hist[slot] = copy;
+        sb_printf(s, ",\"sample_src\":\"%s\"", marked ? "mark" : "block");
+        if (marked && have_end) {
+            double rssi, snr;
+            bool hs;
+            level_est(in, (int64_t)in->blk_out0 + off0, (int64_t)in->blk_out0 + off1, &rssi, &snr, &hs);
+            if (rssi > -900)
+                sb_printf(s, ",\"rssi_dbfs\":%.1f", rssi);
+            if (hs)
+                sb_printf(s, ",\"snr_db\":%.1f", snr);
+        }
     }
-    if (h->ev_fn)
-        h->ev_fn(h->ev_ctx, s->data);
-    pthread_mutex_unlock(&h->lock);
-    if (h->srv)
-        server_send_text(h->srv, -1, s->data, s->len);
+    sb_puts(s, "}}");
+    publish_line(h, s->data, s->len, true, true);
 }
 
 /* ======================================================================= */
@@ -496,11 +629,54 @@ static void reconfigure(inst_t *in, double fs, int64_t center)
         in->rate_now = d->rate;
         pthread_mutex_unlock(&in->m);
     }
+    in->have_pos = false; /* el DDC cambia: se reinicia la numeración de muestras */
     in->cur_fs = fs;
     in->cur_center = center;
     in->cur_freq = freq;
     in->ever_cfg = true;
     in->cfg_pending = false;
+}
+
+/* Numeración de muestras: detecta huecos (bloques que esta instancia no recibió), reinicia la
+ * referencia si los hay y deja en blk_* los datos de la llamada en curso. Después rellena el
+ * anillo de potencia con las 'm' muestras que van a entrar en el decodificador. */
+static void pos_call(inst_t *in, const block_t *b, double ratio, double delay_in, const cf32 *y, const int16_t *raw,
+                     int m)
+{
+    if (!in->have_pos || b->s0 != in->expect_s0) {
+        if (in->have_pos && b->s0 > in->expect_s0)
+            emit_gap(in, in->expect_s0, b->s0 - in->expect_s0);
+        in->have_pos = true;
+        in->base_s = (double)b->s0;
+        in->out_total = 0;
+    }
+    in->expect_s0 = b->s0 + b->n;
+    in->blk_out0 = in->out_total;
+    in->blk_ratio = ratio;
+    in->blk_src0 = in->base_s + (double)in->out_total * ratio - delay_in;
+    in->blk_valid = true;
+    if (in->pw_cap == 0 && in->pw_scale == 0) {
+        /* primera vez: anillo de potencia (4 MB a lo sumo) salvo tasas muy altas */
+        double rate = in->d->kind == DEC_WIDE ? b->fs : in->d->rate;
+        size_t cap = rate <= 1.2e6 ? ((size_t)1 << 20) : rate <= 6e6 ? ((size_t)1 << 19) : 0;
+        in->pw = cap ? malloc(sizeof(float) * cap) : NULL;
+        in->pw_cap = in->pw ? cap : 0;
+        in->pw_scale = in->d->kind == DEC_WIDE ? 1.0 / (2048.0 * 2048.0) : 1.0;
+    }
+    if (in->pw_cap) {
+        const size_t mask = in->pw_cap - 1;
+        uint64_t k = in->out_total;
+        if (y) {
+            for (int i = 0; i < m; i++, k++)
+                in->pw[k & mask] = y[i].re * y[i].re + y[i].im * y[i].im;
+        } else if (raw) {
+            for (int i = 0; i < m; i++, k++) {
+                float re = raw[2 * i], im = raw[2 * i + 1];
+                in->pw[k & mask] = re * re + im * im;
+            }
+        }
+    }
+    in->out_total += (uint64_t)m;
 }
 
 static void process_block(inst_t *in, const block_t *b)
@@ -509,8 +685,10 @@ static void process_block(inst_t *in, const block_t *b)
     if (!in->st)
         return;
     if (d->kind == DEC_WIDE) {
-        if (d->process_raw && b->has_iq)
+        if (d->process_raw && b->has_iq) {
+            pos_call(in, b, 1.0, 0.0, NULL, b->iq, (int)b->n);
             d->process_raw(in->st, b->iq, (int)b->n, b->now, inst_emit, in);
+        }
         return;
     }
     if (b->mid) {
@@ -526,6 +704,7 @@ static void process_block(inst_t *in, const block_t *b)
                 return;
         }
         int k = ddc_fine_process(in->fine, b->buf, (int)b->n, in->ddc_out, (int)in->ddc_cap);
+        in->blk_valid = false; /* la GPU no conserva el índice de muestra de la fuente */
         if (k > 0)
             d->process(in->st, in->ddc_out, k, b->now, inst_emit, in);
         return;
@@ -541,8 +720,10 @@ static void process_block(inst_t *in, const block_t *b)
             return;
     }
     int m = ddc_process(in->ddc, b->buf, (int)b->n, in->ddc_out, (int)in->ddc_cap);
-    if (m > 0)
+    if (m > 0) {
+        pos_call(in, b, b->fs / d->rate, ddc_delay_in(in->ddc), in->ddc_out, NULL, m);
         d->process(in->st, in->ddc_out, m, b->now, inst_emit, in);
+    }
 }
 
 static void make_state(inst_t *in)
@@ -597,6 +778,8 @@ static void *inst_main(void *arg)
         bool cfg = in->cfg_dirty, ws = in->want_state, ld = in->loc_dirty;
         bool lv = in->loc_valid;
         double lat = in->lat, lon = in->lon;
+        if (cfg)
+            in->configuring = true;
         in->cfg_dirty = in->want_state = in->loc_dirty = false;
         in->working = true;
         pthread_mutex_unlock(&in->m);
@@ -631,6 +814,7 @@ static void *inst_main(void *arg)
             make_state(in);
         pthread_mutex_lock(&in->m);
         in->working = false;
+        in->configuring = in->cfg_pending;
         pthread_mutex_unlock(&in->m);
     }
     gpu_detach(in); /* antes de vaciar la cola: así la GPU ya no encola más */
@@ -651,6 +835,8 @@ static void *inst_main(void *arg)
         in->d->destroy(in->st);
     ddc_destroy(in->ddc);
     free(in->ddc_out);
+    free(in->pw);
+    in->pw = NULL;
     return NULL;
 }
 
@@ -899,7 +1085,7 @@ bool dec_host_needs_float(dec_host_t *h)
         if (!in)
             continue;
         pthread_mutex_lock(&in->m);
-        need = !in->on_gpu && in->d->kind == DEC_NARROW && (in->state == ST_OK || in->cfg_dirty);
+        need = !in->on_gpu && in->d->kind == DEC_NARROW && (in->state == ST_OK || in->cfg_dirty || in->configuring);
         pthread_mutex_unlock(&in->m);
     }
     pthread_mutex_unlock(&h->lock);
@@ -909,7 +1095,45 @@ bool dec_host_needs_float(dec_host_t *h)
 void dec_host_feed(dec_host_t *h, const int16_t *iq, const cf32 *buf, unsigned n, double fs, int64_t center,
                    double now)
 {
+    dec_host_feed_at(h, iq, buf, n, fs, center, now, h->next_sample);
+}
+
+/* ¿Alguna cola de instancia está llena? (solo con contrapresión; lo llama el hilo que alimenta) */
+static bool any_queue_full(dec_host_t *h)
+{
+    bool full = false;
     pthread_mutex_lock(&h->lock);
+    for (int i = 0; i < MAX_INST && !full; i++) {
+        inst_t *in = h->inst[i];
+        if (!in)
+            continue;
+        pthread_mutex_lock(&in->m);
+        full = in->qn >= QDEPTH && !in->stop && in->state == ST_OK;
+        pthread_mutex_unlock(&in->m);
+    }
+    pthread_mutex_unlock(&h->lock);
+    return full;
+}
+
+void dec_host_set_backpressure(dec_host_t *h, bool on)
+{
+    pthread_mutex_lock(&h->lock);
+    h->backpressure = on;
+    if (on)
+        h->gpu_enabled = false; /* el DDC de GPU no conserva índices ni espera */
+    pthread_mutex_unlock(&h->lock);
+}
+
+void dec_host_feed_at(dec_host_t *h, const int16_t *iq, const cf32 *buf, unsigned n, double fs, int64_t center,
+                      double now, uint64_t sample0)
+{
+    /* Contrapresión (--replay-fast): solo el hilo que alimenta encola, así que si ninguna cola
+     * está llena aquí tampoco lo estará más abajo. Se espera fuera de los cerrojos. */
+    if (h->backpressure)
+        while (any_queue_full(h))
+            usleep(200);
+    pthread_mutex_lock(&h->lock);
+    h->next_sample = sample0 + n;
     bool changed = fs != h->fs || center != h->center;
     h->fs = fs;
     h->center = center;
@@ -926,7 +1150,7 @@ void dec_host_feed(dec_host_t *h, const int16_t *iq, const cf32 *buf, unsigned n
         pthread_mutex_lock(&in->m);
         if (changed)
             in->cfg_dirty = true;
-        bool eligible = in->state == ST_OK || in->cfg_dirty;
+        bool eligible = in->state == ST_OK || in->cfg_dirty || in->configuring;
         bool gpu = in->on_gpu;
         if (gpu && in->cfg_dirty)
             pthread_cond_signal(&in->cv); /* no recibe bloques que lo despierten */
@@ -954,6 +1178,7 @@ void dec_host_feed(dec_host_t *h, const int16_t *iq, const cf32 *buf, unsigned n
         goto gpu_feed;
     }
     b->mid = false;
+    b->s0 = sample0;
     b->n = n;
     b->fs = fs;
     b->center = center;

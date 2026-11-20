@@ -58,6 +58,7 @@
 #define MAX_SHIPS 1024
 #define DEDUP_N 16
 #define DEDUP_SAMPLES 12000 /* 0,25 s */
+#define AIS_DELAY 12        /* retardo de fmdisc + FIR de 25 coef. (12 muestras de grupo), medido en tests/test_labels.c */
 
 /* ======================================================================= */
 /*  Campos de bits                                                         */
@@ -434,6 +435,8 @@ typedef struct {
     double ring_sum, ring_w;
     int ring_pos;
     long n;                 /* muestras procesadas */
+    long blk_n0;            /* valor de n al empezar la llamada en curso a process() */
+    int64_t mk0, mk1;       /* inicio y fin de la trama en curso (muestras, índice absoluto en n) */
     phase_t ph[SPS];
     dedup_t dd[DEDUP_N];
     int dd_pos;
@@ -661,7 +664,7 @@ static void emit_msg(ais_t *a, const ais_msg_t *m, const uint8_t *bits, int nbit
     update_ship(a, m, now);
     a->total++;
     if (a->emit)
-        a->emit(a->emit_ctx, e->data, e->len);
+        dec_emit_span(a->emit, a->emit_ctx, a->mk0 - a->blk_n0, a->mk1 - a->blk_n0, e->data, e->len);
 }
 
 /* FNV-1a de la carga para descartar la misma trama vista desde fases vecinas. */
@@ -687,7 +690,7 @@ void ais_unscramble_bytes(const uint8_t *in, int nbits, uint8_t *out)
     }
 }
 
-static void on_frame(ais_t *a, const uint8_t *raw, int nbits)
+static void on_frame(ais_t *a, const uint8_t *raw, int nbits, const hdlc_rx_t *hd)
 {
     uint8_t bits[MAX_BITS];
     if (nbits > MAX_BITS)
@@ -702,6 +705,12 @@ static void on_frame(ais_t *a, const uint8_t *raw, int nbits)
         a->bad_len++;
         return;
     }
+    /* La bandera detectada en el bit con muestra 'pos' empieza 7,5 símbolos antes (8 bits, el
+     * último centrado en pos) y la de cierre acaba medio símbolo después. El retardo del
+     * discriminador y del FIR de 25 coeficientes (AIS_DELAY muestras) se resta para que el
+     * índice sea el de la señal recibida y no el del flujo demodulado. */
+    a->mk0 = hd->last_start - (int64_t)(7.5 * SPS) - AIS_DELAY;
+    a->mk1 = hd->last_end + SPS / 2 - AIS_DELAY;
     a->dd[a->dd_pos] = (dedup_t){h, a->n};
     a->dd_pos = (a->dd_pos + 1) % DEDUP_N;
     emit_msg(a, &m, bits, nbits, a->blk_now + (double)a->blk_i / 48000.0);
@@ -780,6 +789,7 @@ static void ais_process(void *st, const cf32 *iq, int n, double now, dec_emit_fn
     a->emit = emit;
     a->emit_ctx = ctx;
     a->blk_now = now;
+    a->blk_n0 = a->n;
     fmdisc_process(&a->disc, iq, n, a->tmp);
     int m = fir_f_process(&a->lpf, a->tmp, n, a->tmp2);
     for (int i = 0; i < m; i++) {
@@ -796,12 +806,13 @@ static void ais_process(void *st, const cf32 *iq, int n, double now, dec_emit_fn
             a->ring_pos = 0;
         float dc = a->ring_w > 1e-12 ? (float)(a->ring_sum / a->ring_w) : 0.0f;
         hdlc_rx_t *h = &a->ph[a->n % SPS].hdlc;
+        h->pos = a->n;
         a->n++;
         a->blk_i = i;
         int nb = hdlc_rx_push_level(h, y > dc);
         if (nb > 0) {
             memcpy(a->bitbuf, h->bits, (size_t)nb);
-            on_frame(a, a->bitbuf, nb);
+            on_frame(a, a->bitbuf, nb, h);
         }
         if (a->n % (1L << 22) == 0) { /* limita la deriva de las sumas móviles */
             double sy = 0, sw = 0;

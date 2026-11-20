@@ -26,6 +26,9 @@
 #ifndef BLADERF_LAB_DECODER_H
 #define BLADERF_LAB_DECODER_H
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "../common.h"
 #include "../util/strbuf.h"
 
@@ -64,6 +67,51 @@ typedef struct {
     void (*state_json)(void *st, sb_t *sb, double now);              /* opcional, ~1 Hz */
     void (*set_location)(void *st, bool valid, double lat, double lon); /* opcional */
 } decoder_desc_t;
+
+
+/* --- Posición del mensaje en la señal (índice de muestra) ------------------
+ * Un decodificador que sabe DÓNDE empezó (y acabó) un mensaje lo dice llamando
+ * a dec_emit_span() en vez de emit(). Los desplazamientos off0/off1 se cuentan
+ * en muestras del propio decodificador (las que recibe process/process_raw, a
+ * su tasa) y son relativos a la PRIMERA muestra de la llamada en curso a
+ * process*(); pueden ser negativos (el mensaje empezó en un bloque anterior).
+ * off1 < off0 significa "no sé dónde acaba".
+ *
+ * Mecanismo (no invasivo y sin estado global): se antepone al objeto JSON
+ * "smp0" y "smp1". El host los retira y los sustituye por los campos absolutos
+ * "sample"/"sample_end" (índice de muestra de la FUENTE a su tasa, ver host.h)
+ * más "snr_db"/"rssi_dbfs" medidos en el canal. Si el emisor no es el host
+ * (pruebas) el JSON sigue siendo válido y los campos pasan tal cual. Un
+ * decodificador que no llama a dec_emit_span() recibe por omisión el inicio de
+ * la llamada en curso (precisión de un bloque). */
+static inline void dec_emit_span(dec_emit_fn emit, void *ctx, int64_t off0, int64_t off1, const char *json,
+                                 size_t len)
+{
+    if (!emit)
+        return;
+    if (len < 2 || json[0] != '{') {
+        emit(ctx, json, len);
+        return;
+    }
+    char stack[2048], *buf = stack;
+    size_t cap = len + 96;
+    if (cap > sizeof stack) {
+        buf = (char *)malloc(cap);
+        if (!buf) {
+            emit(ctx, json, len);
+            return;
+        }
+    }
+    int k = snprintf(buf, cap, "{\"smp0\":%lld", (long long)off0);
+    if (off1 >= off0)
+        k += snprintf(buf + k, cap - (size_t)k, ",\"smp1\":%lld", (long long)off1);
+    if (json[1] != '}')
+        buf[k++] = ',';
+    memcpy(buf + k, json + 1, len - 1);
+    emit(ctx, buf, (size_t)k + len - 1);
+    if (buf != stack)
+        free(buf);
+}
 
 extern const decoder_desc_t *const DECODERS[];   /* registry.c, acaba en NULL */
 const decoder_desc_t *decoder_find(const char *id);

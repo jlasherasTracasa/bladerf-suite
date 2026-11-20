@@ -14,6 +14,7 @@ struct afsk {
     int pos;
     double s1r, s1i, s0r, s0i; /* sumas deslizantes */
     long count;
+    long smp;                  /* muestras consumidas (incluida la actual) */
     double pll;
     int prev;
 };
@@ -48,9 +49,12 @@ void afsk_destroy(afsk_t *a)
     free(a);
 }
 
+long afsk_index(const afsk_t *a) { return a->smp - 1; }
+
 void afsk_process(afsk_t *a, const float *x, int n, afsk_bit_fn fn, void *ctx)
 {
     for (int i = 0; i < n; i++) {
+        a->smp++;
         double v = x[i];
         double c1 = cos(a->ph1), s1 = -sin(a->ph1), c0 = cos(a->ph0), s0 = -sin(a->ph0);
         double *q1 = &a->r1[2 * a->pos], *q0 = &a->r0[2 * a->pos];
