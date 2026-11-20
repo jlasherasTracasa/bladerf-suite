@@ -239,3 +239,29 @@ KLM1023; `8D40621D58C382D690C8AC2863A7` + `8D40621D58C386435CC412692AD6` → 52,
 3,9194°; `8D485020994409940838175B284F` → 159 kt, 182,9°, −832 ft/min.
 `tests/test_host.c` recorre modulador → ruido (18 dB) → host → evento («Nuevo 4840D6
 KLM1023», uno solo por defecto; 8 con `raw`) y estado.
+
+
+## Posición CPR local, pista y procedencia (D10)
+
+- **Local con el receptor** (DO-260B §A.1.7.5, ICAO Doc 9871): con la posición del
+  receptor conocida (`set_location`), un solo mensaje de posición basta. Con la
+  latitud/longitud CPR de 17 bits y una referencia a menos de media zona
+  (6,1°/2 en vuelo = 180 NM; 1,5°/2 en superficie = 45 NM) se resuelve la zona
+  `j = floor(ref/dlat) + floor(mod(ref,dlat)/dlat − y + 0,5)`. Fuera de esos radios
+  respecto al receptor el resultado se descarta. Aviso: un avión realmente más
+  lejos que media zona saldría en otra zona y dentro del radio sin que se note;
+  por eso la global (par/impar) sustituye a la local en cuanto llega y, si la
+  contradice (salto imposible, > 2 km + 0,6 km/s·dt), se borra la pista y se
+  cuenta en `lbad`.
+- Orden de intentos: global par/impar → local respecto a la última posición del
+  propio avión (< 30 s) → local respecto al receptor. Siempre se filtra por
+  verosimilitud (≤ 700 km del receptor, ≤ 2160 km/h).
+- **Estado** (`dec_state`): cada avión con posición añade `pos_src`
+  (`"global"|"local"`), `seen_pos` (antigüedad en s) y `trail`: hasta 24 puntos
+  `[antigüedad_s, lat, lon, alt_ft|null]` separados ≥ 8 s (≈ 3 min), más viejo primero.
+  El resumen incluye `lbad`.
+- **Mapa** (`web/js/map.js`): dibuja la pista por tramos coloreados por altitud
+  (naranja en el suelo → violeta a FL400) y la ficha muestra la procedencia.
+- Pruebas: `tests/test_adsb.c` (vectores del libro «The 1090 Megahertz Riddle»,
+  cap. 5, y de pyModeS para superficie; fuera de alcance; extremo a extremo con
+  el modulador y una sola trama).

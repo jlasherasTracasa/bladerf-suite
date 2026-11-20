@@ -40,6 +40,10 @@
 
 #define ADSB_RATE 2000000 /* el decodificador necesita exactamente 2 Msps */
 
+#define ADSB_TRAIL_N 24    /* puntos de pista por aeronave (acotado en memoria) */
+#define ADSB_TRAIL_DT 8.0  /* separación mínima entre puntos (s) */
+enum { ADSB_POS_NONE = 0, ADSB_POS_GLOBAL = 1, ADSB_POS_LOCAL = 2 };
+
 typedef struct {
     uint32_t icao;
     char callsign[9];
@@ -60,6 +64,10 @@ typedef struct {
     double cpr_time[2];
     bool cpr_surface[2];
     double pos_time;        /* instante de la última posición válida */
+    int pos_src;            /* origen de la posición: ADSB_POS_NONE/GLOBAL/LOCAL */
+    /* Pista: últimos puntos aceptados (anillo, espaciados >= ADSB_TRAIL_DT s) */
+    struct { double t, lat, lon; int alt_ft; bool alt_ok; } trail[ADSB_TRAIL_N];
+    int trail_n, trail_head;
     double first_seen, last_seen;
     unsigned msgs;
     float rssi_db;          /* nivel medio suavizado de las tramas (dBFS) */

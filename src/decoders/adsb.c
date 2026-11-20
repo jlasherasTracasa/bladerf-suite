@@ -32,6 +32,7 @@ struct adsb {
     bool rx_valid;
     double rx_lat, rx_lon;
     unsigned long total, total_prev;
+    unsigned long local_bad; /* posiciones locales desmentidas por una global */
     double rate_t0;
     float msg_rate;
     dec_emit_fn emit;     /* notificación de tramas DF17/18 (opcional) */
@@ -318,6 +319,32 @@ static bool position_plausible(adsb_t *a, const aircraft_t *p, double lat, doubl
     return true;
 }
 
+/* Alcance de validez de la decodificación local (DO-260B §A.1.7.5, ICAO Doc
+ * 9871): la zona de latitud mide 360/59 ≈ 6,1° en vuelo (±3° ≈ ±180 NM de
+ * ambigüedad) y 90/59 ≈ 1,5° en superficie (±45 NM). Si la referencia está más
+ * lejos de lo que mide media zona, la posición puede salir en otra zona sin que
+ * se note, así que se descarta lo que caiga fuera de ese radio del receptor. */
+#define CPR_LOCAL_RANGE_AIR_KM (180.0 * 1.852)
+#define CPR_LOCAL_RANGE_SURF_KM (45.0 * 1.852)
+
+static void trail_push(aircraft_t *p, double now)
+{
+    if (p->trail_n > 0) {
+        int last = (p->trail_head + ADSB_TRAIL_N - 1) % ADSB_TRAIL_N;
+        if (now - p->trail[last].t < ADSB_TRAIL_DT)
+            return;
+    }
+    int k = p->trail_head;
+    p->trail[k].t = now;
+    p->trail[k].lat = p->lat;
+    p->trail[k].lon = p->lon;
+    p->trail[k].alt_ft = p->altitude_ft;
+    p->trail[k].alt_ok = p->alt_valid;
+    p->trail_head = (k + 1) % ADSB_TRAIL_N;
+    if (p->trail_n < ADSB_TRAIL_N)
+        p->trail_n++;
+}
+
 static void handle_position(adsb_t *a, aircraft_t *p, const uint8_t *me, bool surface, double now)
 {
     int odd = (int)getbits(me, 22, 22);
@@ -326,8 +353,9 @@ static void handle_position(adsb_t *a, aircraft_t *p, const uint8_t *me, bool su
     p->cpr_time[odd] = now;
     p->cpr_surface[odd] = surface;
 
-    double lat, lon;
+    double lat = 0, lon = 0;
     bool ok = false;
+    int src = ADSB_POS_NONE;
     double ref_lat = a->rx_valid ? a->rx_lat : 0.0, ref_lon = a->rx_valid ? a->rx_lon : 0.0;
 
     /* 1) Global si hay par reciente del mismo tipo */
@@ -339,17 +367,46 @@ static void handle_position(adsb_t *a, aircraft_t *p, const uint8_t *me, bool su
                 ref_lon = p->lon;
             }
             ok = cpr_global(p, odd, surface, ref_lat, ref_lon, &lat, &lon);
+            if (ok)
+                src = ADSB_POS_GLOBAL;
         }
     }
-    /* 2) Local respecto a la última posición conocida del propio avión */
-    if (!ok && p->pos_valid && now - p->pos_time < 30.0)
+    /* 2) Local respecto a la última posición del propio avión (si es reciente) */
+    if (!ok && p->pos_valid && now - p->pos_time < 30.0) {
         ok = cpr_local(odd, surface, p->cpr_lat[odd], p->cpr_lon[odd], p->lat, p->lon, &lat, &lon);
+        if (ok)
+            src = ADSB_POS_LOCAL;
+    }
+    /* 3) Local respecto al receptor: un solo mensaje basta, pero solo vale
+     *    dentro del alcance de la zona (si no, el resultado es ambiguo). */
+    if (!ok && a->rx_valid) {
+        ok = cpr_local(odd, surface, p->cpr_lat[odd], p->cpr_lon[odd], a->rx_lat, a->rx_lon, &lat, &lon);
+        if (ok && distance_km(a->rx_lat, a->rx_lon, lat, lon) >
+                      (surface ? CPR_LOCAL_RANGE_SURF_KM : CPR_LOCAL_RANGE_AIR_KM))
+            ok = false;
+        if (ok)
+            src = ADSB_POS_LOCAL;
+    }
+
+    /* La global manda: si contradice una posición que era local, la local
+     * estaba mal (referencia ambigua). Se descarta la pista y se acepta la
+     * global (que sigue sujeta a la comprobación de alcance respecto al receptor). */
+    if (ok && src == ADSB_POS_GLOBAL && p->pos_valid && p->pos_src == ADSB_POS_LOCAL) {
+        double dt = fmax(now - p->pos_time, 1.0);
+        if (distance_km(p->lat, p->lon, lat, lon) > 2.0 + dt * 0.6) {
+            p->pos_valid = false;
+            p->trail_n = p->trail_head = 0;
+            a->local_bad++;
+        }
+    }
 
     if (ok && position_plausible(a, p, lat, lon, now)) {
         p->lat = lat;
         p->lon = lon;
         p->pos_valid = true;
         p->pos_time = now;
+        p->pos_src = src;
+        trail_push(p, now);
     } else if (ok) {
         /* Inverosímil: descartar el par para no arrastrar el error */
         p->cpr_time[0] = p->cpr_time[1] = 0;
@@ -1033,8 +1090,8 @@ static void write_state_body(adsb_t *a, sb_t *sb, double now)
     /* Métricas: fps = tramas válidas/s (ventana de 2 s); fix1/fix2 = corregidas de
      * 1 y 2 bits; crc = recuperadas por el entramado CRC; rej = candidatos
      * DF17/18 descartados por CRC incorregible. */
-    sb_printf(sb, "\"msgs\":%lu,\"rate\":%.1f,\"fps\":%.1f,\"fix1\":%lu,\"fix2\":%lu,\"crc\":%lu,\"rej\":%lu,\"rx\":%s,\"ac\":[",
-              a->total, a->msg_rate, a->msg_rate, a->st.fix1, a->st.fix2, a->st.crc_rec, a->st.rejected,
+    sb_printf(sb, "\"msgs\":%lu,\"rate\":%.1f,\"fps\":%.1f,\"fix1\":%lu,\"fix2\":%lu,\"crc\":%lu,\"rej\":%lu,\"lbad\":%lu,\"rx\":%s,\"ac\":[",
+              a->total, a->msg_rate, a->msg_rate, a->st.fix1, a->st.fix2, a->st.crc_rec, a->st.rejected, a->local_bad,
               a->rx_valid ? "true" : "false");
     bool first = true;
     for (int i = 0; i < a->nac; i++) {
@@ -1066,7 +1123,23 @@ static void write_state_body(adsb_t *a, sb_t *sb, double now)
         if (p->emergency)
             sb_printf(sb, ",\"emerg\":%d", p->emergency);
         if (p->pos_valid) {
-            sb_printf(sb, ",\"lat\":%.5f,\"lon\":%.5f,\"seen_pos\":%.1f", p->lat, p->lon, fmax(0.0, now - p->pos_time));
+            sb_printf(sb, ",\"lat\":%.5f,\"lon\":%.5f,\"seen_pos\":%.1f,\"pos_src\":\"%s\"", p->lat, p->lon,
+                      fmax(0.0, now - p->pos_time), p->pos_src == ADSB_POS_LOCAL ? "local" : "global");
+            if (p->trail_n > 1) {
+                /* [antigüedad s, lat, lon, alt ft|null], del más viejo al más nuevo */
+                sb_puts(sb, ",\"trail\":[");
+                for (int k = 0; k < p->trail_n; k++) {
+                    int ix = (p->trail_head + ADSB_TRAIL_N - p->trail_n + k) % ADSB_TRAIL_N;
+                    if (k)
+                        sb_puts(sb, ",");
+                    sb_printf(sb, "[%.0f,%.4f,%.4f,", fmax(0.0, now - p->trail[ix].t), p->trail[ix].lat, p->trail[ix].lon);
+                    if (p->trail[ix].alt_ok)
+                        sb_printf(sb, "%d]", p->trail[ix].alt_ft);
+                    else
+                        sb_puts(sb, "null]");
+                }
+                sb_puts(sb, "]");
+            }
             if (a->rx_valid)
                 sb_printf(sb, ",\"dist\":%.1f", distance_km(a->rx_lat, a->rx_lon, p->lat, p->lon));
         }

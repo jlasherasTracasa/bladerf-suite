@@ -17,6 +17,8 @@ const NAME = ['cs', 'callsign', 'call', 'name', 'long_name', 'short_name', 'ssid
 const KEY = ['icao', 'mmsi', 'id', 'addr', 'node', 'serial', 'sn', 'call', 'callsign', 'cs', 'name'];
 const COLORS = ['#8fcdff', '#ffd37d', '#8ed6a5', '#ffb4ab', '#d0bcff', '#f2a6e8', '#9fe3e0', '#f4b27a'];
 const first = (o, keys) => { for (const k of keys) if (o[k] != null && o[k] !== '') return o[k]; return null; };
+// Color por altitud (ft): del naranja (suelo) al violeta (FL400), pasando por amarillo, verde y azul.
+const altColor = (ft) => `hsl(${Math.round(30 + 250 * clamp(ft / 40000, 0, 1))} 85% 62%)`;
 const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
 
 let cv, cx, W = 0, H = 0, dpr = 1;
@@ -96,7 +98,17 @@ function drawMap() {
     l.rows.forEach((r, i) => {
       const q = pos(r); if (!q) return;
       const k = rowKey(r, i), tk = l.id + '|' + k, t = trails.get(tk);
-      if (t && t.length > 1) {
+      // Pista que publica el decodificador (ADS-B: [antigüedad, lat, lon, alt]): un tramo por par de puntos, coloreado por altitud.
+      if (Array.isArray(r.trail) && r.trail.length > 1) {
+        const pts = [...r.trail.filter((e) => Array.isArray(e) && num(e[1]) != null && num(e[2]) != null), q.length ? [0, q[0], q[1], num(r.alt)] : null].filter(Boolean);
+        c.lineWidth = 1.8; c.globalAlpha = 0.75;
+        for (let j = 1; j < pts.length; j++) {
+          const p0 = proj(o, pts[j - 1][1], pts[j - 1][2]), p1 = proj(o, pts[j][1], pts[j][2]), al = num(pts[j][3]);
+          c.strokeStyle = al != null ? altColor(al) : l.color;
+          c.beginPath(); c.moveTo(X(p0.x), Y(p0.y)); c.lineTo(X(p1.x), Y(p1.y)); c.stroke();
+        }
+        c.globalAlpha = 1;
+      } else if (t && t.length > 1) {
         c.strokeStyle = l.color; c.globalAlpha = 0.4; c.lineWidth = 1.2; c.beginPath();
         t.forEach(([la, lo], j) => { const p = proj(o, la, lo); j ? c.lineTo(X(p.x), Y(p.y)) : c.moveTo(X(p.x), Y(p.y)); });
         c.stroke(); c.globalAlpha = 1;
@@ -104,7 +116,7 @@ function drawMap() {
       const p = proj(o, q[0], q[1]), x = X(p.x), y = Y(p.y), hd = num(first(r, HDG)), sel = selected && selected.layer === l.id && selected.k === k;
       const seen = num(r.seen), old = seen != null && seen > 60;        // dato antiguo: se atenúa
       c.save(); c.translate(x, y); c.globalAlpha = old ? 0.4 : 1;
-      c.fillStyle = l.color; c.beginPath();
+      c.fillStyle = num(r.alt) != null && r.pos_src ? altColor(r.alt) : l.color; c.beginPath();
       if (hd != null) { c.rotate((hd * Math.PI) / 180); c.moveTo(0, -8); c.lineTo(5, 6); c.lineTo(0, 3); c.lineTo(-5, 6); } else c.arc(0, 0, 4, 0, 7);
       c.closePath(); c.fill();
       if (sel) { c.strokeStyle = '#fff'; c.lineWidth = 1.5; c.stroke(); }
@@ -150,7 +162,8 @@ function renderSelected() {
   let row = null;
   if (selected) { const l = layers.find((x) => x.id === selected.layer); if (l) l.rows.forEach((r, i) => { if (rowKey(r, i) === selected.k) row = r; }); }
   if (!row) { box.replaceChildren(h('span', { class: 'muted', text: 'Haz clic en un objeto del mapa o de una tabla para ver todos sus campos.' })); return; }
-  box.replaceChildren(h('div', { class: 'kv' }, Object.entries(row).filter(([k]) => !k.startsWith('_')).flatMap(([k, v]) => [h('span', { class: 'k', text: k }), h('span', { class: 'v mono', text: fmtVal(v) })])));
+  const src = row.pos_src ? h('div', { class: 'muted', text: `Posición ${row.pos_src === 'local' ? 'local (un solo mensaje CPR + posición del receptor)' : 'global (par par/impar)'}` + (num(row.seen_pos) != null ? ` · hace ${Math.round(row.seen_pos)} s` : '') + (Array.isArray(row.trail) ? ` · pista de ${row.trail.length} puntos` : '') }) : null;
+  box.replaceChildren(...(src ? [src] : []), h('div', { class: 'kv' }, Object.entries(row).filter(([k]) => !k.startsWith('_') && k !== 'trail').flatMap(([k, v]) => [h('span', { class: 'k', text: k }), h('span', { class: 'v mono', text: fmtVal(v) })])));
 }
 
 function renderTables() {

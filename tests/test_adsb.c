@@ -208,8 +208,129 @@ static void test_noise_only(void)
     adsb_destroy(a);
 }
 
+
+/* CPR local con la posición del receptor (un solo mensaje). Vectores:
+ *  - Aire: «The 1090 Megahertz Riddle» (J. Sun, 2ª ed.), cap. 5 «Position»,
+ *    decodificación local de la trama impar 8D40621D58C386435CC412692AD6 con
+ *    referencia (52,258° N; 3,918° E) → (52,26578° N; 3,93891° E).
+ *  - Superficie: vector de pyModeS (surface_position_with_ref), trama
+ *    8C4841753A9A153237AEF0F275BE con referencia (52,32; 4,73). La pareja par/impar da (52,32061; 4,73473); la
+ *    impar sola, (52,32056; 4,73574) (el avión se movió ~70 m entre tramas),
+ *    que se ha contrastado con una implementación independiente de §A.1.7.5.
+ * Alcance (DO-260B §A.1.7.5): 180 NM en vuelo, 45 NM en superficie. */
+static void test_cpr_local(void)
+{
+    const double now = 5000.0;
+    const char *odd = "8D40621D58C386435CC412692AD6";
+    const char *surf = "8C4841753A9A153237AEF0F275BE";
+    adsb_t *a = adsb_create();
+    adsb_set_receiver(a, true, 52.258, 3.918);
+    CHECK_EQ(adsb_decode_hex(a, odd, now), 17);
+    const aircraft_t *p = adsb_find(a, 0x40621D);
+    CHECK(p && p->pos_valid);
+    if (p) {
+        CHECK_NEAR(p->lat, 52.26578, 0.0005);
+        CHECK_NEAR(p->lon, 3.93891, 0.0005);
+        CHECK_EQ(p->pos_src, ADSB_POS_LOCAL);
+    }
+    /* Pista: puntos separados >= ADSB_TRAIL_DT, acotada, y el estado lo publica */
+    adsb_decode_hex(a, odd, now + 10);
+    adsb_decode_hex(a, odd, now + 11); /* demasiado cerca del anterior: no añade */
+    adsb_decode_hex(a, odd, now + 20);
+    p = adsb_find(a, 0x40621D);
+    CHECK(p && p->trail_n == 3);
+    sb_t sb = {0};
+    adsb_state_json(a, &sb, now + 21);
+    CHECK(strstr(sb.data, "\"pos_src\":\"local\"") != NULL);
+    CHECK(strstr(sb.data, "\"trail\":[[") != NULL);
+    sb_free(&sb);
+    for (int i = 0; i < 200; i++)
+        adsb_decode_hex(a, odd, now + 30 + 10 * i);
+    p = adsb_find(a, 0x40621D);
+    CHECK(p && p->trail_n == ADSB_TRAIL_N);
+    adsb_destroy(a);
+
+    /* Fuera de alcance: receptor a 3,02° de latitud (≈ 335 km > 180 NM = 333 km) de
+     * la posición real: la zona sigue bien resuelta pero queda fuera del radio
+     * de validez y se descarta */
+    a = adsb_create();
+    adsb_set_receiver(a, true, 49.25, 3.9389);
+    CHECK_EQ(adsb_decode_hex(a, odd, now), 17);
+    p = adsb_find(a, 0x40621D);
+    CHECK(p && !p->pos_valid);
+    adsb_destroy(a);
+
+    /* Sin receptor y con una sola trama: tampoco */
+    a = adsb_create();
+    CHECK_EQ(adsb_decode_hex(a, odd, now), 17);
+    p = adsb_find(a, 0x40621D);
+    CHECK(p && !p->pos_valid);
+    adsb_destroy(a);
+
+    /* Superficie: dentro (≈ 1 km) y fuera de 45 NM (≈ 84 km > 83,3 km) */
+    a = adsb_create();
+    adsb_set_receiver(a, true, 52.32, 4.73);
+    CHECK_EQ(adsb_decode_hex(a, surf, now), 17);
+    p = adsb_find(a, 0x484175);
+    CHECK(p && p->pos_valid);
+    if (p) {
+        CHECK_NEAR(p->lat, 52.32056, 0.0003);
+        CHECK_NEAR(p->lon, 4.73574, 0.0003);
+        CHECK_EQ(p->pos_src, ADSB_POS_LOCAL);
+    }
+    adsb_destroy(a);
+    a = adsb_create();
+    adsb_set_receiver(a, true, 53.0776, 4.73473);
+    CHECK_EQ(adsb_decode_hex(a, surf, now), 17);
+    p = adsb_find(a, 0x484175);
+    CHECK(p && !p->pos_valid);
+    adsb_destroy(a);
+
+    /* Global tras local: la pareja par/impar sustituye a la local (pos_src global) */
+    a = adsb_create();
+    adsb_set_receiver(a, true, 52.258, 3.918);
+    adsb_decode_hex(a, odd, now);
+    adsb_decode_hex(a, "8D40621D58C382D690C8AC2863A7", now + 1);
+    p = adsb_find(a, 0x40621D);
+    CHECK(p && p->pos_valid && p->pos_src == ADSB_POS_GLOBAL);
+    if (p)
+        CHECK_NEAR(p->lat, 52.2572, 0.001);
+    adsb_destroy(a);
+}
+
+/* Extremo a extremo: el modulador genera la ráfaga (ident, par, impar, velocidad);
+ * se alimenta SOLO la trama impar (un único mensaje de posición) con el receptor
+ * a ~40 km de la posición transmitida y debe salir la posición. */
+static void test_e2e_local(void)
+{
+    const modulator_desc_t *m = modulator_find("adsb");
+    char err[100];
+    iqbuf_t b = {0};
+    CHECK(m->modulate("{\"icao\":\"4840D6\",\"alt\":30000,\"lat\":51.5,\"lon\":-0.4,\"repeat\":1}", &b, err,
+                      sizeof err) == 0);
+    cf32 buf[1000];
+    int16_t q[2000];
+    memset(buf, 0, sizeof buf);
+    memcpy(buf + 100, b.s + 400 + 2 * (FLEN + 20000), sizeof(cf32) * FLEN); /* trama impar */
+    cf32_to_q11(buf, 1000, 1.0, q);
+    adsb_t *a = adsb_create();
+    adsb_set_receiver(a, true, 51.2, -0.6);
+    adsb_process(a, q, 1000, 100.0);
+    const aircraft_t *p = adsb_find(a, 0x4840D6);
+    CHECK(p && p->pos_valid);
+    if (p) {
+        CHECK_NEAR(p->lat, 51.5, 0.001);
+        CHECK_NEAR(p->lon, -0.4, 0.001);
+        CHECK_EQ(p->pos_src, ADSB_POS_LOCAL);
+    }
+    adsb_destroy(a);
+    iqbuf_free(&b);
+}
+
 int main(void)
 {
+    test_cpr_local();
+    test_e2e_local();
     test_improvement();
     test_noise_only();
     adsb_t *a = adsb_create();
