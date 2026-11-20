@@ -150,7 +150,7 @@ export function initReceiver() {
     if (autoDone || touched || !m.list || !m.list.length || !S.status || S.status.sweep) return;
     const p = S.status.profile && S.profiles.find((x) => x.id === S.status.profile);
     if (p && p.chan_freq && p.mode) { autoDone = true; return; }
-    const edge = 0.10 * S.status.rate, inner = m.list.filter((s) => Math.abs(m.center + s[0] - S.status.center) < S.status.rate / 2 - edge);   // sin falsos positivos de los bordes
+    const inner = m.list;
     if (!inner.length) return;
     const best = inner.reduce((a, b) => (b[3] > a[3] ? b : a));
     const f = m.center + best[0], wide = best[1] >= 100000, g = wide ? 100000 : 5000;

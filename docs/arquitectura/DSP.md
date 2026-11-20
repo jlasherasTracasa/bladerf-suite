@@ -126,3 +126,25 @@ Las gráficas siguientes no son esquemas: salen de pequeños programas en C que 
 </picture>
 
 *Figura. Código K = 7 (0171, 0133) de `fec.c`, BPSK sobre AWGN. A 4 dB de Eb/N0 el Viterbi blando de tasa 1/2 llega a ≈ 10⁻⁵ mientras que el duro ronda 5·10⁻³ y la señal sin codificar 1,3·10⁻²; el blando cuantizado a 8 bits (int8) es indistinguible del de coma flotante. La curva 3/4 es el punzonado de DVB.*
+
+## Detector de señales (`src/dsp/detector.*`)
+
+OS-CFAR por segmentos sobre el espectro promediado (suelo = percentil 20 por
+segmento de 1/32 de la banda). Mejoras (N1):
+
+- **Bordes**: se ignora el 5 % (`DET_EDGE_FRAC`) de cada lado. El filtro
+  antialias del AD9361 cae a partir de ~0,45·fs, así que el ruido de borde
+  parece señal y el suelo local baja; los segmentos de borde toman el suelo del
+  interior más cercano. Configurable con `detector_config`.
+- **Fusión**: tramos separados por menos de 0,3 veces el ancho del más
+  estrecho (+2 bins) forman una sola señal. Frecuencia = centroide de potencia
+  del exceso sobre el suelo; ancho = tramo con SNR >= `snr_min` (8 dB por
+  defecto, es decir, el ancho a -8 dB bajo el suelo local + margen).
+- **Espurias**: tramos de 1-2 bins solo se aceptan con SNR >= `snr_min` + 6 dB.
+- **Histéresis**: cada llamada a `detector_run` es una imagen (el motor, cada
+  0,5 s). Aparece tras `DET_N_ON` = 2 imágenes seguidas y desaparece tras
+  `DET_M_OFF` = 4 ausentes; centro y ancho se suavizan (media 0,5).
+  Cambiar la tasa o `detector_reset` borran las pistas.
+
+Prueba: `tests/test_detector.c` (5 emisoras WFM sintéticas, 0 en bordes,
+estabilidad, histéresis, grabación del webtest).

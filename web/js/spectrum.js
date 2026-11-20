@@ -320,15 +320,10 @@ function drawPlot() {
   trace(avg, false); c.strokeStyle = '#d0bcff'; c.lineWidth = 1.3; c.stroke();
 }
 
-// Marcadores: se descarta el 5 % de cada borde (caída del filtro anti-alias del AD9361: falsos positivos) y los que
-// quedan a menos de 12 px unos de otros se agrupan en el más fuerte, para no amontonar flechas sobre el ruido.
+// Marcadores: el servidor ya excluye bordes, fusiona y aplica histéresis (src/dsp/detector.c).
 const sigList = () => {
   if (sweeping() || !S.spec.rate) return [];
-  const lo = fLo() + 0.05 * S.spec.rate, hi = fLo() + 0.95 * S.spec.rate;
-  const all = S.signals.list.map(([off, bw, peak, snr]) => ({ freq: S.signals.center + off, bw, peak, snr })).filter((s) => s.freq >= lo && s.freq <= hi).sort((a, b) => b.snr - a.snr);
-  const out = [];
-  for (const s of all) if (!out.some((o) => Math.abs(freqToX(o.freq) - freqToX(s.freq)) < 12 && W > 0)) out.push(s);
-  return out;
+  return S.signals.list.map(([off, bw, peak, snr]) => ({ freq: S.signals.center + off, bw, peak, snr }));
 };
 
 function drawSweepOverlay(c) {
