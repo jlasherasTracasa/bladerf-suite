@@ -230,7 +230,7 @@ function onSpectrum(buf, isSweep = false) {
   if (wn !== wfN) { wfN = wn; if (!wf.setN(wfN)) { startWaterfall(true); } }
   if ((rate !== sp.rate && sp.rate) || modeChanged) { zoomReset(); avg.fill(NaN); }
   if (rateChanged) hold.fill(-200);
-  Object.assign(sp, { n, center, rate, dbmin, dbstep, gpu: dv.getUint8(1) === 1, sweep: isSweep });
+  Object.assign(sp, { n, center, rate, dbmin, dbstep, engine: ['CPU', 'GPU', 'FPGA'][dv.getUint8(1)] || 'CPU', sweep: isSweep });
   const v = new Uint8Array(buf, 32, n);
   for (let i = 0; i < 256; i++) lut[i] = clamp(Math.round((dbmin + i * dbstep - QMIN) / QSTEP), 1, 255);   // 0 queda reservado a «sin datos»
   const q = new Uint8Array(wfN), ratio = n / wfN;
@@ -265,7 +265,7 @@ function updateInfo() {
   const bins = s.n ? `${fmtHz(s.rate / s.n, 1)}/bin` : '';
   $('#spec-info').textContent = !s.n ? '' : s.sweep
     ? `Barrido ${fmtHz(s.center - s.rate / 2)} – ${fmtHz(s.center + s.rate / 2)} · ${s.n} bins · ${bins} · ${wf instanceof WfGL ? 'WebGL' : '2D'}`
-    : `${fmtHz(s.center)} · ±${fmtHz(s.rate / 2)} · FFT ${s.n} · ${bins} · ${s.gpu ? 'GPU' : 'CPU'} · ${wf instanceof WfGL ? 'WebGL' : '2D'}`;
+    : `${fmtHz(s.center)} · ±${fmtHz(s.rate / 2)} · FFT ${s.n} · ${bins} · ${s.engine || 'CPU'} · ${wf instanceof WfGL ? 'WebGL' : '2D'}`;
 }
 
 /* ---- dibujo ---- */

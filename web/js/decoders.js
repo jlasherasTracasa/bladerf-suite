@@ -6,6 +6,7 @@ import { setChannel } from './receiver.js';
 import { stateView } from './tables.js';
 
 const MAX_EV = 500, MAX_ROWS = 150;
+const msps = (r) => `${+(r / 1e6).toFixed(3)} Msps`;   // tasas de muestreo en Msps (no «MHz»)
 const events = [];
 let evPaused = false;
 
@@ -35,7 +36,7 @@ function onProtoChange() {
   const wide = d.kind === 'wide';
   $('#da-freq').disabled = wide;
   $('#da-freq').value = wide ? '' : fmtHz((d.freqs && d.freqs[0]) || S.chan.freq, 6);
-  const rate = d.kind === 'wide' ? (d.wide_rate ? `exige ${fmtHz(d.wide_rate)} de tasa` : `tasa mínima ${fmtHz(d.wide_min_rate)}`) : `canal de ${fmtHz(d.bw)} a ${fmtHz(d.rate)}`;
+  const rate = d.kind === 'wide' ? (d.wide_rate ? `exige ${msps(d.wide_rate)} de tasa` : `tasa mínima ${msps(d.wide_min_rate)}`) : `canal de ${fmtHz(d.bw)} a ${msps(d.rate)}`;
   $('#da-hint').textContent = `${d.desc} (${wide ? 'banda ancha' : 'banda estrecha'}, ${rate})`;
 }
 
@@ -126,23 +127,62 @@ function renderStates() {
 /* ---------- menú «decodificar como…» ---------- */
 let menuOpen = false;
 function closeMenu() { const m = $('#sig-menu'); m.hidden = true; menuOpen = false; }
+/* Rejilla de canalización según la banda: 25 kHz en aviación y marina, 100 kHz en FM comercial, 12,5 kHz en el resto de estrechas. */
+function gridFor(d, f) {
+  if ((f >= 118e6 && f <= 137e6) || (f >= 156e6 && f <= 163e6)) return 25e3;
+  if (f >= 87.5e6 && f <= 108e6 && d.bw >= 100e3) return 100e3;
+  return d.bw > 0 && d.bw <= 25e3 ? 12.5e3 : 0;
+}
+/** Ajusta f al canal típico del protocolo si está a menos de medio canal; si no, a la rejilla de canalización. */
+export function snapFreq(d, f) {
+  if (!d || d.kind === 'wide') return Math.round(f);
+  const half = Math.max(d.bw || 0, 12500) / 2;
+  let best = null;
+  for (const t of d.freqs || []) if (t && (best == null || Math.abs(t - f) < Math.abs(best - f))) best = t;
+  if (best != null && Math.abs(best - f) < half) return best;
+  const g = gridFor(d, f);
+  return g ? Math.round(f / g) * g : Math.round(f);
+}
+/* Probabilidad (0–7) de que la señal sea de ese protocolo: banda (cerca de sus frecuencias típicas) + ancho ocupado. */
+function score(d, sig) {
+  let sc = 0;
+  const near = (d.freqs || []).filter(Boolean).reduce((m, t) => Math.min(m, Math.abs(t - sig.freq)), Infinity);
+  if (near < Math.max(d.bw || 0, 25e3)) sc += 4;          // en uno de sus canales
+  else if (near < 3e6) sc += 2;                           // en su banda
+  if (d.kind === 'narrow' && d.bw > 0) {
+    const r = sig.bw / d.bw;
+    if (r >= 0.25 && r <= 2.5) sc += r >= 0.5 && r <= 1.5 ? 3 : 2;
+  } else if (d.kind === 'wide' && near < 3e6) sc += 1;
+  return sc;
+}
+function chosen(d, sig) {
+  const f = snapFreq(d, sig.freq);
+  addDecoder(d.id, f); closeMenu();
+  toast(`Añadido ${d.name} en ${fmtHz(f, 4)}: abriendo la vista del decodificador`, 'ok');
+  const tab = document.getElementById('tab-decoders');
+  if (tab) tab.click();   // lleva a la persona a ver la instancia y sus mensajes
+}
 function showSignalMenu({ sig, x, y }) {
   const m = $('#sig-menu');
   const sorted = [...S.decoders].sort((a, b) => score(b, sig) - score(a, sig) || a.name.localeCompare(b.name));
+  const nTop = Math.min(5, Math.max(Math.min(3, sorted.length), sorted.filter((d) => score(d, sig) >= 4).length));
+  const item = (d, star) => h('button', { role: 'menuitem', onclick: () => chosen(d, sig) },
+    d.name, star ? ' ★' : '', h('span', { class: 'muted', text: ` · ${d.group}${d.kind === 'wide' ? ' (banda ancha)' : ''}` }));
+  const rest = sorted.slice(nTop);
+  const more = h('div', { hidden: true }, ...rest.map((d) => item(d, false)));
   m.replaceChildren(
     h('div', { class: 'mh', text: `${fmtHz(sig.freq, 4)} · ${fmtHz(sig.bw)} de ancho · SNR ${sig.snr.toFixed(0)} dB` }),
     h('button', { role: 'menuitem', text: 'Escuchar aquí', onclick: () => { setChannel({ freq: Math.round(sig.freq / 100) * 100 }, { user: true }); closeMenu(); } }),
-    h('div', { class: 'mh', text: 'Decodificar como…' }),
-    ...sorted.map((d) => h('button', { role: 'menuitem', onclick: () => { addDecoder(d.id, Math.round(sig.freq)); closeMenu(); toast(`Añadido ${d.name} en ${fmtHz(sig.freq, 4)}`, 'ok'); } },
-      d.name, score(d, sig) > 0 ? ' ★' : '', h('span', { class: 'muted', text: ` · ${d.group}${d.kind === 'wide' ? ' (banda ancha)' : ''}` }))));
+    h('div', { class: 'mh', text: 'Decodificar como… (los más probables)' }),
+    ...sorted.slice(0, nTop).map((d) => item(d, score(d, sig) > 0)),
+    rest.length ? h('button', { role: 'menuitem', 'aria-expanded': 'false', text: `Más protocolos (${rest.length})…`, onclick: (e) => { more.hidden = !more.hidden; e.currentTarget.setAttribute('aria-expanded', String(!more.hidden)); } }) : null,
+    more);
   m.hidden = false; menuOpen = true;
   const r = m.getBoundingClientRect();
   m.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 4)) + 'px';
   m.style.top = Math.max(4, Math.min(y + 8, innerHeight - r.height - 4)) + 'px';
   m.querySelector('button').focus();
 }
-// ★ = el filtro del decodificador es de un ancho parecido al de la señal detectada
-function score(d, sig) { return d.kind === 'narrow' && d.bw > 0 && sig.bw >= d.bw * 0.25 && sig.bw <= d.bw * 2.5 ? 1 : 0; }
 
 export function initDecoders() {
   $('#da-proto').addEventListener('change', onProtoChange);

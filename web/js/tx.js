@@ -25,19 +25,29 @@ function fillProtos() {
   if (keep && list.some((d) => d.id === keep)) sel.value = keep;
   onProto();
 }
+/* Centro y tasa efectivos del fichero: los mismos que calcula el envío (la frecuencia cabe en la banda → se conserva el centro; si no, se centra en ella).
+ * Se rellenan al elegir protocolo/frecuencia mientras la persona no los haya tocado a mano. */
+function syncCenterRate(force) {
+  const rate = (S.status && S.status.rate) || 2e6, freq = parseHz($('#tx-freq').value);
+  const cEl = $('#tx-center'), rEl = $('#tx-rate');
+  if (force || cEl.dataset.auto === '1') {
+    const c0 = S.status ? S.status.center : null;
+    const c = freq && (c0 == null || Math.abs(freq - c0) >= 0.4 * rate) ? freq : c0;
+    if (c) { cEl.value = fmtHz(c, 6); cEl.dataset.auto = '1'; }
+  }
+  if (force || rEl.dataset.auto === '1') { rEl.value = fmtHz(rate, 3); rEl.dataset.auto = '1'; }
+}
 function onProto() {
   const d = cur(), p = S.txPolicy;
   if (!d) return;
   const modes = [['file', 'Fichero SigMF (seguro)'], ['loopback', 'Bucle interno (sin antena)']];
   if (p && p.air && d.air_ok) modes.push(['air', 'Aire (radia por la antena)']);
+  const changed = $('#tx-proto').dataset.last !== d.id;
   const prev = $('#tx-mode').value;
   fillSelect($('#tx-mode'), modes, modes.some((m) => m[0] === prev) ? prev : 'file');
-  if (!$('#tx-freq').value || $('#tx-proto').dataset.last !== d.id) $('#tx-freq').value = fmtHz((d.freqs && d.freqs[0]) || S.chan.freq, 6);
+  if (!$('#tx-freq').value || changed) $('#tx-freq').value = fmtHz((d.freqs && d.freqs[0]) || S.chan.freq, 6);
   $('#tx-proto').dataset.last = d.id;
-  if (S.status) {
-    if (!$('#tx-center').value) $('#tx-center').value = fmtHz(S.status.center, 6);
-    if (!$('#tx-rate').value) $('#tx-rate').value = fmtHz(S.status.rate, 3);
-  }
+  syncCenterRate(changed);
   if (p) $('#tx-gain').max = p.max_gain;
 }
 
@@ -84,6 +94,8 @@ export function initTx() {
   bus.on('msg:recording', (r) => { if (r && !r.on) setTimeout(loadRecs, 700); });
   loadRecs();
   $('#tx-proto').addEventListener('change', onProto);
+  $('#tx-freq').addEventListener('input', () => syncCenterRate(false));
+  for (const id of ['#tx-center', '#tx-rate']) $(id).addEventListener('input', (e) => { if (e.isTrusted) e.target.dataset.auto = '0'; });
   $('#tx-send').addEventListener('click', () => {
     const d = cur(); if (!d) return;
     const mode = $('#tx-mode').value, freq = parseHz($('#tx-freq').value);
@@ -103,6 +115,7 @@ export function initTx() {
     if (!send(m)) result(false, 'Sin conexión con el servidor');
   });
   $('#tx-stop').addEventListener('click', () => { send({ cmd: 'tx_stop' }); result(true, 'Parada solicitada'); });
+  bus.on('msg:status', () => syncCenterRate(false));
   bus.on('msg:tx_policy', renderPolicy);
   bus.on('msg:decoders', () => { if (S.txPolicy && S.txPolicy.enabled) fillProtos(); });
   bus.on('msg:tx_result', (m) => result(!!m.ok, `${m.msg || ''}${m.file ? `\nFichero: ${m.file}` : ''}${m.seconds ? `\nDuración: ${(+m.seconds).toFixed(2)} s` : ''}`));

@@ -245,3 +245,22 @@ html { scroll-padding-top: 56px; }
   .tabs button { padding: 11px 6px; font-size: 12.5px; }
 }
 @media (min-width: 1500px) { .layout { grid-template-columns: minmax(0, 1fr) 540px; } }
+
+/* ---- W7b: móvil (≤ 640 px): pestañas siempre a la vista, espectro más bajo, objetivos táctiles ≥ 44 px ---- */
+@media (max-width: 640px) {
+  .spec-wrap { height: clamp(150px, 34vh, 300px); }
+  /* La barra de pestañas se pega al borde inferior de la pantalla mientras el panel está en la página. */
+  .tabs { position: sticky; bottom: 0; z-index: 30; background: var(--s2); border: 1px solid var(--outline-v); border-radius: 12px 12px 0 0; box-shadow: 0 -4px 14px rgba(0,0,0,.45); }
+  .tabs button { min-height: 44px; }
+  /* Rango de dB (auto, mín., máx., máx. retenido): con el rango automático por defecto no hacen falta en el móvil; queda zoom y barrido. */
+  .zoombar .sep, .zoombar label.chk, .zoombar input.num { display: none; }
+  .zoombar { gap: 6px; flex-wrap: wrap; }
+  /* Objetivos táctiles */
+  button, .btn, .btn.small, .seg button, select, input.num, input[type=text], input[type=number], input:not([type]), summary { min-height: 44px; }
+  input[type=checkbox], input[type=radio] { width: 26px; height: 26px; min-height: 26px; }
+  label.chk { min-height: 44px; }
+  input[type=range] { min-height: 44px; height: 44px; }
+  .pcard { min-height: 44px; }
+  .mini { min-height: 32px; }
+  .topbar button, .topbar .btn, .topbar select, .topbar summary { min-height: 36px; }
+}
