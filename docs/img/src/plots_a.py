@@ -173,7 +173,7 @@ def vdl2(t, c):
     _diffconst(yr, 10, c, axs[2], c["c"][1])
     axs[2].set_title("D8PSK diferencial, real"); axs[2].set_xlabel("I")
     save_tight(fig); title(fig, "VDL Modo 2: así es la señal", c)
-    footer(fig, "Izq. y der.: grabación IQ real (sigidwiki «VDL-M2 IQ», 105 kS/s); la real sale emborronada (ISI y CFO sin corregir: aquí no hay RRC ni Gardner ni CFO; es una ilustración, y esa grabación sigue sin decodificar). Centro: señal SINTÉTICA de --gen vdl2 con ruido.", c)
+    footer(fig, "Izq. y der.: grabación IQ real (sigidwiki «VDL-M2 IQ», 105 kS/s); la real sale emborronada (ISI y CFO sin corregir: aquí no hay RRC ni Gardner ni CFO; es una ilustración; el decodificador sí saca 38 de 41 tramas de esa grabación). Centro: señal SINTÉTICA de --gen vdl2 con ruido.", c)
     return fig
 
 

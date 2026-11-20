@@ -134,7 +134,7 @@ def flex(t, c):
     axs[1].set_xlabel("frecuencia instantánea (kHz), suavizada a 1 símbolo"); axs[1].set_ylabel("muestras")
     axs[1].set_title("Histograma FSK de 2 niveles (1600 bd)")
     save_tight(fig); title(fig, "FLEX: así es la señal", c)
-    footer(fig, "Señal: audio FM real (multimon-ng, «FLEX 1600 P2000») remodulado en FM con desviación ±4,8 kHz. Los modos 3200/6400 de 4 niveles no se han podido contrastar con una grabación real. Gráfica: Python de ilustración.", c)
+    footer(fig, "Señal: audio FM real (multimon-ng, «FLEX 1600 P2000») remodulado en FM con desviación ±4,8 kHz. El modo 6400/4 se contrasta aparte con una grabación real (sigidwiki); 3200/2 no tiene grabación. Gráfica: Python de ilustración.", c)
     return fig
 
 

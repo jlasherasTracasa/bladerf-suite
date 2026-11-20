@@ -362,14 +362,14 @@ def fig_cuda_otros():
 
 # ---------------------------------------------------------------- VALIDACION
 ROWS_A = [
-    ("ais", "ok", None, "tipo 1 con MMSI 367003560 y 366982310 (sigidwiki, audio e IQ)"),
+    ("ais", "ok", None, "tipo 1 con MMSI 367003560 y 366982310 (sigidwiki); +2,3 dB a SNR baja; 0 falsos en 15 h"),
     ("acars", "ok", (11, 11), "11 de 11 bloques = acarsdec"),
-    ("flex", "partial", (20, 20), "1600/2: 20 mensajes = multimon-ng; 3200/2, 3200/4 y 6400/4 sin decodificar"),
+    ("flex", "partial", (44, 44), "1600/2 (20) y 6400/4 (24) = multimon-ng; 3200/4 sin referencia; 3200/2 sin grabación"),
     ("pocsag", "ok", (3, 3), "512, 1200 y 2400 bps = multimon-ng"),
     ("aprs", "ok", None, "tramas AX.25 idénticas a multimon-ng y Dire Wolf"),
     ("rds", "ok", None, "PI, grupos, PTY, AF y DI idénticos a redsea (Radio Pamplona real)"),
-    ("adsb", "partial", None, "4 tramas DF17 = dump1090-fa; sin tráfico real"),
-    ("vdl2", "none", (0, 11), "0 de 11 tramas decodificables con dumpvdl2"),
+    ("adsb", "partial", None, "4 tramas DF17 = dump1090-fa; CPR local y pista; sin tráfico real"),
+    ("vdl2", "ok", (38, 41), "38 de 41 tramas = dumpvdl2 (grabación real de sigidwiki)"),
     ("dsc", "none", None, "sin grabación real; solo tests con ITU-R M.493-15"),
 ]
 ROWS_B = [

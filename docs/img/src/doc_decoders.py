@@ -24,7 +24,7 @@ PROC = {
     "flex": "audio FM real de multimon-ng (FLEX 1600, P2000) remodulado en FM",
     "dmr": "señal sintética de `--gen dmr` (la grabación real de sigidwiki no se valida)",
     "acars": "grabación IQ real (sigidwiki «ACARS IQ»)",
-    "vdl2": "señal sintética de `--gen vdl2` (la grabación real sigue sin decodificarse)",
+    "vdl2": "señal sintética de `--gen vdl2` (la grabación real de sigidwiki también se decodifica: 38 de 41 tramas de dumpvdl2)",
     "ism": "señal sintética de `--gen ism` (los .cu8 reales de rtl_433_tests dan los mismos modelos)",
     "rs41": "audio FM real de rs1729/RS (sonda RS41, 2014) remodulado",
     "lora": "referencia generada con la herramienta externa loratx (no es una captura en el aire)",

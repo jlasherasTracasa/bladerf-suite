@@ -12,7 +12,7 @@ DEC = [  # id, nombre, grupo, estado, nota (2 líneas)
     ("adsb", "ADS-B", "av", "real", ["vectores 1090 Riddle,", "dump1090-fa · sin tráfico real"]),
     ("ais", "AIS", "mar", "real", ["sigidwiki: MMSI y posiciones", "tipos 5/18/19/21/24 pendientes"]),
     ("acars", "ACARS", "av", "real", ["11/11 bloques = acarsdec", "multibloque sin contrastar"]),
-    ("flex", "FLEX", "data", "real", ["1600/2 = multimon-ng", "3200 y 6400 pendientes"]),
+    ("flex", "FLEX", "data", "real", ["1600/2 y 6400/4 = multimon-ng", "3200/2 sin grabación"]),
     ("pocsag", "POCSAG", "data", "real", ["512/1200/2400 bps", "= multimon-ng"]),
     ("aprs", "APRS", "ham", "real", ["tramas AX.25 = multimon-ng", "y Dire Wolf"]),
     ("ism", "ISM OOK/FSK", "data", "real", ["8 modelos reales", "= rtl_433"]),
@@ -25,7 +25,7 @@ DEC = [  # id, nombre, grupo, estado, nota (2 líneas)
     ("dvbt", "DVB-T (TPS)", "bc", "real", ["referencia gr-dtv y TPS", "en el aire (C32, 8k 64-QAM)"]),
     ("meshtastic", "Meshtastic", "data", "real", ["cabecera 16 B y clave", "en el aire: pendiente"]),
     ("tdt", "TDT (TS)", "bc", "sint", ["gr-dtv: 4918 paquetes TS", "TS en el aire: no (SNR)"]),
-    ("vdl2", "VDL Modo 2", "av", "pend", ["0 tramas reales: ISI", "falta traza de referencia"]),
+    ("vdl2", "VDL Modo 2", "av", "real", ["38/41 tramas = dumpvdl2", "3 tramas sin sacar"]),
     ("nr", "5G NR", "spec", "pend", ["sin celda real hallada", "(centro desconocido)"]),
     ("dmr", "DMR", "ham", "pend", ["1 sincronía, 0 ráfagas", "solo tablas ETSI"]),
 ]

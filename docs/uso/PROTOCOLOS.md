@@ -19,7 +19,7 @@ Solo se decodifica información de difusión o de sistema: nunca voz, identidade
 | DAB / DAB+ | Radiodifusión | 227,36 MHz | wide, 2,048 Msps exactos | Datos reales | [`dab`](#dab) |
 | ADS-B / Mode S | Aviación | 1090 MHz | wide, 2 Msps exactos | Datos reales | [`adsb`](#adsb) |
 | ACARS | Aviación | 131,525 / 131,725 / 131,825 MHz | narrow, 48 kHz | Datos reales | [`acars`](#acars) |
-| VDL Modo 2 | Aviación | 136,725 / 136,775 / 136,875 / 136,975 MHz | narrow, 105 kHz | Pendiente | [`vdl2`](#vdl2) |
+| VDL Modo 2 | Aviación | 136,725 / 136,775 / 136,875 / 136,975 MHz | narrow, 105 kHz | Datos reales | [`vdl2`](#vdl2) |
 | AIS | Marítimo | 161,975 y 162,025 MHz | narrow, 48 kHz | Datos reales | [`ais`](#ais) |
 | DSC VHF (canal 70) | Marítimo | 156,525 MHz | narrow, 48 kHz | Datos reales | [`dsc`](#dsc) |
 | APRS / AX.25 | Radioaficionado | 144,8 MHz | narrow, 48 kHz | Datos reales | [`aprs`](#aprs) |
@@ -86,7 +86,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Tipo** | wide, 2 Msps exactos |
 | **Cadena** | módulo de la señal → preámbulo → PPM → CRC (con corrección de 1–2 bits) → campos DF17 |
 | **Se decodifica** | Identificación, posición CPR, altitud, velocidad, squawk y emergencias; tabla de aeronaves. |
-| **Validación** | *Datos reales.* Vectores de *The 1090 MHz Riddle* y `dump1090-fa` sobre la salida del modulador. **Sin tráfico real**: la antena actual no recibe 1090 MHz. |
+| **Validación** | *Datos reales.* Vectores de *The 1090 MHz Riddle* y `dump1090-fa` sobre la salida del modulador. Posición con un solo mensaje (CPR local respecto al receptor) y pista por avión. **Sin tráfico real**: la antena actual no recibe 1090 MHz. |
 | **Documentación** | [`docs/protocolos/adsb.md`](../protocolos/adsb.md) |
 
 ### ACARS
@@ -112,7 +112,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Tipo** | narrow, 105 kHz |
 | **Cadena** | D8PSK 10 500 Bd → aleatorizador → Reed-Solomon → AVLC → ACARS sobre AVLC |
 | **Se decodifica** | Tramas AVLC y ACARS encapsulado. |
-| **Validación** | *Pendiente.* **Pendiente**: 0 tramas reales (la grabación disponible tiene ISI sistemática); falta una traza de referencia. |
+| **Validación** | *Datos reales.* Grabación de sigidwiki «VDL-M2 IQ»: **38 de 41 tramas** que decodifica `dumpvdl2` (93 %; antes 0). Quedan 3 tramas sin sacar. |
 | **Documentación** | [`docs/protocolos/vdl2.md`](../protocolos/vdl2.md) |
 
 ### AIS
@@ -125,7 +125,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Tipo** | narrow, 48 kHz |
 | **Cadena** | GMSK 9600 → NRZI → HDLC → CRC → mensajes M.1371 |
 | **Se decodifica** | Tipos 1–3, 4, 5, 18, 19, 21 y 24; tabla de barcos con posición. |
-| **Validación** | *Datos reales.* Datos reales (sigidwiki): MMSI y posiciones coherentes. Tipos 5/18/19/21/24 sin contrastar con tráfico real. |
+| **Validación** | *Datos reales.* Datos reales (sigidwiki): MMSI y posiciones coherentes. Con SNR baja, +2,3 dB frente a la versión anterior (SNR del 50 % de mensajes ≈ 4,3 dB) y 0 falsos positivos en 15 h de ruido. Tipos 5/18/19/21/24 sin contrastar con tráfico real. |
 | **Documentación** | [`docs/protocolos/ais.md`](../protocolos/ais.md) |
 
 ### DSC VHF (canal 70)
@@ -177,7 +177,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Tipo** | narrow, 48 kHz |
 | **Cadena** | FM → FSK 512/1200/2400 → sincronía → BCH(31,21) con corrección |
 | **Se decodifica** | RIC, función y mensajes numéricos o alfanuméricos. |
-| **Validación** | *Datos reales.* Datos reales (repositorio de pruebas de `multimon-ng`): 512, 1200 y 2400 bps idénticos. |
+| **Validación** | *Datos reales.* Datos reales (repositorio de pruebas de `multimon-ng`): 512, 1200 y 2400 bps idénticos. Ráfagas sintéticas a 15 dB: ≥ 99,5 % recuperadas y 0 eventos erróneos. |
 | **Documentación** | [`docs/protocolos/pocsag.md`](../protocolos/pocsag.md) |
 
 ### FLEX
@@ -190,7 +190,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Tipo** | narrow, 48 kHz |
 | **Cadena** | FM → 2/4-FSK → sincronía → BCH → mensajes |
 | **Se decodifica** | Mensajes alfanuméricos. |
-| **Validación** | *Datos reales.* Datos reales: FLEX 1600/2 idéntico a `multimon-ng`. **3200 y 6400 pendientes.** |
+| **Validación** | *Datos reales.* FLEX 1600/2 y 6400/4 idénticos a `multimon-ng` (20 y 24 mensajes). 3200/4 sin referencia externa; **3200/2 sin grabación real**. |
 | **Documentación** | [`docs/protocolos/flex.md`](../protocolos/flex.md) |
 
 ### ISM OOK/FSK

@@ -7,7 +7,7 @@
   <img src="../img/fpga-lab-light.png" alt="Imagen FPGA lab">
 </picture>
 
-*Figura. Imagen FPGA «lab»: motor de espectro en la ruta de RX y banco de registros Wishbone (detalle en [FIRMWARE.md](FIRMWARE.md); sin probar todavía en la placa).*
+*Figura. Imagen FPGA «lab»: motor de espectro en la ruta de RX y banco de registros Wishbone (detalle en [FIRMWARE.md](FIRMWARE.md); cargada en RAM en la placa el 2026-11-16 y usada como fuente de espectro).*
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../img/arquitectura-dark.png">
@@ -191,7 +191,7 @@ Fuente de espectro alternativa (CPU / GPU / FPGA) del motor, `src/engine.c` + `s
   el camino normal (relleno del pico de continua, detector, S-meter, mensaje tipo 1 con `[1]` = 2).
 - **Salida**: `spectrum_src: "cpu"|"gpu"` (rx_mux = 0, se reinicia el flujo IQ y se reconstruye
   la FFT) o automática si no llegan tramas en 3 s. No hay IQ en modo FPGA: grabar y barrer se rechazan.
-- Pruebas sin placa: `tests/test_fpga_spectrum.c`. En placa, secuencia de prueba en el informe de F1.
+- Pruebas sin placa: `tests/test_fpga_spectrum.c`. En placa (lab 1.1): espectro a 20 imágenes/s sin huecos y CPU del 146 % → 10 %.
 
 ### 7.1 Lab 1.2: telemetría, K en caliente y búferes USB del modo espectro
 
@@ -203,7 +203,7 @@ Fuente de espectro alternativa (CPU / GPU / FPGA) del motor, `src/engine.c` + `s
 - **K en caliente**: un cambio de fps con la misma N y tasa escribe solo `SPEC_K` (lab >= 1.2), sin parar
   RX ni tocar `rx_mux`: se pierde la trama en acumulación y se trunca la que se leía; el intérprete
   resincroniza por la magia (2 huecos: trama cortada + salto de grupo, absorbidos en `resyncs`). Un cambio
-  de N, de tasa o de FFT sigue la secuencia completa. En la 1.1 no se usa (no verificado en placa).
+  de N, de tasa o de FFT sigue la secuencia completa. En placa (lab 1.2): 30 cambios de K sin errores y < 1 % de CPU.
 - **Búferes de sync_rx** (`source_set_spectrum_stream`): con rx_mux = 3 el caudal es ~0,5 MB/s
   (N = 4096, 20 img/s = 123 kpalabras/s), no 30 Msps. Se usan 16 búferes de 2048 palabras (8 KiB; el múltiplo
   al que la FPGA rellena cada trama), 4 transferencias en vuelo (~32 K palabras = 5 imágenes de colchón

@@ -54,12 +54,15 @@ Opciones útiles: `--port`, `--host`, `--serial`, `--rate`, `--freq`, `--no-gpu`
 
 *Receptor con una FM generada con `--gen rds`: el espectro, la cascada y el panel RDS.*
 
-- **Sintonizar.** Clic en el espectro o en la cascada, o escribe la frecuencia en el campo de la izquierda (tecla `F`). Las flechas ajustan con el paso elegido; arriba y abajo, ×10.
+- **Sintonizar.** Clic en el espectro o en la cascada, o escribe la frecuencia en el campo de la izquierda (tecla `G`). Las flechas ajustan con el paso elegido; arriba y abajo, ×10.
+- **Rueda y arrastre.** La rueda sobre el espectro sintoniza en pasos (con Mayús, ×10) y arrastrar lo desplaza; el filtro del canal se mueve arrastrando sus bordes, y doble clic centra la vista en ese punto.
+- **Paleta de órdenes (Ctrl+K).** Busca y ejecuta casi cualquier acción sin tocar el ratón: perfiles, modos, decodificadores, pestañas o una frecuencia escrita directamente (p. ej. «100.3m»). La hoja completa de atajos está en la ayuda (`?`).
+- **Barra de estado.** La franja superior resume la fuente de muestras, el enlace USB (2 o 3), la tasa medida, las pérdidas, la GPU o FPGA del espectro y la carga de cada decodificador. Si algo falla, un aviso no bloqueante indica la acción que lo resuelve.
 - **Modo.** WFM (FM comercial, estéreo y RDS), NFM, AM, USB, LSB y CW. Cada navegador tiene su propio canal: dos personas pueden escuchar frecuencias distintas de la misma banda capturada.
 - **Escuchar.** Activa el audio del navegador. El filtro se ajusta arrastrando sus bordes en el espectro, o con la anchura en la pestaña.
 - **Squelch y deénfasis.** En el panel «Canal de audio»; 50 µs es el estándar europeo.
 - **Zoom.** Rueda o pellizco; `+`, `−` y `0` (todo).
-- **Señales detectadas.** El detector OS-CFAR marca las portadoras con una barra amarilla y su SNR. Un clic sobre una marca abre un menú para sintonizarla o crear un decodificador sobre ella.
+- **Señales detectadas.** El detector OS-CFAR marca las portadoras con una barra amarilla y su SNR. Clic derecho (o pulsación larga) sobre una marca abre **«¿Qué es esta señal?»**: frecuencia, ancho ocupado, SNR, la forma espectral y los decodificadores que podrían leerla, con su probabilidad y un botón «Decodificar». Dos clics bastan para pasar de una señal detectada al primer mensaje.
 - **Indicadores del canal.** Squelch abierto, estéreo, fuera de banda y piloto de 19 kHz (las banderas de los mensajes binarios de audio).
 
 El filtro del canal depende del modo; en USB y LSB solo pasa un lado de la portadora:

@@ -31,7 +31,7 @@ La procedencia de cada señal (grabación real o sintética) y qué parte del pr
 
 ### Ejemplo de evento y de estado
 
-Procedencia: señal sintética de `--gen vdl2` (la grabación real sigue sin decodificarse). Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay vdl2.sigmf-meta --decode vdl2@136975000 --print`).
+Procedencia: señal sintética de `--gen vdl2` (la grabación real de sigidwiki también se decodifica: 38 de 41 tramas de dumpvdl2). Sacado de ejecutar el decodificador, no escrito a mano (`bladerf-lab --replay vdl2.sigmf-meta --decode vdl2@136975000 --print`).
 
 Evento `dec` (campo `msg`, listas largas recortadas):
 

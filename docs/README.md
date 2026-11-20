@@ -9,7 +9,7 @@ Para quien quiere arrancar el servidor, recibir señales y probar los decodifica
 
 | Documento | Contenido |
 |---|---|
-| [GUIA.md](uso/GUIA.md) | Guía paso a paso con capturas, desde el primer arranque hasta la TDT, con solución de problemas. |
+| [GUIA.md](uso/GUIA.md) | Guía paso a paso con capturas, desde el primer arranque hasta la TDT, con solución de problemas. Incluye la paleta de órdenes (Ctrl+K), «¿Qué es esta señal?», la barra de estado y la sintonía con rueda y arrastre. |
 | [PROTOCOLOS.md](uso/PROTOCOLOS.md) | Una ficha por protocolo del catálogo: qué es, en qué frecuencia se busca, la cadena de proceso y hasta dónde está validado. |
 
 ## Arquitectura
