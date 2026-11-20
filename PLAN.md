@@ -102,7 +102,7 @@ de `dec_host_auto_sync`, sin informe de carrera); se revisa en N2.
 |---|---|---|---|
 | D1 | VDL2: ecualizador adaptativo (la grabación real tiene mucha interferencia entre símbolos) y validación contra `dumpvdl2` | **Sonnet** | ≥ 90 % de las tramas que saca la referencia |
 | D2 | DMR: columnas de Hamming y matriz QR de la norma ETSI, validación con grabación pública | **Sonnet** | Origen y destino coinciden con la referencia |
-| D3 | FLEX 3200/6400 (4-FSK y fases múltiples) | **Sonnet** | Igual que `multimon-ng` en grabación real |
+| D3✔ | FLEX 3200/6400 hecho (2026-11-20): 6400/4 real 24/24 = multimon-ng; 3200/4 real 15 mensajes sin referencia; 3200/2 solo sintético | **Sonnet** | Igual que `multimon-ng` en grabación real |
 | D4 | WiFi OFDM 6–54 Mb/s en el aire y 5 GHz (necesita USB 3) | **Sonnet** | SSID reales en canal 6 y en un canal de 5 GHz |
 | D5 | LTE: SIB1 (operador, banda, TAC) y 5G NR: MIB del SSB en n78 (necesita USB 3) | **Sonnet** | Celdas reales con operador identificado |
 | D6 | TDT en el aire con la antena de casa: enganche, vídeo y audio estables 10 min; AC-3 y E-AC-3 por WebCodecs; lista de canales por exploración | **Sonnet** + **Opus** (placa) | 10 min sin cortes, desfase A/V < 40 ms |

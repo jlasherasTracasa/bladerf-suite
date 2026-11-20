@@ -43,7 +43,7 @@ Cada sección la escribe el agente de su grupo. Relee el fichero antes de editar
 |---|---|---|---|---|
 | ais | sigidwiki "AIS Sound" (Long Beach, FM) y "AIS IQ" (Dinamarca, IQ 48 kHz) | CRC correcto pero "tipo 8, MMSI 98xxxxxxx" (basura) | tipo 1, MMSI 367003560 / 366982310 y 219…/538…, posiciones coherentes | **orden de bits de los campos M.1371** (octetos con LSB primero) |
 | acars | sigidwiki "ACARS sound" (11 bloques, Nueva Zelanda) e "ACARS IQ" (VQ-BKV) | 0 bloques | 11/11 = acarsdec; BCS, paridad y LSB-primero confirmados | **codificación diferencial** (2400 Hz = bit igual al anterior, 1200 Hz = cambia); n.º de mensaje no siempre "M…" |
-| flex | multimon-ng `FLEX_1600_2fsk_P2000_proef_alarm.flac`; sigidwiki FLEX 1600/3200/3200-4 | 0 mensajes | 1600/2: 20 mensajes con texto idéntico a multimon-ng; 3200/2, 3200/4 y 6400/4: **siguen sin decodificar** (solo hay muestras reales de 3200/4; Sync 1 y FIW bien, mapeo de niveles y direcciones largas sin resolver) | palabra A = código + **0xA6C6** (no el complemento); falsa sincronía con la 1ª copia (~A) del Sync 1; 7 bits de cabecera en la 1ª palabra de datos |
+| flex | multimon-ng `FLEX_1600_2fsk_P2000_proef_alarm.flac`; sigidwiki FLEX 1600/3200/3200-4 | 0 mensajes | 1600/2: 20 mensajes con texto idéntico a multimon-ng; 6400/4 (sigidwiki, `tests/data/real/flex6400`): 24/24 idénticos a multimon-ng (D3, 2026-11-20); 3200/4 (`flex3200`): 15 mensajes plausibles sin referencia (multimon-ng no la decodifica); 3200/2: sin grabación pública | palabra A = código + **0xA6C6** (no el complemento); falsa sincronía con la 1ª copia (~A) del Sync 1; 7 bits de cabecera en la 1ª palabra de datos; D3: tabla de modos (0xDEA0 = 6400/4, 0xB068 = 3200/4, 0x7B18 = 3200/2), sincronía con bits invertidos y reparto de fases por símbolo |
 | pocsag | multimon-ng `POCSAG_sample_-_{512,1200,2400}_bps.flac` | no probado | 3/3 = multimon-ng (RIC 273040/1022869, texto "+++TIME=…") | nada |
 | aprs | sigidwiki "AFSK1200 Sound" (BBS FBB ZL1AB) | no probado | tramas AX.25 idénticas a multimon-ng y Dire Wolf | nada (las tramas no son APRS de posición: ese análisis sigue sin contrastar) |
 | rds | `redsea` sobre la salida de `--gen rds`; RDS real captado por el orquestador (Radio Pamplona, 100,4 MHz: PI E239, PS "SER") | — | PI/grupos/PTY/AF/DI idénticos | nada |
@@ -55,7 +55,7 @@ Cada sección la escribe el agente de su grupo. Relee el fichero antes de editar
 
 * VDL2: cabecera, aleatorizador y orden RS (ver `docs/protocolos/vdl2.md`); necesita la norma o una
   traza de referencia. La salida de `--gen vdl2` no la decodifica `dumpvdl2`.
-* FLEX: 3200/2, 3200/4, 6400/4 (BIW ilegible; mapeo de 4 niveles/fases) y direcciones largas.
+* FLEX: 3200/2 sin grabación real (la paridad de fases A/C es un supuesto); 3200/4 sin referencia externa.
 * DSC y ADS-B: sin grabación real.
 * AIS: tipos 5/18/19/21/24 y PLVA sin contrastar con tráfico real.
 * ACARS: mensajes multibloque (ETB) y etiquetas sin interpretar.

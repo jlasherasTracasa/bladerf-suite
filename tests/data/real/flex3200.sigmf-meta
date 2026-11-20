@@ -1,0 +1,17 @@
+{
+  "global": {
+    "core:datatype": "ci8",
+    "core:sample_rate": 48000,
+    "core:version": "1.0.0",
+    "core:author": "Signal Identification Wiki (sigidwiki.com), CC BY-SA 3.0",
+    "core:description": "FLEX 3200 bit/s (4FSK, 1600 Bd, fases A y B, sync 0xB068), audio FM de 'Flex 3200' (sigidwiki) remodulado en FM +-4,8 kHz, recorte de 0-2,2 s (tramas ciclo 8, 117 y 118); multimon-ng no la decodifica",
+    "core:license": "CC-BY-SA-3.0 (sigidwiki)"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 466075000
+    }
+  ],
+  "annotations": []
+}

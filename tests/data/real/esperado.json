@@ -293,6 +293,37 @@
       ],
       "unicos": 1,
       "eventos": 23
+    },
+    "flex6400": {
+      "fixture": "flex6400",
+      "decoder": "flex",
+      "freq": 466075000,
+      "duracion": 6,
+      "filtro": ".",
+      "clave": "\"\\(.msg.capcode)/\\(.msg.msg)\"",
+      "campos": [
+        "\"capcode\":3644966",
+        "\"capcode\":5780262",
+        "\"msg\":\"9148487751-6\"",
+        "From: nexrad@mailhub.wx.ll.mit.edu Subject: **MACHINE DOWN** nexrad005"
+      ],
+      "unicos": 6,
+      "eventos": 6
+    },
+    "flex3200": {
+      "fixture": "flex3200",
+      "decoder": "flex",
+      "freq": 466075000,
+      "duracion": 6,
+      "filtro": ".",
+      "clave": "\"\\(.msg.capcode)/\\(.msg.msg)\"",
+      "campos": [
+        "\"capcode\":121191",
+        "\"msg\":\"488-9798\"",
+        "\"msg\":\"571129\""
+      ],
+      "unicos": 15,
+      "eventos": 15
     }
   },
   "sin_grabacion_real": {

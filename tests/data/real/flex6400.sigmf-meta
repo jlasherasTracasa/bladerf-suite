@@ -1,0 +1,17 @@
+{
+  "global": {
+    "core:datatype": "ci8",
+    "core:sample_rate": 48000,
+    "core:version": "1.0.0",
+    "core:author": "Signal Identification Wiki (sigidwiki.com), CC BY-SA 3.0",
+    "core:description": "FLEX 6400 bit/s (4FSK, 3200 Bd, fases A-D, sync 0xDEA0, direcciones largas), audio FM de 'FLEX 6400bps' (sigidwiki) remodulado en FM +-4,8 kHz, recorte de 5,2-7,2 s (trama ciclo 4, nº 56)",
+    "core:license": "CC-BY-SA-3.0 (sigidwiki)"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 466075000
+    }
+  ],
+  "annotations": []
+}
