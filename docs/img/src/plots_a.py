@@ -206,14 +206,14 @@ def frames():
     frame_render("adsb-estructura", "ADS-B: estructura de la trama DF17 (112 bits)", [
         ("DF17, 112 bits tras el preámbulo", [("DF", 5, "17"), ("CA", 3, "capab."), ("ICAO", 24, "dirección de 24 bits"), ("ME", 56, "type code (5) + datos"), ("PI = CRC-24", 24, "0xFFF409; síndrome 0")]),
         ("ME de posición en vuelo (tc 9-18)", [("tc", 5, "type"), ("SS", 2, ""), ("NIC", 1, ""), ("ALT", 12, "25·N−1000 ft"), ("T", 1, ""), ("F", 1, "par/impar"), ("LAT-CPR", 17, ""), ("LON-CPR", 17, "")]),
-    ], "Estructura según docs/ADSB.md (J. Sun, «The 1090 Megahertz Riddle»). Ilustración dibujada, no es una captura.")
+    ], "Estructura según docs/protocolos/adsb.md (J. Sun, «The 1090 Megahertz Riddle»). Ilustración dibujada, no es una captura.")
     frame_render("ais-estructura", "AIS: estructura de la ráfaga (256 bits a 9600 bd)", [
         ("Ráfaga GMSK de 26,7 ms", [("rampa", 8, "8 bit"), ("entrenamiento", 24, "0101…"), ("bandera", 8, "0x7E"), ("carga", 168, "campos M.1371, MSB primero"), ("FCS", 16, "CRC-16/X-25"), ("bandera", 8, "0x7E"), ("colchón", 24, "")]),
         ("Mensaje 1/2/3 (carga de 168 bits)", [("tipo", 6, "1-3"), ("rep", 2, ""), ("MMSI", 30, ""), ("estado", 4, ""), ("giro", 8, ""), ("SOG", 10, "1/10 kn"), ("pos", 55, "lon 28 + lat 27 (1/10000 min)"), ("COG", 12, ""), ("resto", 41, "")]),
-    ], "Estructura según ITU-R M.1371 y docs/decoders/ais.md. Ilustración dibujada, no es una captura.")
+    ], "Estructura según ITU-R M.1371 y docs/protocolos/ais.md. Ilustración dibujada, no es una captura.")
     frame_render("acars-estructura", "ACARS: estructura del bloque (MSK 2400 bd)", [
         ("Bloque de datos", [("prefijo", 16, "2400 bit de 1"), ("SYN SYN", 16, "0x16 0x16"), ("SOH", 8, "0x01"), ("modo", 8, "1 car."), ("matrícula", 56, "7 car."), ("TAK", 8, ""), ("etiqueta", 16, "2 car."), ("blq", 8, ""), ("n.º mensaje + vuelo", 80, ""), ("texto", 90, "hasta 220 car."), ("ETX", 8, ""), ("BCS", 16, "CRC-16"), ("DEL", 8, "")]),
-    ], "Estructura según docs/decoders/acars.md (ARINC 618). Cada carácter: 7 bits + paridad impar, LSB primero. Ilustración dibujada.", rh=1.4)
+    ], "Estructura según docs/protocolos/acars.md (ARINC 618). Cada carácter: 7 bits + paridad impar, LSB primero. Ilustración dibujada.", rh=1.4)
 
 
 if __name__ == "__main__":

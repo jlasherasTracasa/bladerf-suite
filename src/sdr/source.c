@@ -593,7 +593,7 @@ static int file_read(source_t *s, int16_t *iq, unsigned n)
 
 /* SC8_Q7 → Q11: Q7 va de −128 a 127 (±1,0 = 128) y Q11 de −2048 a 2047 (±1,0 = 2048),
  * así que basta multiplicar por 16. Se pierden 4 bits de resolución (suelo de
- * cuantización a ≈ −48 dBFS por muestra, ver docs/HARDWARE.md), no de escala:
+ * cuantización a ≈ −48 dBFS por muestra, ver docs/hardware/HARDWARE.md), no de escala:
  * los dBFS del espectro siguen siendo comparables con los del modo normal.
  * Elegimos convertir a Q11 (y no llevar int8 por todo el programa) porque
  * decodificadores, grabador y espectro CPU/GPU están escritos para int16; la

@@ -1,4 +1,4 @@
-"""Cadena TDT: OFDM 8k → TS → demux → H.264 (WebCodecs) + MP2 → AudioWorklet (docs/TDT.md)."""
+"""Cadena TDT: OFDM 8k → TS → demux → H.264 (WebCodecs) + MP2 → AudioWorklet (docs/protocolos/tdt.md)."""
 from lib import *
 
 

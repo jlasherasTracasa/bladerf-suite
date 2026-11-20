@@ -6,7 +6,7 @@
  * extendida del SCH están transcritas de memoria de la norma / gr-gsm: no se han
  * podido contrastar con un documento offline (si alguna estuviera mal, el modulador y
  * el decodificador seguirían siendo coherentes entre sí pero no con una red real; ver
- * docs/decoders/gsm.md).
+ * docs/protocolos/gsm.md).
  */
 #include "gsm_phy.h"
 

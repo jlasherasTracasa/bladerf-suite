@@ -3,15 +3,15 @@
 ## Figuras
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/fpga-lab-dark.png">
-  <img src="img/fpga-lab-light.png" alt="Imagen FPGA lab">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/fpga-lab-dark.png">
+  <img src="../img/fpga-lab-light.png" alt="Imagen FPGA lab">
 </picture>
 
 *Figura. Imagen FPGA «lab»: motor de espectro en la ruta de RX y banco de registros Wishbone (detalle en [FIRMWARE.md](FIRMWARE.md); sin probar todavía en la placa).*
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/arquitectura-dark.png">
-  <img src="img/arquitectura-light.png" alt="Hilos y flujo de datos">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/arquitectura-dark.png">
+  <img src="../img/arquitectura-light.png" alt="Hilos y flujo de datos">
 </picture>
 
 *Figura. Dónde encaja el hardware: solo el hilo DSP llama a las funciones de recepción de libbladeRF; la emisión usa su propio hilo.*
@@ -148,7 +148,7 @@ Errores (`error`): fuente de fichero, rango vacío o fuera de 47 MHz–6 GHz, `f
 
 Un cliente que ya pinta el tipo 1 puede pintar el 4 igual (centro/tasa/n); la trama
 parcial lleva los bins aún no barridos con el valor de la pasada anterior (o −140
-en la primera). **Falta documentarlo en `docs/PROTOCOLO.md` y tratarlo en la web**
+en la primera). **Falta documentarlo en `docs/arquitectura/WEBSOCKET.md` y tratarlo en la web**
 (`web/**`: tipo 4, órdenes `sweep`/`sweep_stop`, `status.sweep`, `gain_mode`
 nuevo, `format`, `oversample`, `dbm_offset`, `device.rate_max_oversample`).
 

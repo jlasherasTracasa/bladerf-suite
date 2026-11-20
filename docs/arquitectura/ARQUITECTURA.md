@@ -3,15 +3,15 @@
 ## Figuras
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/arquitectura-dark.png">
-  <img src="img/arquitectura-light.png" alt="Hilos y flujo de datos de BladeRF Lab">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/arquitectura-dark.png">
+  <img src="../img/arquitectura-light.png" alt="Hilos y flujo de datos de BladeRF Lab">
 </picture>
 
 *Figura 1. Hilos y flujo de datos: del bladeRF o el fichero al navegador. El hilo DSP reparte punteros y nunca espera; cada instancia de decodificador, la emisión y `tv.c` trabajan en sus propios hilos (fuentes: `src/engine.c`, `src/decoders/host.c`).*
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/marco-decodificadores-dark.png">
-  <img src="img/marco-decodificadores-light.png" alt="Marco de decodificadores">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/marco-decodificadores-dark.png">
+  <img src="../img/marco-decodificadores-light.png" alt="Marco de decodificadores">
 </picture>
 
 *Figura 2. El marco de decodificadores: descriptor, host, DDC, cola de bloques refcontados, eventos y `dec_state`.*
@@ -135,15 +135,15 @@ decodificadores ni perfil.
 ## Diagramas de secuencia e hilos
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/arquitectura/secuencia-bloque-dark.png">
-  <img src="img/arquitectura/secuencia-bloque-light.png" alt="Recorrido de un bloque de muestras">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/arquitectura/secuencia-bloque-dark.png">
+  <img src="../img/arquitectura/secuencia-bloque-light.png" alt="Recorrido de un bloque de muestras">
 </picture>
 
 *Figura 3. Un bloque de IQ desde el lector hasta el navegador.*
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/arquitectura/hilos-cerrojos-dark.png">
-  <img src="img/arquitectura/hilos-cerrojos-light.png" alt="Hilos y cerrojos">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/arquitectura/hilos-cerrojos-dark.png">
+  <img src="../img/arquitectura/hilos-cerrojos-light.png" alt="Hilos y cerrojos">
 </picture>
 
 *Figura 4. Hilos, cerrojos y el orden `h->lock → inst->m`.*

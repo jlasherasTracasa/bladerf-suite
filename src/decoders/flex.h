@@ -1,6 +1,6 @@
 /*
  * flex.h — Estructura de trama FLEX común al decodificador y al modulador.
- * VER docs/decoders/flex.md: la norma de Motorola no es de dominio público y
+ * VER docs/protocolos/flex.md: la norma de Motorola no es de dominio público y
  * varias constantes (marcadas "SIN CONFIRMAR") salen de descripciones
  * públicas recordadas, no de la especificación.
  *

@@ -21,7 +21,7 @@
  *   BCS       CRC-16 (polinomio x^16+x^12+x^5+1, registro inicial 0, bits LSB
  *             primero = "CRC-16/KERMIT") calculado sobre Modo…ETX/ETB, enviado con
  *             el byte bajo primero. Alimentar al CRC los dos bytes del BCS deja
- *             el registro a 0. (Sin norma a mano: ver docs/decoders/acars.md.)
+ *             el registro a 0. (Sin norma a mano: ver docs/protocolos/acars.md.)
  */
 #ifndef BLADERF_LAB_ACARS_BLK_H
 #define BLADERF_LAB_ACARS_BLK_H

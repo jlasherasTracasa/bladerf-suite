@@ -952,7 +952,7 @@ static bool sf_step(lora_rx_t *rx, sf_rx_t *s, lora_frame_fn cb, void *ctx)
      * mitad de la ventana y una transición de fase en él (los chips reales son de
      * fase continua; loratx lo imita) la interpolación se sesga hasta ±0,5 bin y
      * arrastraba el lazo hasta equivocar símbolos (grabaciones de loratx, ver
-     * docs/decoders/lora.md). Fuera de los extremos solo se avanza con la pendiente. */
+     * docs/protocolos/lora.md). Fuera de los extremos solo se avanza con la pendiente. */
     bool edge = (unsigned)pk.k < (unsigned)(N / 6) || (unsigned)pk.k > (unsigned)(N - N / 6);
     if (!edge)
         e = 0.0;

@@ -212,19 +212,19 @@ def frames():
     frame_render("lora-estructura", "LoRa: estructura del paquete (modulación CSS)", [
         ("Paquete en el aire", [("preámbulo", 16, "8 upchirps"), ("sync", 4, "2 símbolos"), ("SFD", 5, "2,25 downchirps"), ("cabecera", 8, "explícita, CR 4/8"), ("carga", 40, "SF símbolos por bloque, CR 4/5…4/8"), ("CRC", 6, "16 bits")]),
         ("Cabecera explícita (5 nibbles)", [("longitud", 8, "8 bits"), ("CR", 3, ""), ("CRC activo", 1, ""), ("checksum", 5, "5 bits")]),
-    ], "Estructura según docs/decoders/lora.md. Ilustración dibujada.", rh=1.2)
+    ], "Estructura según docs/protocolos/lora.md. Ilustración dibujada.", rh=1.2)
     frame_render("meshtastic-estructura", "Meshtastic: paquete sobre LoRa (cabecera 16 B en claro + protobuf cifrado)", [
         ("Cabecera y carga", [("to", 4, "4 B LE"), ("from", 4, "4 B LE"), ("id", 4, "4 B LE"), ("flags", 1, "hop, ack"), ("canal", 1, "hash"), ("next_hop", 1, ""), ("relay", 1, ""), ("Data (protobuf)", 20, "AES-128-CTR; portnum, payload")]),
         ("Nonce de AES-CTR (16 B)", [("id (u64 LE)", 8, "8 B"), ("from (u32 LE)", 4, "4 B"), ("ceros", 4, "contador BE")]),
-    ], "Estructura según docs/decoders/meshtastic.md. Solo se descifra con la clave pública por defecto. Ilustración dibujada.", rh=1.2)
+    ], "Estructura según docs/protocolos/meshtastic.md. Solo se descifra con la clave pública por defecto. Ilustración dibujada.", rh=1.2)
     frame_render("dvbt-estructura", "DVB-T: símbolo OFDM 8k y trama TPS", [
         ("Símbolo OFDM 8k (guarda 1/4)", [("prefijo cíclico", 2, "2048 muestras"), ("parte útil", 8, "8192 muestras = FFT; 6817 portadoras activas")]),
         ("Bits TPS (68 por trama, 1 por símbolo, DBPSK)", [("sync", 16, "16 bits"), ("long.", 6, "23/31"), ("trama", 2, ""), ("QAM", 2, "4/16/64"), ("jer.", 3, ""), ("HP", 3, "tasa"), ("LP", 3, "tasa"), ("guarda", 2, ""), ("modo", 2, "2k/8k"), ("cell id", 8, ""), ("reservado", 14, ""), ("BCH", 14, "")]),
-    ], "Estructura según ETSI EN 300 744 y docs/decoders/dvbt.md. Ilustración dibujada.", rh=1.3)
+    ], "Estructura según ETSI EN 300 744 y docs/protocolos/dvbt.md. Ilustración dibujada.", rh=1.3)
     frame_render("tdt-estructura", "TDT: paquete de transporte MPEG-TS (188 bytes)", [
         ("Paquete TS", [("sync", 2, "0x47"), ("flags + PID", 5, "TEI, PUSI, 13 bits"), ("cont. + AF", 5, "contador 4 bits"), ("carga útil", 40, "sección PSI o PES (184 B máx.); campo de adaptación con PCR opcional")]),
         ("Pila de tablas y flujos", [("PAT", 6, "PID 0"), ("PMT", 8, "pistas del servicio"), ("SDT", 8, "nombres"), ("NIT", 8, "LCN"), ("PES vídeo", 24, "H.264, PTS/DTS"), ("PES audio", 14, "MP2")]),
-    ], "Estructura según ISO/IEC 13818-1 y docs/TDT.md. Ilustración dibujada.", rh=1.3)
+    ], "Estructura según ISO/IEC 13818-1 y docs/protocolos/tdt.md. Ilustración dibujada.", rh=1.3)
 
 
 if __name__ == "__main__":

@@ -362,7 +362,7 @@ Condiciones de diseño:
   una de cada N muestras. La salida alimenta el mismo empaquetador SC16/SC8/packed.
 - **Los timestamps cuentan ticks de muestra del AD9361, no de la salida diezmada**: tras un diezmado por N
   el timestamp avanza N ticks por muestra de salida. La cabecera sigue siendo válida, pero el host debe
-  tenerlo en cuenta (documentarlo en `docs/HARDWARE.md`/`src/sdr`). El *flow-control* es el mismo
+  tenerlo en cuenta (documentarlo en `docs/hardware/HARDWARE.md`/`src/sdr`). El *flow-control* es el mismo
   (si la FIFO se llena, `fifo_writer` descarta y activa el LED de overrun).
 - `fifo_writer` cierra cada mensaje cuando ha escrito 2048 (o 1024) palabras: si el bloque produce datos
   esporádicos (espectro, detecciones) el mensaje se queda sin completar y el host no recibe nada hasta
@@ -486,7 +486,7 @@ La imagen de serie sigue compilando exactamente igual (mismos fuentes con `LAB_B
 
 ### 10.1 Cadena y tiempos
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="img/fpga/fpga-motor-espectro-dark.png"><img src="img/fpga/fpga-motor-espectro-light.png" alt="Motor de espectro"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../img/fpga/fpga-motor-espectro-dark.png"><img src="../img/fpga/fpga-motor-espectro-light.png" alt="Motor de espectro"></picture>
 
 *Figura. Motor de espectro (§10.1). Simplificada: no muestra los registros de segmentación (entrada de `rx_lab`, salidas de ROM, `ce` por etapa).*
 
@@ -528,7 +528,7 @@ separación entre pulsos `ce` ≥ 1 ciclo. La entrada es el canal 0 si está hab
 
 ### 10.2 Formato de la trama de salida
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="img/fpga/fpga-trama-dark.png"><img src="img/fpga/fpga-trama-light.png" alt="Formato de trama"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../img/fpga/fpga-trama-dark.png"><img src="../img/fpga/fpga-trama-light.png" alt="Formato de trama"></picture>
 
 *Figura. Formato de la trama (§10.2).*
 
@@ -584,7 +584,7 @@ ventana), tono de 40 → −34,35 dBFS (−34,19), suelo de ruido −68,60 dBFS/
 
 ## 11. Banco de registros Wishbone
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="img/fpga/fpga-registros-dark.png"><img src="img/fpga/fpga-registros-light.png" alt="Registros Wishbone"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../img/fpga/fpga-registros-dark.png"><img src="../img/fpga/fpga-registros-light.png" alt="Registros Wishbone"></picture>
 
 *Figura. Mapa de registros (§11).*
 

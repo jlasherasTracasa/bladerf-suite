@@ -1,11 +1,11 @@
-"""Diagramas adicionales: cadena de ADS-B (docs/ADSB.md)."""
+"""Diagramas adicionales: cadena de ADS-B (docs/protocolos/adsb.md)."""
 from lib import *
 
 
 def adsb():
     W, H = 1720, 640
     c = Canvas(W, H, "ADS-B: de las muestras a la tabla de aeronaves",
-               "Decodificador WIDE a 2 Msps exactos: cada medio microsegundo es una muestra (docs/ADSB.md).")
+               "Decodificador WIDE a 2 Msps exactos: cada medio microsegundo es una muestra (docs/protocolos/adsb.md).")
     steps = [("Q11 a 2 Msps", ["muestras crudas", "wide_rate = 2 000 000"], "radio", "g-av"),
              ("Módulo |x|", ["no le afecta el", "desvío de frecuencia"], "bars", None),
              ("Preámbulo", ["8 µs: pulsos en las", "muestras 0, 2, 7 y 9"], "search", None),

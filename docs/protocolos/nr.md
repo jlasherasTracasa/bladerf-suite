@@ -65,7 +65,7 @@ Descriptor: `W`, tasa libre ≥ 15 360 000 pero **múltiplo entero de 7,68 Msps*
 Referencias: 3GPP TS 38.211 §7.4.2 (PSS, SSS, estructura del SSB), TS 38.104 §5.4.3 (GSCN), TS 38.213 §4.1;
 Kim et al., arXiv:2603.29341 (búsqueda por GSCN, solo resumen); *5G NR overview*, arXiv:1806.06898 (PSS: m-secuencia
 de 127; SSB: 240 subportadoras × 4 símbolos); técnica de correlación masiva por FFT compartiendo la FFT de la señal
-(E38 de `docs/INVESTIGACION.md`).
+(E38 de `docs/investigacion/INVESTIGACION.md`).
 
 * PSS: `d(n) = 1 − 2x((n + 43·N_ID2) mod 127)`, `x(i+7) = x(i+4) ⊕ x(i)`, `x(0..6) = 0110111` (listado
   `x(6)…x(0) = 1110110`). SSS: `d(n) = [1 − 2x0((n+m0) mod 127)]·[1 − 2x1((n+m1) mod 127)]`, `m0 = 15⌊N_ID1/112⌋ +

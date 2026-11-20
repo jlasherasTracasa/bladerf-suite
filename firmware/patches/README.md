@@ -14,7 +14,7 @@ git -C firmware/bladeRF checkout -b lab 35174c3
 # 2. Aplicar los parches (conserva el mensaje de commit)
 git -C firmware/bladeRF am ../patches/*.patch
 
-# 3. Compilar (Quartus Prime Lite 20.1.1 en ~/altera_lite/20.1; ver docs/FIRMWARE.md)
+# 3. Compilar (Quartus Prime Lite 20.1.1 en ~/altera_lite/20.1; ver docs/hardware/FIRMWARE.md)
 firmware/build_lab.sh          # firmware/out/hosted-xA9-lab-0.16.101.rbf + .sha256 + reports_lab/
 ```
 

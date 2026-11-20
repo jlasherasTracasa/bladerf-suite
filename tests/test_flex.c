@@ -8,7 +8,7 @@
  *  3. vectores reales publicados: NO HAY. La especificación FLEX no es pública
  *     y no he localizado capturas con licencia clara; por eso este test valida
  *     la autoconsistencia modulador/decodificador y el BCH, no la concordancia
- *     con transmisores reales (ver docs/decoders/flex.md).
+ *     con transmisores reales (ver docs/protocolos/flex.md).
  *  4. coste de CPU por segundo de señal.
  */
 #include "test_util.h"

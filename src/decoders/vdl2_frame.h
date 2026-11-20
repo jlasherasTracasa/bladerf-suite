@@ -19,7 +19,7 @@
  *
  * Los tamaños de bloque y el orden de entrelazado salen de la descripción
  * publicada del modem (Kim et al., J. KICS 34(11), 2009) y NO se han podido
- * contrastar con una captura real: ver docs/decoders/vdl2.md.
+ * contrastar con una captura real: ver docs/protocolos/vdl2.md.
  */
 #ifndef BLADERF_LAB_VDL2_FRAME_H
 #define BLADERF_LAB_VDL2_FRAME_H

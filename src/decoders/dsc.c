@@ -25,7 +25,7 @@
  *     coinciden con GopherTrunk/CuteSDR). Categorías, naturaleza del socorro,
  *     telemandos, codificación de posición/hora y el formato de la llamada de
  *     socorro son de la norma pero SIN verificar contra el texto (el PDF no
- *     pudo leerse): se dicen en docs/decoders/dsc.md.
+ *     pudo leerse): se dicen en docs/protocolos/dsc.md.
  *   - Dirección/ID propio: 5 símbolos de 2 dígitos decimales (10 dígitos: MMSI
  *     de 9 y un 0 final). Posición: 5 símbolos = cuadrante(0 NE,1 NO,2 SE,3 SO)
  *     + grados lat (2) + min lat (2) + grados lon (3) + min lon (2); 99… =

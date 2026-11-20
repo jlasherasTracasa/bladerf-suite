@@ -1,4 +1,4 @@
-"""Matriz de validación de los 21 decodificadores (docs/VALIDACION.md)."""
+"""Matriz de validación de los 21 decodificadores (docs/calidad/VALIDACION.md)."""
 from lib import *
 
 ST = {"aire": ("En el aire (Pamplona)", "g-spec", "antenna"),
@@ -67,7 +67,7 @@ def build():
         c.text(x + 18, y + 62, sname, 11.5, 600, "gt")
         c.add('</g>')
         c.lines(x + 18, y + 84, note, 11.5, 17)
-        c.text(x + 18, y + ch - 12, "docs/decoders/" + did + ".md" if did not in ("tdt",) else "docs/TDT.md", 10, 400, "f-var", mono=True) if False else None
+        c.text(x + 18, y + ch - 12, "docs/protocolos/" + did + ".md" if did not in ("tdt",) else "docs/protocolos/tdt.md", 10, 400, "f-var", mono=True) if False else None
     # pie: leyenda de puntos
     ly = 196 + 3 * (ch + gap) - 6
     x = 48
@@ -77,5 +77,5 @@ def build():
         c.add(f'<g class="g-{k}"><circle class="gdot" cx="{x + 6}" cy="{ly + 10}" r="6"/></g>')
         c.text(x + 18, ly + 15, nm, 12.5, 500, "f-on")
         x += 18 + tw(nm, 12.5, 500) + 22
-    c.text(W - 48, ly + 15, "Detalle por protocolo: docs/VALIDACION.md y docs/decoders/<id>.md", 12, 400, "f-var", "end")
+    c.text(W - 48, ly + 15, "Detalle por protocolo: docs/calidad/VALIDACION.md y docs/protocolos/<id>.md", 12, 400, "f-var", "end")
     return c

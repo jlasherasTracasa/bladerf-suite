@@ -7,7 +7,7 @@
  * Pruebas de sistema: modulador → canal (AWGN con SNR de potencia MEDIA, CFO
  * fraccional+entero, deriva de reloj ±100 ppm, 2 ecos) → decodificador, en 2k y
  * 8k con las 4 guardas, y diferentes constelaciones/tasas/jerarquía/cell id.
- * No hay vectores IQ ni TPS publicados contrastables aquí: ver docs/decoders/dvbt.md.
+ * No hay vectores IQ ni TPS publicados contrastables aquí: ver docs/protocolos/dvbt.md.
  */
 #include "test_util.h"
 

@@ -1,4 +1,4 @@
-"""Política de emisión: file / loopback / air (src/tx/tx.c, docs/TX.md)."""
+"""Política de emisión: file / loopback / air (src/tx/tx.c, docs/arquitectura/TX.md)."""
 from lib import *
 
 

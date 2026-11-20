@@ -80,7 +80,7 @@ Decodificador `src/decoders/flex.c` (+ `flex.h`, `pocsag_fsk.h`), modulador `src
 ## IMPORTANTE: qué está confirmado y qué no
 
 La especificación de FLEX (Motorola) **no es pública** y no he podido consultarla. La fuente del proyecto
-(`docs/INVESTIGACION.md`, E17) ya avisaba: "documentación pública escasa". Lo que sigue es una implementación
+(`docs/investigacion/INVESTIGACION.md`, E17) ya avisaba: "documentación pública escasa". Lo que sigue es una implementación
 a partir de descripciones públicas **recordadas**. **Actualización V1 (2026-11-15):** el modo 1600/2 se
 ha contrastado con tráfico real (ver "Validación con señales reales" al final); 3200/2, 3200/4 y
 6400/4 siguen sin decodificar.

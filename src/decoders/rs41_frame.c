@@ -1,6 +1,6 @@
 /*
  * rs41_frame.c — Trama RS41: CRC, máscara, bloques, Reed-Solomon, ECEF.
- * Ver rs41_frame.h y docs/decoders/rs41.md.
+ * Ver rs41_frame.h y docs/protocolos/rs41.md.
  *
  * Reed-Solomon. Dos palabras RS(255,231) acortadas, entrelazadas octeto a
  * octeto: la palabra k (0 o 1) lleva los datos de las posiciones 0x38+k+2i
@@ -157,7 +157,7 @@ int rs41_rs_correct(uint8_t *plain, int len)
     int total = 0;
     for (int k = 0; k < 2; k++) {
         uint8_t cw[RS_NDATA + RS_NPAR];
-        /* Orden CONTRASTADO con grabaciones reales (docs/decoders/rs41.md): los datos
+        /* Orden CONTRASTADO con grabaciones reales (docs/protocolos/rs41.md): los datos
          * de la palabra k son los octetos 0x38+k+2i (entrelazados) y su paridad son 24
          * octetos CONSECUTIVOS 0x08+24k+j (sin entrelazar); el polinomio se lee con el
          * coeficiente de mayor grado primero: d[131]…d[0], p[23]…p[0]. */

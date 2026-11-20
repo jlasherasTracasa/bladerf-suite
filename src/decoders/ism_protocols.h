@@ -1,6 +1,6 @@
 /*
  * ism_protocols.h — Trenes de pulsos, protocolos de sensores ISM y analizador
- * genérico (estilo Universal Radio Hacker). Ver docs/decoders/ism.md.
+ * genérico (estilo Universal Radio Hacker). Ver docs/protocolos/ism.md.
  *
  * Un "tren de pulsos" es la representación común a OOK y FSK: la lista
  * alternada de duraciones (µs) de nivel alto ("marca") y nivel bajo

@@ -365,7 +365,7 @@ DOI [10.1109/TSP.2006.879264](https://doi.org/10.1109/TSP.2006.879264). Banco de
 - Implementar (H1/C1): captura 2×RX con timestamp común (el bladeRF comparte LO entre canales RX); calibración de fase por tono de entrada común o ruido (offset de fase por frecuencia); correlación cruzada `R = E[x1·conj(x2)]` en banda estrecha; para una separación `d` ≈ λ/2 la fase `Δφ = 2π d sinθ / λ`; con 2 elementos solo ambigüedad ±θ y sin resolución de múltiples fuentes. Con 2 antenas, interferómetro de fase (no MUSIC).
 - Riesgos: la fase relativa cambia con cada retune; calibrar en cada frecuencia; solo observación pasiva.
 
-**E48. Detección ADS-B en FPGA (imagen `bladerf-adsb`).** Ver sección de firmware. Propuesta H1: **no** flashear (AGENTS §0.11); solo documentar en `docs/FIRMWARE.md` qué ahorraría (host recibe 128 bits por mensaje en vez de 2 Msps × 4 B = 8 MB/s) y por qué el decodificador del host (E1/E2) lo supera en tasa de mensajes recuperados.
+**E48. Detección ADS-B en FPGA (imagen `bladerf-adsb`).** Ver sección de firmware. Propuesta H1: **no** flashear (AGENTS §0.11); solo documentar en `docs/hardware/FIRMWARE.md` qué ahorraría (host recibe 128 bits por mensaje en vez de 2 Msps × 4 B = 8 MB/s) y por qué el decodificador del host (E1/E2) lo supera en tasa de mensajes recuperados.
 
 ---
 
@@ -387,7 +387,7 @@ DOI [10.1109/TSP.2006.879264](https://doi.org/10.1109/TSP.2006.879264). Banco de
 
 **Bloques de IP reutilizables del árbol** (`hdl/fpga/ip/nuand/synthesis/`): `fir_filter`, `nco`, `cordic`, `cos_table`, `iq_correction`, `fsk_modulator`/`fsk_demodulator`, `constellation_mapper`, `symbol_mapper`, `signal_generator` (con 8 bit), `atsc_tx`, `rx_packet_generator`, `bladerf_agc_adi_drv`; más `trigger`, `time_tamer`, `vctcxo_tamer`, `tone_generator`. Hay un `fsk_demodulator` y un `iq_correction` que sirven de modelo para DDC/FSK en FPGA.
 
-**Propuestas (solo documentación; ninguna se flashea, AGENTS §0.11) para `docs/FIRMWARE.md` (H1)**
+**Propuestas (solo documentación; ninguna se flashea, AGENTS §0.11) para `docs/hardware/FIRMWARE.md` (H1)**
 
 1. **Probar `bladerf-adsb` solo en simulación/estudio**: comparar su tasa de mensajes con nuestro E1/E2 sobre la misma grabación (el FPGA da mensajes sin CRC-corrección multi-bit). Conclusión esperada: la ventaja es el ancho de banda USB, no la sensibilidad.
 2. **Imagen "DDC+FFT" propuesta (no existe en el árbol)**: 4–8 canales DDC con `nco` + `fir_filter` (CIC + FIR) y decimación por canal en la FPGA, devolviendo canales ya estrechos por USB cuando se trabaja a 61,44/122,88 Msps, que hoy ocupa casi todo el USB 3. Alternativa sin FPGA: PFB en GPU (E34), mucho más barato de desarrollar.

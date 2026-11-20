@@ -1,5 +1,5 @@
 /*
- * fpga_lab.c — Cliente de la imagen de FPGA "lab". Ver fpga_lab.h y docs/FIRMWARE.md.
+ * fpga_lab.c — Cliente de la imagen de FPGA "lab". Ver fpga_lab.h y docs/hardware/FIRMWARE.md.
  */
 #include "fpga_lab.h"
 

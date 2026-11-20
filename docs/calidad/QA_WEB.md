@@ -21,7 +21,7 @@ Capturas "antes" en `docs/img/qa/antes_*.png`.
 | 11 | Baja | Etiquetas de dB pisan la franja de señales detectadas | Receptor | Corregido |
 | 12 | Baja | Título del documento sin frecuencia hasta el primer cambio | Recargar | Corregido |
 | 13 | Baja | Eje de frecuencias del barrido sin unidad | Barrido 80–400 MHz | Corregido (rótulo MHz/kHz) |
-| 14 | Baja | "Ancho RF" muestra "—" con fuente de fichero | Hardware con --replay | Abierto (cosmético: el campo está desactivado) |
+| 14 | Baja | "Ancho RF" muestra "—" con fuente de fichero | Hardware con --replay | Corregido: muestra «no aplica (fichero)» (o el ancho real si status lo trae) |
 | 15 | Alta | Fuente de fichero: escribir 92,2 MHz movía el canal fuera de banda (medidor −150, FUERA) | Escribir 92,2 con `--replay` | Corregido: el canal no se mueve, el campo vuelve y el aviso da la banda real (detectado por el orquestador) |
 | 16 | Alta | Perfil ADS-B con fichero a 162 MHz sacaba el canal de audio de la banda | Protocolos → ADS-B con `--replay` | Corregido: aviso claro; solo se aplican los decodificadores; el canal no se toca fuera de banda |
 | 17 | Media | Marcadores de señal falsos en los bordes (caída del filtro) y flechas amontonadas; la etiqueta "NN dB" tapaba el pico | Receptor | Corregido: se descarta el 5 % de cada borde (10 % para elegir canal), agrupación a 12 px, etiqueta al lado del pico |
@@ -35,6 +35,7 @@ Capturas "antes" en `docs/img/qa/antes_*.png`.
 | 25 | Media | Móvil: al pulsar una pestaña el contenido queda bajo el espectro sin que se note | 360 px | Corregido: se lleva el panel a la vista bajo la cabecera |
 | 26 | Media | Móvil: cabecera de 2 filas que tapa el campo de frecuencia | 360 px | Corregido: una fila, `scroll-padding-top` |
 | 27 | Baja | "Aviso espurio «No disponible con una fuente de fichero»" al sintonizar dentro de banda | Recorrer pestañas y escribir 100,4 | No reproducible: ese texto era el de la barra de barrido (oculta); ahora hay prueba que exige 0 avisos |
+| 28 | Baja | RDS «AF» en la tabla de estado de Decod. mostraba los Hz crudos (lista JSON) | Decod. → instancia RDS | Corregido: se muestra en MHz con un decimal separado por « · » (`fmtScalar` en `tables.js`, `afListMhz` en `rds.js`) |
 
 Verificado en el bladeRF real (solo RX): 92,2 MHz fuera de banda retunea (centro 91,6 MHz) y el canal se mantiene en 92,2;
 100,4 MHz (Cadena SER) con audio estéreo y piloto 19k a -13,5 dBFS; barrido 80–400 MHz y parada correctos.

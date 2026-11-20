@@ -1,5 +1,5 @@
 /*
- * tx.c — Emisión con política de seguridad. Ver tx.h y docs/TX.md.
+ * tx.c — Emisión con política de seguridad. Ver tx.h y docs/arquitectura/TX.md.
  *
  * Flujo de una orden:
  *   1. modulator_find() + modulate()  → banda base compleja a la tasa del modulador.

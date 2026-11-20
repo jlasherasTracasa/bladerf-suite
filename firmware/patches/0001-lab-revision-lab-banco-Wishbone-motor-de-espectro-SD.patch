@@ -236,7 +236,7 @@ index 0000000..2ab0d79
 +--   * banco de registros Wishbone (lab/lab_regs.vhd) conectado al maestro Wishbone del Nios;
 +--   * motor de espectro (lab/spec_engine.vhd) dentro de rx_lab.vhd, activo solo con rx_mux = 3;
 +--   * bits 27:24 de la lectura de config_gpio = 0xA (marca de "imagen lab", solo lectura).
-+-- Con rx_mux /= 3 la ruta de datos es idéntica a la de serie (ver docs/FIRMWARE.md).
++-- Con rx_mux /= 3 la ruta de datos es idéntica a la de serie (ver docs/hardware/FIRMWARE.md).
 +-- Las diferencias con bladerf-hosted.vhd están marcadas con "-- LAB".
 +
 +architecture lab_bladerf of bladerf is

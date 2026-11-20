@@ -1,6 +1,6 @@
 /*
  * fpga_lab.h — Cliente de la imagen de FPGA "lab" (hosted + banco de registros
- * Wishbone + motor de espectro). Ver docs/FIRMWARE.md.
+ * Wishbone + motor de espectro). Ver docs/hardware/FIRMWARE.md.
  *
  * Qué ofrece (todo con libbladeRF 2.6.1 sin parchear):
  *   1. Detección SEGURA de la imagen lab. La imagen de serie tiene el bus
@@ -23,7 +23,7 @@
  * cuatro funciones (fpga_lab_io_bladerf, compilado solo si se define
  * FPGA_LAB_WITH_LIBBLADERF para no obligar a enlazar libbladeRF a las pruebas).
  *
- * Escala de la trama (derivación en docs/FIRMWARE.md §escala):
+ * Escala de la trama (derivación en docs/hardware/FIRMWARE.md §escala):
  *   X_hw = 0.5 · FFT_N(x · w)   con x en cuentas Q11 (±2048) y w la ventana
  *   Blackman-Harris simétrica de N puntos (cuantizada a Q15 en la FPGA)
  *   acc  = Σ_{K tramas} |X_hw|²   (entero exacto; la palabra lleva M·2^E)
@@ -96,7 +96,7 @@ int fpga_lab_config_spectrum(const fpga_lab_t *lab, int log2n, int k, bool pad);
 /* Activa (true) o desactiva (false) el modo espectro: rx_mux = 3 o 0 en config_gpio
  * (lectura-modificación-escritura, no toca el resto de bits). Al activarlo también borra los contadores.
  *
- * SECUENCIA RECOMENDADA DE ARRANQUE (medida en hardware, ver docs/FIRMWARE.md §16): configurar N/K,
+ * SECUENCIA RECOMENDADA DE ARRANQUE (medida en hardware, ver docs/hardware/FIRMWARE.md §16): configurar N/K,
  * habilitar RX CON rx_mux = 0, leer unos búferes (el flujo USB ya está en marcha) y SOLO ENTONCES llamar
  * a esta función con true; no hacer accesos de control entre `enable_module` y las primeras lecturas.
  * Si se activa el modo antes de habilitar RX, la FIFO de la FPGA se llena durante el arranque del flujo

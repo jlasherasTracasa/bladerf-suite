@@ -1,12 +1,12 @@
 # Protocolos
 
-Una ficha por protocolo del catálogo: qué es, en qué frecuencia se busca, la cadena de proceso, qué se decodifica y hasta dónde está validado. El detalle técnico de cada uno vive en `docs/decoders/<id>.md`.
+Una ficha por protocolo del catálogo: qué es, en qué frecuencia se busca, la cadena de proceso, qué se decodifica y hasta dónde está validado. El detalle técnico de cada uno vive en `docs/protocolos/<id>.md`.
 
 Solo se decodifica información de difusión o de sistema: nunca voz, identidades de abonados (IMSI/TMSI) ni tráfico cifrado (la única excepción es la clave pública por defecto de Meshtastic, que es pública por diseño).
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/mapa-bandas-dark.png">
-  <img src="img/mapa-bandas-light.png" alt="Mapa de bandas de 47 MHz a 6 GHz con cada protocolo del catálogo">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/mapa-bandas-dark.png">
+  <img src="../img/mapa-bandas-light.png" alt="Mapa de bandas de 47 MHz a 6 GHz con cada protocolo del catálogo">
 </picture>
 
 *Mapa de bandas en escala logarítmica, con cada protocolo en la frecuencia de su perfil (`src/profiles.c`) y coloreado por grupo.*
@@ -42,11 +42,11 @@ Los *narrow* reciben el canal ya filtrado y remuestreado por un DDC a la tasa in
 ## Validación
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/matriz-validacion-dark.png">
-  <img src="img/matriz-validacion-light.png" alt="Matriz de validación de los 21 decodificadores">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/matriz-validacion-dark.png">
+  <img src="../img/matriz-validacion-light.png" alt="Matriz de validación de los 21 decodificadores">
 </picture>
 
-Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de frecuencia y de reloj → decodificador). Las categorías de la matriz son: **en el aire** (señal propia captada con el bladeRF), **datos reales** (grabaciones públicas o herramientas de referencia), **sintético / referencia** y **pendiente**. Más detalle en [VALIDACION.md](VALIDACION.md).
+Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de frecuencia y de reloj → decodificador). Las categorías de la matriz son: **en el aire** (señal propia captada con el bladeRF), **datos reales** (grabaciones públicas o herramientas de referencia), **sintético / referencia** y **pendiente**. Más detalle en [VALIDACION.md](../calidad/VALIDACION.md).
 
 ## Fichas
 
@@ -61,7 +61,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | FM → subportadora de 57 kHz → BPSK diferencial → sincronía de grupo y CRC |
 | **Se decodifica** | PI, PS, PTY, RT, CT, AF y grupos 0A/0B/2A/2B/4A. |
 | **Validación** | *En el aire (Pamplona).* En el aire: Radio Pamplona (100,4 MHz, PI E239, PS «SER»); PI, grupos, PTY, AF y DI idénticos a `redsea`. |
-| **Documentación** | [`docs/decoders/rds.md`](decoders/rds.md) |
+| **Documentación** | [`docs/protocolos/rds.md`](../protocolos/rds.md) |
 
 ### DAB / DAB+
 <a id="dab"></a>
@@ -74,7 +74,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | sincronía OFDM modo I → demodulación diferencial → FIC (desentrelazado, Viterbi, CRC) |
 | **Se decodifica** | Conjunto, servicios y subcanales (sin audio). |
 | **Validación** | *Datos reales.* Datos reales (sigidwiki): ensemble 5001 «Towercom», servicio «Radio Slovensko», 36/36 FIB. |
-| **Documentación** | [`docs/decoders/dab.md`](decoders/dab.md) |
+| **Documentación** | [`docs/protocolos/dab.md`](../protocolos/dab.md) |
 
 ### ADS-B / Mode S
 <a id="adsb"></a>
@@ -87,7 +87,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | módulo de la señal → preámbulo → PPM → CRC (con corrección de 1–2 bits) → campos DF17 |
 | **Se decodifica** | Identificación, posición CPR, altitud, velocidad, squawk y emergencias; tabla de aeronaves. |
 | **Validación** | *Datos reales.* Vectores de *The 1090 MHz Riddle* y `dump1090-fa` sobre la salida del modulador. **Sin tráfico real**: la antena actual no recibe 1090 MHz. |
-| **Documentación** | [`docs/ADSB.md`](ADSB.md) |
+| **Documentación** | [`docs/protocolos/adsb.md`](../protocolos/adsb.md) |
 
 ### ACARS
 <a id="acars"></a>
@@ -100,7 +100,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | AM → MSK 2400 (codificación diferencial) → paridad y BCS |
 | **Se decodifica** | Campos de la trama: modo, registro, etiqueta, bloque, texto. |
 | **Validación** | *Datos reales.* Datos reales (sigidwiki): 11/11 bloques = `acarsdec`. Multibloque (ETB) y etiquetas sin interpretar. |
-| **Documentación** | [`docs/decoders/acars.md`](decoders/acars.md) |
+| **Documentación** | [`docs/protocolos/acars.md`](../protocolos/acars.md) |
 
 ### VDL Modo 2
 <a id="vdl2"></a>
@@ -113,7 +113,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | D8PSK 10 500 Bd → aleatorizador → Reed-Solomon → AVLC → ACARS sobre AVLC |
 | **Se decodifica** | Tramas AVLC y ACARS encapsulado. |
 | **Validación** | *Pendiente.* **Pendiente**: 0 tramas reales (la grabación disponible tiene ISI sistemática); falta una traza de referencia. |
-| **Documentación** | [`docs/decoders/vdl2.md`](decoders/vdl2.md) |
+| **Documentación** | [`docs/protocolos/vdl2.md`](../protocolos/vdl2.md) |
 
 ### AIS
 <a id="ais"></a>
@@ -126,7 +126,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | GMSK 9600 → NRZI → HDLC → CRC → mensajes M.1371 |
 | **Se decodifica** | Tipos 1–3, 4, 5, 18, 19, 21 y 24; tabla de barcos con posición. |
 | **Validación** | *Datos reales.* Datos reales (sigidwiki): MMSI y posiciones coherentes. Tipos 5/18/19/21/24 sin contrastar con tráfico real. |
-| **Documentación** | [`docs/decoders/ais.md`](decoders/ais.md) |
+| **Documentación** | [`docs/protocolos/ais.md`](../protocolos/ais.md) |
 
 ### DSC VHF (canal 70)
 <a id="dsc"></a>
@@ -139,7 +139,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | FSK 1200 → sincronía de puntos → símbolos de 10 bits con comprobación → ECC |
 | **Se decodifica** | Formatos de socorro y rutina, MMSI y telemandos. |
 | **Validación** | *Datos reales.* Tablas ITU-R M.493-15 y un acuse de socorro en los tests. **Sin grabación real ni en el aire.** |
-| **Documentación** | [`docs/decoders/dsc.md`](decoders/dsc.md) |
+| **Documentación** | [`docs/protocolos/dsc.md`](../protocolos/dsc.md) |
 
 ### APRS / AX.25
 <a id="aprs"></a>
@@ -152,7 +152,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | FM → AFSK 1200 Bell 202 → NRZI → HDLC → CRC → AX.25 → APRS |
 | **Se decodifica** | Posición, estado y mensajes; tabla de estaciones. |
 | **Validación** | *Datos reales.* Datos reales (sigidwiki): tramas AX.25 idénticas a `multimon-ng` y Dire Wolf. El análisis APRS de posición sin contrastar. |
-| **Documentación** | [`docs/decoders/aprs.md`](decoders/aprs.md) |
+| **Documentación** | [`docs/protocolos/aprs.md`](../protocolos/aprs.md) |
 
 ### DMR (solo metadatos)
 <a id="dmr"></a>
@@ -165,7 +165,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | 4FSK 4800 → sincronías → BPTC/Golay → LC y CSBK |
 | **Se decodifica** | Sincronías, CC, slot, origen y destino. **Sin voz.** |
 | **Validación** | *Pendiente.* **Pendiente**: una sincronía y 0 ráfagas en la grabación disponible; solo tablas de ETSI TS 102 361-1. |
-| **Documentación** | [`docs/decoders/dmr.md`](decoders/dmr.md) |
+| **Documentación** | [`docs/protocolos/dmr.md`](../protocolos/dmr.md) |
 
 ### POCSAG
 <a id="pocsag"></a>
@@ -178,7 +178,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | FM → FSK 512/1200/2400 → sincronía → BCH(31,21) con corrección |
 | **Se decodifica** | RIC, función y mensajes numéricos o alfanuméricos. |
 | **Validación** | *Datos reales.* Datos reales (repositorio de pruebas de `multimon-ng`): 512, 1200 y 2400 bps idénticos. |
-| **Documentación** | [`docs/decoders/pocsag.md`](decoders/pocsag.md) |
+| **Documentación** | [`docs/protocolos/pocsag.md`](../protocolos/pocsag.md) |
 
 ### FLEX
 <a id="flex"></a>
@@ -191,7 +191,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | FM → 2/4-FSK → sincronía → BCH → mensajes |
 | **Se decodifica** | Mensajes alfanuméricos. |
 | **Validación** | *Datos reales.* Datos reales: FLEX 1600/2 idéntico a `multimon-ng`. **3200 y 6400 pendientes.** |
-| **Documentación** | [`docs/decoders/flex.md`](decoders/flex.md) |
+| **Documentación** | [`docs/protocolos/flex.md`](../protocolos/flex.md) |
 
 ### ISM OOK/FSK
 <a id="ism"></a>
@@ -204,7 +204,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | analizador de pulsos (PWM, PPM, Manchester) → protocolos con suma o CRC |
 | **Se decodifica** | Sensores meteorológicos, TPMS, mandos; 10 protocolos más trama de prueba. |
 | **Validación** | *Datos reales.* Datos reales de `rtl_433_tests` (8 modelos): idéntico a `rtl_433`. |
-| **Documentación** | [`docs/decoders/ism.md`](decoders/ism.md) |
+| **Documentación** | [`docs/protocolos/ism.md`](../protocolos/ism.md) |
 
 ### Radiosonda Vaisala RS41
 <a id="rs41"></a>
@@ -217,7 +217,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | GFSK 4800 → desaleatorizado → Reed-Solomon (paridad en bloque) |
 | **Se decodifica** | Posición, altura, temperatura, presión y humedad. |
 | **Validación** | *Datos reales.* Datos reales (rs1729/RS, audio FM): 38/38 tramas en dos sondas, posiciones coherentes. |
-| **Documentación** | [`docs/decoders/rs41.md`](decoders/rs41.md) |
+| **Documentación** | [`docs/protocolos/rs41.md`](../protocolos/rs41.md) |
 
 ### LoRa PHY / LoRaWAN
 <a id="lora"></a>
@@ -230,7 +230,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | CSS SF7–12 → desmodulación por bin del máximo → cabecera y CRC → LoRaWAN |
 | **Se decodifica** | Cabecera explícita, CRC, MHDR y DevAddr. |
 | **Validación** | *Datos reales.* Datos reales con `loratx` y `lorarx`: SF7–12, CR 1–4, BW 125/250 en ambos sentidos. |
-| **Documentación** | [`docs/decoders/lora.md`](decoders/lora.md) |
+| **Documentación** | [`docs/protocolos/lora.md`](../protocolos/lora.md) |
 
 ### Meshtastic
 <a id="meshtastic"></a>
@@ -243,7 +243,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | LoRa → cabecera de 16 bytes → AES-CTR con la clave pública por defecto → protobuf |
 | **Se decodifica** | Texto, posición e información de nodo. |
 | **Validación** | *Datos reales.* Cabecera, hash y clave confirmados con `lorarx -H 4`; **descifrado y protobuf sin validar en el aire**. |
-| **Documentación** | [`docs/decoders/meshtastic.md`](decoders/meshtastic.md) |
+| **Documentación** | [`docs/protocolos/meshtastic.md`](../protocolos/meshtastic.md) |
 
 ### LTE (búsqueda de celda)
 <a id="lte"></a>
@@ -256,7 +256,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | PSS → SSS → PCI → CFO → potencia → MIB del PBCH |
 | **Se decodifica** | PCI, CFO, RSRP y MIB (ancho de banda). |
 | **Validación** | *En el aire (Pamplona).* En el aire (Pamplona): 4 celdas con MIB. También sigidwiki (PCI 65 y 44 con MIB). |
-| **Documentación** | [`docs/decoders/lte.md`](decoders/lte.md) |
+| **Documentación** | [`docs/protocolos/lte.md`](../protocolos/lte.md) |
 
 ### 5G NR (SSB)
 <a id="nr"></a>
@@ -269,7 +269,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | correlación de PSS en la rejilla GSCN (CPU o GPU) → SSS → PCI |
 | **Se decodifica** | PCI por posición GSCN. |
 | **Validación** | *Pendiente.* **Pendiente**: sin celda real hallada (centro desconocido en las grabaciones disponibles). |
-| **Documentación** | [`docs/decoders/nr.md`](decoders/nr.md) |
+| **Documentación** | [`docs/protocolos/nr.md`](../protocolos/nr.md) |
 
 ### GSM
 <a id="gsm"></a>
@@ -282,7 +282,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | FCCH → SCH (BSIC, FN) → SI3 del BCCH |
 | **Se decodifica** | BSIC y número de trama; SI3 (MCC/MNC/LAC/CI) con BCCH. |
 | **Validación** | *Datos reales.* Datos reales: 211/211 SCH, BSIC 23. **BCCH/SI3 reales siguen sin decodificar.** |
-| **Documentación** | [`docs/decoders/gsm.md`](decoders/gsm.md) |
+| **Documentación** | [`docs/protocolos/gsm.md`](../protocolos/gsm.md) |
 
 ### WiFi (beacons)
 <a id="wifi"></a>
@@ -295,7 +295,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | 802.11b DSSS 1 Mb/s y 802.11a/g OFDM 6 Mb/s → CRC |
 | **Se decodifica** | SSID, BSSID y canal de las balizas. |
 | **Validación** | *Datos reales.* Datos reales (sigidwiki): 8 BSSID en DSSS. **OFDM sin validar.** |
-| **Documentación** | [`docs/decoders/wifi.md`](decoders/wifi.md) |
+| **Documentación** | [`docs/protocolos/wifi.md`](../protocolos/wifi.md) |
 
 ### DVB-T (parámetros TPS)
 <a id="dvbt"></a>
@@ -308,7 +308,7 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | sincronía OFDM 2k/8k → CFO → TPS (BCH) |
 | **Se decodifica** | Modulación, tasa, guarda y cell ID. |
 | **Validación** | *Datos reales.* Referencia gr-dtv (constantes validadas) y TPS en el aire (8k, 1/4, 64-QAM, HP 2/3). |
-| **Documentación** | [`docs/decoders/dvbt.md`](decoders/dvbt.md) |
+| **Documentación** | [`docs/protocolos/dvbt.md`](../protocolos/dvbt.md) |
 
 ### TDT completa (múltiplex)
 <a id="tdt"></a>
@@ -321,8 +321,8 @@ Todos pasan sus pruebas sintéticas (modulador → canal con ruido, desvío de f
 | **Cadena** | receptor `dvbt_rx` → TS → demux/PSI → H.264 (WebCodecs) + MP2 propio |
 | **Se decodifica** | Servicios, vídeo y audio de un múltiplex. |
 | **Validación** | *Sintético / referencia.* gr-dtv: 4918 paquetes TS idénticos. **En el aire no hay TS** con la antena actual (SNR ≈ −9 dB). |
-| **Documentación** | [`docs/TDT.md`](TDT.md) |
+| **Documentación** | [`docs/protocolos/tdt.md`](../protocolos/tdt.md) |
 
 ## Emisión de estos protocolos
 
-Cada decodificador tiene un modulador gemelo (`src/tx/mod_<id>.c`) para probar sin antena. Solo APRS, ISM, LoRa y Meshtastic tienen `air_ok = true` y solo pueden radiarse dentro de la lista blanca de bandas con las limitaciones de [TX.md](TX.md); el resto es únicamente `file` y `loopback`.
+Cada decodificador tiene un modulador gemelo (`src/tx/mod_<id>.c`) para probar sin antena. Solo APRS, ISM, LoRa y Meshtastic tienen `air_ok = true` y solo pueden radiarse dentro de la lista blanca de bandas con las limitaciones de [TX.md](../arquitectura/TX.md); el resto es únicamente `file` y `loopback`.

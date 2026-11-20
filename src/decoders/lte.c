@@ -1,5 +1,5 @@
 /*
- * lte.c — Búsqueda de celdas LTE (PSS/SSS/CRS/PBCH) a 1,92 Msps. Ver docs/decoders/lte.md.
+ * lte.c — Búsqueda de celdas LTE (PSS/SSS/CRS/PBCH) a 1,92 Msps. Ver docs/protocolos/lte.md.
  *
  * Teoría resumida (3GPP TS 36.211 §6.11 y §6.10, TS 36.212 §5.3.1):
  *

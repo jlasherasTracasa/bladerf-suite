@@ -9,7 +9,7 @@ set -eu
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FPGA="$(cd "$HERE/../bladeRF/hdl/fpga" && pwd)"
 export PATH="$HOME/altera_lite/25.1std/questa_fse/bin:$PATH"
-# Licencia gratuita (Altera Starter FSE) ligada a la MAC de la NIC; ver docs/FIRMWARE.md
+# Licencia gratuita (Altera Starter FSE) ligada a la MAC de la NIC; ver docs/hardware/FIRMWARE.md
 export SALT_LICENSE_SERVER="$HOME/.altera.quartus/questa_lic.dat"
 W="$HERE/work_rx_timestamp"; rm -rf "$W"; mkdir -p "$W"; cd "$W"
 vlib rtl_work >/dev/null

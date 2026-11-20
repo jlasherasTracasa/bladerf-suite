@@ -1,6 +1,6 @@
 /*
  * flex.c — Decodificador FLEX (1600 / 3200 / 6400 bit/s, 2 y 4 niveles).
- * Ver docs/decoders/flex.md y la advertencia de flex.h: la especificación de
+ * Ver docs/protocolos/flex.md y la advertencia de flex.h: la especificación de
  * FLEX no es pública y varias constantes están SIN CONFIRMAR.
  *
  * Cadena: IQ 48 kHz → FIR de canal → discriminador FM → dos receptores con

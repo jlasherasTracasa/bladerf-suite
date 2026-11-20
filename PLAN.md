@@ -41,7 +41,7 @@ dos rondas, Opus revisa el planteamiento antes de una tercera.
    órdenes exactas e informe ≤ 250 palabras. Opus no se fía del informe: repite
    las órdenes.
 6. Al cerrar cada fase: actualizar `AGENTS.md` §2 y §8b, el estado del
-   `README.md`, `docs/VALIDACION.md` y regenerar el curso si cambian cifras.
+   `README.md`, `docs/calidad/VALIDACION.md` y regenerar el curso si cambian cifras.
 
 ### Decisiones y acciones que dependen del usuario
 
@@ -76,7 +76,7 @@ de nada; la 1 protege todo lo que viene después.
 | Q1 | `make ci`: encadena las cuatro puertas de calidad, las simulaciones de la FPGA que no necesitan Quartus (modelo C) y el comprobador de enlaces; resumen final de una pantalla | **Haiku** | Una orden da verde o rojo con la lista de fallos |
 | Q2 | ThreadSanitizer para host, motor y servidor (`make TSAN=1 test`), y corregir las carreras que aparezcan | **Sonnet** | 0 informes de TSan en `test_host`, `test_engine*`, `test_tv` |
 | Q3 | Pruebas de entradas hostiles (fuzz propio, sin bibliotecas): JSON y órdenes WebSocket, cabeceras HTTP, SigMF, TS/PSI/PES, y cada decodificador con ruido y tramas truncadas, bajo ASan/UBSan | **Sonnet** | 10 min por objetivo sin fallos; los casos que rompían quedan como tests |
-| Q4 | Presupuesto de tiempo real: test que mide CPU por decodificador a su tasa y falla si supera el 30 % de un núcleo; tabla en `RENDIMIENTO.md` | **Haiku** (la medida) / **Sonnet** (si hay que optimizar) | Los 21 dentro de presupuesto o con excepción documentada |
+| Q4 | Presupuesto de tiempo real: test que mide CPU por decodificador a su tasa y falla si supera el 30 % de un núcleo; tabla en `docs/arquitectura/RENDIMIENTO.md` | **Haiku** (la medida) / **Sonnet** (si hay que optimizar) | Los 21 dentro de presupuesto o con excepción documentada |
 | Q5 | Batería de regresión con grabaciones reales: fijar en `tests/data/` (o descarga con suma de comprobación) un fragmento por protocolo con el número de mensajes esperado | **Sonnet** | `make realtest` compara con la referencia y falla si baja |
 
 ### Fase 2 — Aplicación: núcleo y hardware
@@ -86,7 +86,7 @@ de nada; la 1 protege todo lo que viene después.
 | N1 | Detector: excluir el ~5 % de cada borde, fusionar detecciones contiguas dentro del ancho ocupado, histéresis temporal; quitar los parches de la web que lo ocultaban | **Sonnet** | Con la FM sintética y la real: un marcador por emisora, 0 en los bordes; test nuevo |
 | N2 | Perfiles `auto:true`: el host crea y retira instancias sobre señales detectadas (máx. 8), para sondas, DMR, LTE y GSM | **Sonnet** | Test de host con señales que aparecen y desaparecen; web muestra «auto» |
 | N3 | Barrido: adaptar el adelanto de quick-tune a la latencia medida para no caer al modo lento | **Sonnet** | Opus mide en placa: 47 MHz–6 GHz sin pasar a modo lento |
-| H2 | Repetir con USB 3 todas las medidas de caudal (RX 30,72 / 61,44 / 122,88 Msps y modo espectro) | **Opus** (placa) + **Haiku** (tablas) | `RENDIMIENTO.md`, `HARDWARE.md` y `FIRMWARE.md` con cifras USB 3 |
+| H2 | Repetir con USB 3 todas las medidas de caudal (RX 30,72 / 61,44 / 122,88 Msps y modo espectro) | **Opus** (placa) + **Haiku** (tablas) | `docs/arquitectura/RENDIMIENTO.md`, `docs/hardware/HARDWARE.md` y `docs/hardware/FIRMWARE.md` con cifras USB 3 |
 | N4 | Segundo canal de recepción (2×2): fuente con RX1+RX2, espectro por canal y selector en la web; base para diversidad y medida de dirección | **Sonnet** | Dos espectros simultáneos en placa; decodificadores eligen canal |
 | N5 | Persistencia: marcadores de frecuencia con nombre, sesión guardada (perfil, canal, decodificadores) y registro de eventos consultable por fecha y protocolo (JSONL rotado, API de consulta paginada) | **Sonnet** | Reiniciar conserva el estado; la web busca en el histórico |
 | N6 | Grabación mejor: disparo por squelch o por decodificador, límite de disco, reproducir una grabación desde la web con barra de tiempo | **Sonnet** | Test de extremo a extremo; captura en la guía |
@@ -143,7 +143,7 @@ prueba en placa la hace Opus en RAM.
 | ID | Tarea | Modelo | Terminado cuando |
 |---|---|---|---|
 | T1 | Calibración real IQ/LO de TX por cable con atenuador (con permiso del usuario) e instalar `tx_set_rx_capture()` en el motor | **Sonnet** + **Opus** (placa) | Rechazo de imagen y de portadora medidos y guardados |
-| T2 | Bucle completo por cable: emitir cada modulador y decodificarlo con la propia placa (solo protocolos y bandas de la lista blanca por aire; el resto, por cable) | **Sonnet** + **Opus** | Tabla de los 21 en `VALIDACION.md` |
+| T2 | Bucle completo por cable: emitir cada modulador y decodificarlo con la propia placa (solo protocolos y bandas de la lista blanca por aire; el resto, por cable) | **Sonnet** + **Opus** | Tabla de los 21 en `docs/calidad/VALIDACION.md` |
 | T3 | Revisión de seguridad de la emisión: lista blanca, ciclo de trabajo, ganancia máxima y registro, con tests que intenten saltárselos | **Sonnet** | Ningún test consigue emitir fuera de política |
 | Z1 | Curso, README, guía y validación finales; etiqueta de versión `v2.1.0` | **Haiku** (regenerar) + **Opus** (revisar y etiquetar) | Todo coherente con el código |
 

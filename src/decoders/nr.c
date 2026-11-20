@@ -1,5 +1,5 @@
 /*
- * nr.c — Búsqueda de SSB de 5G NR (PSS/SSS → PCI) en la rejilla GSCN. Ver docs/decoders/nr.md.
+ * nr.c — Búsqueda de SSB de 5G NR (PSS/SSS → PCI) en la rejilla GSCN. Ver docs/protocolos/nr.md.
  *
  * Teoría (3GPP TS 38.211 §7.4.2, TS 38.104 §5.4.3, TS 38.213 §4.1):
  *  - El bloque SS/PBCH (SSB) ocupa 4 símbolos OFDM × 240 subportadoras. La PSS

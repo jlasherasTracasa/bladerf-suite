@@ -2,7 +2,7 @@
 """gen_decoders.py — diagramas de la cadena de procesado de cada decodificador.
 
 Escribe docs/img/src/decoders/<id>-cadena.html (SVG en línea, tema Material 3 de
-lib.py). Luego: docs/img/render_decoders.sh -> docs/img/decoders/<id>-cadena-{light,dark}.png
+lib.py). Luego: docs/img/src/render_decoders.sh -> docs/img/decoders/<id>-cadena-{light,dark}.png
 Datos de las cadenas en dec_chains_{a,b,c}.py (salen del código de src/decoders/).
 Uso: python3 docs/img/src/gen_decoders.py [id ...]
 """
@@ -81,8 +81,8 @@ def build(pid):
     c.pill(48, yo + 14, "Salida", 12.5, "gsolid", "f-onpri", h=28, padx=14, weight=600)
     c.add('</g>')
     c.text(124, yo + 19, outp, 13.5, 500, "f-on")
-    src = ("Dibujado a partir de src/decoders/adsb.c y docs/ADSB.md." if pid == "adsb" else
-           "Dibujado a partir del código de src/ y de la sección «Cadena DSP» de docs/decoders/%s.md." % pid)
+    src = ("Dibujado a partir de src/decoders/adsb.c y docs/protocolos/adsb.md." if pid == "adsb" else
+           "Dibujado a partir del código de src/ y de la sección «Cadena DSP» de docs/protocolos/%s.md." % pid)
     c.text(48, yo + 52, src, 11.5, 400, "f-var")
     return c
 

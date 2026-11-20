@@ -3,8 +3,8 @@
 ## Figuras
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/matriz-validacion-dark.png">
-  <img src="img/matriz-validacion-light.png" alt="Matriz de validación">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/matriz-validacion-dark.png">
+  <img src="../img/matriz-validacion-light.png" alt="Matriz de validación">
 </picture>
 
 *Figura. Estado de validación de los 21 decodificadores (en el aire, datos reales, sintético y pendiente).*
@@ -53,7 +53,7 @@ Cada sección la escribe el agente de su grupo. Relee el fichero antes de editar
 
 ### Pendiente del grupo A
 
-* VDL2: cabecera, aleatorizador y orden RS (ver `docs/decoders/vdl2.md`); necesita la norma o una
+* VDL2: cabecera, aleatorizador y orden RS (ver `docs/protocolos/vdl2.md`); necesita la norma o una
   traza de referencia. La salida de `--gen vdl2` no la decodifica `dumpvdl2`.
 * FLEX: 3200/2, 3200/4, 6400/4 (BIW ilegible; mapeo de 4 niveles/fases) y direcciones largas.
 * DSC y ADS-B: sin grabación real.
@@ -63,7 +63,7 @@ Cada sección la escribe el agente de su grupo. Relee el fichero antes de editar
 ## Grupo B (V2): dmr, ism, rs41, lora, meshtastic, dab, lte, nr, gsm, wifi
 
 Dvbt pasó a TV1 y no se tocó (sin constantes confirmadas ni refutadas por V2). Detalle por protocolo en
-`docs/decoders/<id>.md` ("Validación con señal real"). Herramientas en `build/v2/tools/` (conversión a SigMF, re-modulación FM,
+`docs/protocolos/<id>.md` ("Validación con señal real"). Herramientas en `build/v2/tools/` (conversión a SigMF, re-modulación FM,
 recortes), descargas en `build/v2/dl/<fuente>/` (datos no fiables, Python siempre con `-I`). Fixtures < 200 kB en `tests/data/`;
 `tests/vec_real.h` (cargadores + `VR_CPU`, umbral de CPU ×8 bajo sanitizer, aplicado a los tests del grupo).
 
@@ -86,15 +86,15 @@ necesitan pasar el fragmento dos veces (el detector aprende el ruido en ≈ 8 ms
 ## Figuras de evidencia
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/validacion/validacion-grupo-a-dark.png">
-  <img src="img/validacion/validacion-grupo-a-light.png" alt="Evidencia del grupo A">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/validacion/validacion-grupo-a-dark.png">
+  <img src="../img/validacion/validacion-grupo-a-light.png" alt="Evidencia del grupo A">
 </picture>
 
 *Figura 1. Grupo A: lo que se contrastó con grabaciones públicas y decodificadores de referencia.*
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/validacion/validacion-grupo-b-dark.png">
-  <img src="img/validacion/validacion-grupo-b-light.png" alt="Evidencia del grupo B">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/validacion/validacion-grupo-b-dark.png">
+  <img src="../img/validacion/validacion-grupo-b-light.png" alt="Evidencia del grupo B">
 </picture>
 
 *Figura 2. Grupo B. Las barras muestran decodificados / referencia solo donde la tabla da un recuento.*

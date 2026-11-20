@@ -4,7 +4,7 @@
  * Extremo a extremo: TS conocido → modulador (mod_dvbt.c) → canal (AWGN, CFO fraccional y
  * entero, deriva de reloj, eco) → receptor → TS idéntico. La cadena de codificación del
  * modulador se contrastó aparte, bit a bit, con GNU Radio gr-dtv (dtv.dvbt_*; solo
- * ejecutado como referencia, ver docs/decoders/dvbt.md): 9 combinaciones de modo,
+ * ejecutado como referencia, ver docs/protocolos/dvbt.md): 9 combinaciones de modo,
  * constelación y tasa, y el símbolo OFDM completo (pilotos, TPS con BCH y cell id).
  * Además: Viterbi rápido contra el codificador, y rendimiento (núcleos por señal en tiempo real).
  */

@@ -15,7 +15,7 @@
  *         DevAddr 01020304, FCnt 1, FPort 1) y base64 gAQDAgEDAAAGcwcK4mTU9+EX0sA=
  *         (ConfirmedDataUp, FOptsLen 3, FCnt 0, FPort 10).
  *     NO se dispone de capturas de un chip Semtech: la capa física se prueba
- *     contra el modulador propio (ver docs/decoders/lora.md, limitaciones).
+ *     contra el modulador propio (ver docs/protocolos/lora.md, limitaciones).
  */
 #include "test_util.h"
 #include "vec_real.h"

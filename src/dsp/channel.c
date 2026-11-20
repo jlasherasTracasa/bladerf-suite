@@ -1,5 +1,5 @@
 /*
- * channel.c — Implementación del receptor de canal. Ver channel.h y docs/DSP.md.
+ * channel.c — Implementación del receptor de canal. Ver channel.h y docs/arquitectura/DSP.md.
  */
 #include "channel.h"
 

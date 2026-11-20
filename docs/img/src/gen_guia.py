@@ -111,7 +111,7 @@ def build_msg_binarios():
     atv = [(0, 0, "tipo", "=6", "g-bc"), (1, 1, "canal", "=2", "g-mar"), (2, 3, "res.", "", "g-data"),
            (4, 7, "tasa Hz", "u32", "g-ham"), (8, 15, "PTS 1.ª muestra", "i64", "g-spec")]
     y = byte_row(c, x0, y, cw, nc, atv, "PCM int16 intercalado", 16, "tipo 6", "Audio TV", "el PTS está desenrollado a 64 bit y nunca retrocede") + 20
-    c.text(48, H - 24, "Cabeceras: tipo 1 y 4 → 32 B; tipo 2 y 3 → 8 B; tipo 5 → 20 B; tipo 6 → 16 B. Fuente: docs/PROTOCOLO.md.", 12.5, 400, "f-var")
+    c.text(48, H - 24, "Cabeceras: tipo 1 y 4 → 32 B; tipo 2 y 3 → 8 B; tipo 5 → 20 B; tipo 6 → 16 B. Fuente: docs/arquitectura/WEBSOCKET.md.", 12.5, 400, "f-var")
     return c
 
 
@@ -282,7 +282,7 @@ def build_fpga_motor():
     c.text(136, 636, "Banco de registros Wishbone (lab_regs)", 16, 600, "disp")
     c.text(136, 660, "SPEC_LOG2N (N) · SPEC_K (K) · SPEC_CTRL (relleno) configuran el motor; los contadores CNT_* lo vigilan.", 12.5, 400, "f-var")
     c.text(136, 682, "Maestro Wishbone del Nios, a 80 MHz, accesible con bladerf_wishbone_master_read/write (libbladeRF 2.6.1, sin parches).", 12.5, 400, "f-var")
-    c.text(W - 48, H - 18, "Fuente: docs/FIRMWARE.md §10 y §11.", 12, 400, "f-var", "end")
+    c.text(W - 48, H - 18, "Fuente: docs/hardware/FIRMWARE.md §10 y §11.", 12, 400, "f-var", "end")
     return c
 
 
@@ -316,7 +316,7 @@ def build_fpga_regs():
         c.pill(x0 + 416, y + 20, acc, 11.5, "gtint", "f-on", h=24, padx=11)
         c.add("</g>")
         c.text(x0 + 516, y + 27, desc, 13.5, 400, "f-on")
-    c.text(48, H - 22, "Los registros de configuración no se reinician con sys_reset. Detección segura: marca 0xA en config_gpio[27:24] y luego lectura de ID. Fuente: docs/FIRMWARE.md §11.", 12, 400, "f-var")
+    c.text(48, H - 22, "Los registros de configuración no se reinician con sys_reset. Detección segura: marca 0xA en config_gpio[27:24] y luego lectura de ID. Fuente: docs/hardware/FIRMWARE.md §11.", 12, 400, "f-var")
     return c
 
 

@@ -1,6 +1,6 @@
 /*
  * rs41_frame.h — Estructura de la trama de la radiosonda Vaisala RS41 (común
- * al decodificador y al modulador). Ver docs/decoders/rs41.md.
+ * al decodificador y al modulador). Ver docs/protocolos/rs41.md.
  *
  * Trama estándar de 320 octetos (4800 Bd → 0,533 s, una por segundo), enviada
  * con cada octeto LSB primero y precedida de un preámbulo de 320 bits 0101…01:
@@ -17,7 +17,7 @@
  *
  * Lo que NO está verificado con una trama real capturada (no hay acceso a una):
  * parámetros y disposición de la paridad Reed-Solomon, y los desplazamientos
- * dentro de los bloques 0x79/0x7A/0x7B/0x7C. Ver docs/decoders/rs41.md.
+ * dentro de los bloques 0x79/0x7A/0x7B/0x7C. Ver docs/protocolos/rs41.md.
  */
 #ifndef BLADERF_LAB_RS41_FRAME_H
 #define BLADERF_LAB_RS41_FRAME_H

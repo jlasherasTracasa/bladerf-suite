@@ -1,5 +1,5 @@
 /*
- * ism.c — Decodificador ISM genérico OOK/FSK (433/868 MHz). Ver docs/decoders/ism.md.
+ * ism.c — Decodificador ISM genérico OOK/FSK (433/868 MHz). Ver docs/protocolos/ism.md.
  *
  * Cadena (a 250 kHz complejos, canal de 200 kHz):
  *

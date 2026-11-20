@@ -2,7 +2,7 @@
  * dmr.c — Decodificador DMR SOLO DE METADATOS (ETSI TS 102 361-1 V2.5.1).
  * NO se decodifica, extrae ni reproduce voz (AGENTS.md §0.12): las tramas de
  * voz solo sirven para saber que hay una llamada activa y para leer su LC.
- * Ver docs/decoders/dmr.md.
+ * Ver docs/protocolos/dmr.md.
  *
  * Cadena: IQ 48 kHz → FIR de canal → discriminador FM (±1944 Hz = ±1) →
  * filtro adaptado RRC (β = 0,2, §10.2.2.2) → reloj de Gardner a 4800 símb/s

@@ -14,7 +14,7 @@
  * de frecuencia y tiempo, de la grabación pública DAB.zip de sigidwiki.com (IQ 8 bit
  * a 2 MS/s remuestreado a 2,048 MS/s; conjunto 5001 "Towercom", Eslovaquia). Prueban
  * punzonado, desentrelazado, dispersión y CRC del FIC con tráfico real, y que la cadena
- * OFDM completa lo sincroniza (docs/decoders/dab.md). Un fragmento IQ de una trama
+ * OFDM completa lo sincroniza (docs/protocolos/dab.md). Un fragmento IQ de una trama
  * ocupa ≥ 390 kB, por encima del límite de 200 kB, y recortado no sincroniza.
  */
 #include "test_util.h"

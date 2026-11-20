@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // web_e2e.mjs — batería E2E de la interfaz web. Node >= 22 (WebSocket y fetch globales), sin
 // dependencias: habla con Chromium por CDP (puerto propio) y lanza los servidores de prueba
-// (bladerf-lab --replay + tests/web_mock.js). Ver docs/QA_WEB.md.
+// (bladerf-lab --replay + tests/web_mock.js). Ver docs/calidad/QA_WEB.md.
 //
 // Este fichero es a la vez biblioteca (clase Page, helpers) y programa: si se ejecuta directamente
 // recorre todas las suites. Opciones: --only <regex> (suites), --soak <s> (duración de la prueba

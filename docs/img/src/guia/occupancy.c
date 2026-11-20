@@ -1,4 +1,4 @@
-/* occupancy.c (DOC2b) — medida del ancho ocupado de TX.md sobre una señal
+/* occupancy.c (DOC2b) — medida del ancho ocupado de docs/arquitectura/TX.md sobre una señal
  * generada por NUESTRO modulador. Replica measure_occupancy() de src/tx/tx.c
  * (es static): Welch, FFT 1024, Blackman-Harris, 50 % de solape, bordes con el
  * 0,01 % de la potencia fuera por lado (OCC_TAIL = 1e-4).

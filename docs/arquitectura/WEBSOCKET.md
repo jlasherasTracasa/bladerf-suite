@@ -3,8 +3,8 @@
 ## Figuras
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/protocolo-ws-dark.png">
-  <img src="img/protocolo-ws-light.png" alt="Protocolo WebSocket">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/protocolo-ws-dark.png">
+  <img src="../img/protocolo-ws-light.png" alt="Protocolo WebSocket">
 </picture>
 
 *Figura. Mensajes binarios (tipos 1–6) y JSON del protocolo `GET /ws`; abajo, el orden de envío al conectar.*
@@ -97,7 +97,7 @@ un evento por mensaje válido (máx. 200/s por instancia). En ADS-B, `msg.kind` 
 100 se reenvían al conectar con `"replay":true`.
 
 **`dec_state`** `{"inst","proto","t","state":{…}}` ~1 Hz por instancia con tabla
-(ADS-B: `{"msgs","rate","fps","fix1","fix2","crc","rej","rx","ac":[…]}`, ver ADSB.md:
+(ADS-B: `{"msgs","rate","fps","fix1","fix2","crc","rej","rx","ac":[…]}`, ver ../protocolos/adsb.md:
 `fps` tramas válidas/s, `fix1`/`fix2` corregidas de 1 y 2 bits, `crc` recuperadas por
 entramado CRC, `rej` candidatos descartados). Al conectar se envía el último
 conocido.
@@ -168,7 +168,7 @@ Notas:
   deja de ser `null`. Mientras barre no hay espectro normal, detector, audio,
   decodificadores ni grabación, y una `config` queda pendiente. `sweep_stop` repone la
   configuración normal. Errores (`error`): fuente de fichero, rango vacío o fuera del
-  equipo, `fft` no válido. Ver HARDWARE.md.
+  equipo, `fft` no válido. Ver ../hardware/HARDWARE.md.
 
 ## TV (pestaña «TV», AGENTS.md §8c)
 
@@ -206,8 +206,8 @@ El PTS está desenrollado (33 bits → 64) y nunca retrocede: ante un salto del 
 ### Mensajes binarios 1 a 6
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/protocolo/msg-binarios-dark.png">
-  <img src="img/protocolo/msg-binarios-light.png" alt="Mensajes binarios del WebSocket">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/protocolo/msg-binarios-dark.png">
+  <img src="../img/protocolo/msg-binarios-light.png" alt="Mensajes binarios del WebSocket">
 </picture>
 
 *Figura. Disposición byte a byte de las cabeceras binarias; las casillas punteadas son los datos que siguen a cada cabecera.*
@@ -215,8 +215,8 @@ El PTS está desenrollado (33 bits → 64) y nunca retrocede: ante un salto del 
 ### Una sesión WebSocket
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/protocolo/secuencia-ws-dark.png">
-  <img src="img/protocolo/secuencia-ws-light.png" alt="Sesión WebSocket">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/protocolo/secuencia-ws-dark.png">
+  <img src="../img/protocolo/secuencia-ws-light.png" alt="Sesión WebSocket">
 </picture>
 
 *Figura. Conexión, instantánea inicial, órdenes, flujo continuo y reconexión. El cliente web espera 0,5 s tras un corte y multiplica la espera por 1,7 en cada intento hasta 6 s (`web/js/ws.js`).*

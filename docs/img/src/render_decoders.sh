@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # render_decoders.sh — convierte docs/img/src/decoders/*.html en PNG claro/oscuro
 # (docs/img/decoders/<nombre>-{light,dark}.png), mismo método que render.sh (2x, < 400 KB).
-# Uso: docs/img/render_decoders.sh [nombre ...]
+# Uso: docs/img/src/render_decoders.sh [nombre ...]
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 CHROME="${CHROME:-$(ls "$HOME"/.cache/ms-playwright/chromium_headless_shell-1234/*/chrome-headless-shell 2>/dev/null | head -1)}"
 LIMIT=$((400*1024))
 names=("$@")

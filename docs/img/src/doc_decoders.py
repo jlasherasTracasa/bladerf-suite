@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """doc_decoders.py — inserta (o actualiza) la sección «Visión rápida» al principio de cada
-docs/decoders/<id>.md (ADS-B: docs/ADSB.md, TDT: docs/TDT.md): diagrama de la cadena,
+docs/protocolos/<id>.md (ADS-B: docs/protocolos/adsb.md, TDT: docs/protocolos/tdt.md): diagrama de la cadena,
 gráficas de la señal, ejemplo de evento y de dec_state (sacados de `--replay … --print` y del
 WebSocket, guardados en build/doc2a/events/) y, si existe, la captura de la web.
 La sección va entre marcas HTML y se regenera sin tocar el resto del documento.
@@ -155,10 +155,10 @@ def section(pid, prefix):
 
 def target(pid):
     if pid == "adsb":
-        return os.path.join(ROOT, "docs", "ADSB.md"), "img/decoders/"
+        return os.path.join(ROOT, "docs", "protocolos", "adsb.md"), "../img/decoders/"
     if pid == "tdt":
-        return os.path.join(ROOT, "docs", "TDT.md"), "img/decoders/"
-    return os.path.join(ROOT, "docs", "decoders", pid + ".md"), "../img/decoders/"
+        return os.path.join(ROOT, "docs", "protocolos", "tdt.md"), "../img/decoders/"
+    return os.path.join(ROOT, "docs", "protocolos", pid + ".md"), "../img/decoders/"
 
 
 def main():

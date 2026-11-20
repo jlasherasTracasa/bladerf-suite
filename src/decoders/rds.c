@@ -50,7 +50,7 @@
  * Limitaciones: no se decodifican ODA (RT+, TMC, …), EON ni grupos 1A/3A/14A
  * (se descartan sin error). Con CNR < ~20 dB en 250 kHz el FM está por debajo de
  * su umbral y el RDS (que va a 57 kHz, donde el ruido del discriminador crece
- * con f²) pierde la mayoría de los bloques: ver docs/decoders/rds.md.
+ * con f²) pierde la mayoría de los bloques: ver docs/protocolos/rds.md.
  */
 #include "rds.h"
 

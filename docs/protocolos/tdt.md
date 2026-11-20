@@ -5,8 +5,8 @@
 ## Visión rápida
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/decoders/tdt-cadena-dark.png">
-  <img src="img/decoders/tdt-cadena-light.png" alt="Cadena de procesado de TDT">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/tdt-cadena-dark.png">
+  <img src="../img/decoders/tdt-cadena-light.png" alt="Cadena de procesado de TDT">
 </picture>
 
 *Figura. Cadena de procesado de TDT, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
@@ -14,22 +14,22 @@
 ### Así es la señal
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/decoders/dvbt-senal-dark.png">
-  <img src="img/decoders/dvbt-senal-light.png" alt="La señal real del C32 de Pamplona (misma figura que en dvbt.md).">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/dvbt-senal-dark.png">
+  <img src="../img/decoders/dvbt-senal-light.png" alt="La señal real del C32 de Pamplona (misma figura que en dvbt.md).">
 </picture>
 
 *Figura. La señal real del C32 de Pamplona (misma figura que en dvbt.md).*
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/decoders/tdt-estructura-dark.png">
-  <img src="img/decoders/tdt-estructura-light.png" alt="Paquete TS y pila de tablas.">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/tdt-estructura-dark.png">
+  <img src="../img/decoders/tdt-estructura-light.png" alt="Paquete TS y pila de tablas.">
 </picture>
 
 *Figura. Paquete TS y pila de tablas.*
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/decoders/tdt-estructura2-dark.png">
-  <img src="img/decoders/tdt-estructura2-light.png" alt="Capas de la TDT.">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/tdt-estructura2-dark.png">
+  <img src="../img/decoders/tdt-estructura2-light.png" alt="Capas de la TDT.">
 </picture>
 
 *Figura. Capas de la TDT.*
@@ -44,7 +44,7 @@ Esta grabación no produce ningún evento `dec`.
 
 ### En la web
 
-![TDT en la interfaz web](img/decoders/tdt-web.png)
+![TDT en la interfaz web](../img/decoders/tdt-web.png)
 
 *Captura de la interfaz con un servidor `--replay` propio mostrando TDT.* El vídeo es un `.ts` de prueba reproducido con `--tv-ts` (carta de ajuste sintética), no una emisión recibida por radio.
 
@@ -53,14 +53,14 @@ Esta grabación no produce ningún evento `dec`.
 ## Figuras
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/cadena-tdt-dark.png">
-  <img src="img/cadena-tdt-light.png" alt="Cadena TDT">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/cadena-tdt-dark.png">
+  <img src="../img/cadena-tdt-light.png" alt="Cadena TDT">
 </picture>
 
 *Figura. Cadena completa de la TDT: receptor OFDM 8k (TV1), demux y PSI (TV2), vídeo H.264 por WebCodecs y audio MP2 propio con sincronía por PTS.*
 
 
-(La parte del receptor DVB-T la documenta TV1 en este mismo fichero o en `docs/decoders/dvbt.md`.)
+(La parte del receptor DVB-T la documenta TV1 en este mismo fichero o en `docs/protocolos/dvbt.md`.)
 
 ## Cadena
 `dvbt_rx` (TV1) → `src/decoders/tdt.c` (decodificador narrow a 64/7 MHz, filtro 7,61 MHz) → `tv_ts_in()` →
@@ -88,5 +88,5 @@ se presenta cuando su PTS ≤ reloj. Sin audio se usa un reloj propio con 120 ms
 
 `src/tv/dvbt_rx.{h,c}`: IQ a 64/7 MHz → paquetes TS (API en AGENTS.md §8c). Detalle de la cadena,
 constantes validadas con gr-dtv, rendimiento y la medida real de Pamplona en
-`docs/decoders/dvbt.md` (sección "Receptor completo hasta TS"). Estado: validado con señal
+`docs/protocolos/dvbt.md` (sección "Receptor completo hasta TS"). Estado: validado con señal
 sintética y con IQ de gr-dtv; con la antena actual la SNR real (≈ −9 dB en C32) no permite TS.

@@ -1,7 +1,7 @@
 /*
  * ism_protocols.c — Protocolos de sensores ISM sobre trenes de pulsos, analizador
  * genérico tipo URH y codificadores meteorológicos. Ver ism_protocols.h y
- * docs/decoders/ism.md (allí se detalla qué constantes están verificadas).
+ * docs/protocolos/ism.md (allí se detalla qué constantes están verificadas).
  *
  * Codificaciones de línea que aparecen:
  *   PWM  la anchura de la marca (o del espacio) lleva el bit: corta = 0, larga = 1.
@@ -631,7 +631,7 @@ static int dec_acurite(const ism_train_t *t, ism_msg_t *out, int *cnt, int max)
 /* Fine Offset WH1080/WH3080 (OOK PWM, 433/868 MHz): preámbulo 0xFF y 10 octetos;
  * espacio fijo de ~1000 µs, marca CORTA de ~500 µs = 1 y marca LARGA de ~1500 µs
  * = 0. Temporización contrastada con las grabaciones públicas de rtl_433_tests
- * (fineoffset_wh1080/01 y /03; ver docs/decoders/ism.md): marcas de 504/1481 µs.
+ * (fineoffset_wh1080/01 y /03; ver docs/protocolos/ism.md): marcas de 504/1481 µs.
  * b0: 0xA | id_hi(4) | b1: id_lo(4) temp_hi(4) | b2: temp_lo | b3: hum | b4: viento
  * medio (0,34 m/s) | b5: racha | b6,b7: lluvia (0,3 mm) | b8: bit4 batería baja,
  * bits 3..0 dirección (22,5°) | b9: CRC-8 (poly 0x31, init 0) de b0..b8.

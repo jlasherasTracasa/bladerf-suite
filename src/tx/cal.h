@@ -18,7 +18,7 @@
  * pues  x + q·x* = w.
  *
  * Medida (idea de Hsu & Sheen y de US 8290458: tono desplazado para separar la
- * imagen de la fuga de LO, ver docs/INVESTIGACION.md E40): se transmite una
+ * imagen de la fuga de LO, ver docs/investigacion/INVESTIGACION.md E40): se transmite una
  * ráfaga [silencio][preámbulo PN][tono +fs/16][tono −fs/16][silencio] y se
  * captura por el receptor. El preámbulo da el retardo entero d del bucle.
  * Proyectando cada tramo sobre ±fs/16 (ciclos enteros → sin fugas espectrales):

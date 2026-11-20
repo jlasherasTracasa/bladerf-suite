@@ -1,5 +1,5 @@
 /*
- * acars.c — Decodificador ACARS en VHF (ARINC 618). Ver docs/decoders/acars.md.
+ * acars.c — Decodificador ACARS en VHF (ARINC 618). Ver docs/protocolos/acars.md.
  *
  * Capa física. ACARS viaja en canales de voz de 25 kHz (131,525; 131,725;
  * 131,825 MHz…) con AM de baja profundidad (~30-50 %) cuya señal moduladora es
@@ -264,7 +264,7 @@ static void frame_done(acars_t *s, dec_emit_fn emit, void *ctx)
 /* Entrada de un bit ya decidido. */
 static void on_bit(acars_t *s, int tone, dec_emit_fn emit, void *ctx)
 {
-    /* Codificación diferencial (validada con una grabación real, docs/VALIDACION.md):
+    /* Codificación diferencial (validada con una grabación real, docs/calidad/VALIDACION.md):
      * 2400 Hz = el bit de datos es igual al anterior; 1200 Hz = cambia. Así el
      * "pre-key" de unos es un tono fijo de 2400 Hz y el "+*" (1101 0101 0101 0100,
      * casi todo alternancias) un tren de 1200 Hz. 'tone' vale 1 para 1200 Hz. */

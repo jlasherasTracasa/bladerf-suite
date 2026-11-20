@@ -1,7 +1,7 @@
 /*
- * engine.c — Hilo DSP principal. Ver engine.h y docs/ARQUITECTURA.md.
+ * engine.c — Hilo DSP principal. Ver engine.h y docs/arquitectura/ARQUITECTURA.md.
  *
- * Dos hilos (ver docs/RENDIMIENTO.md):
+ * Dos hilos (ver docs/arquitectura/RENDIMIENTO.md):
  *
  *   hilo lector ── source_read() ──► anillo de bloques (0,25–0,5 s) ──► hilo DSP
  *
@@ -38,7 +38,7 @@
 #define DB_MIN -145.0f
 #define DB_STEP 0.6f
 
-/* Tipos de mensajes binarios (primer byte). Ver docs/PROTOCOLO.md. */
+/* Tipos de mensajes binarios (primer byte). Ver docs/arquitectura/WEBSOCKET.md. */
 enum { BIN_SPECTRUM = 1, BIN_AUDIO = 2, BIN_METER = 3 };
 
 typedef struct {

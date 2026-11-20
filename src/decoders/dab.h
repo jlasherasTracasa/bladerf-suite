@@ -25,7 +25,7 @@
  * fase (tablas h y k',i,n) y la tabla UEP se contrastaron con la implementación
  * abierta welle.io (backend/{freq-interleaver,protTables,phasetable,uep-protection}.cpp,
  * fic-handler.cpp), que las deriva de EN 300 401 §14.6, §11.1–11.3 y §14.3.2.
- * Ver docs/decoders/dab.md (riesgos).
+ * Ver docs/protocolos/dab.md (riesgos).
  */
 #ifndef BLADERF_LAB_DAB_H
 #define BLADERF_LAB_DAB_H

@@ -1,5 +1,5 @@
 /*
- * test_engine_perf.c — Rendimiento del motor (docs/RENDIMIENTO.md).
+ * test_engine_perf.c — Rendimiento del motor (docs/arquitectura/RENDIMIENTO.md).
  *
  *  A) S-meter por espectro frente al método por muestras. Un cliente que no
  *     escucha ya no mezcla ni diezma el flujo de banda ancha: su nivel sale de la

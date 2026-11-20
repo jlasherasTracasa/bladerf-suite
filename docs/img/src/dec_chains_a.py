@@ -1,5 +1,5 @@
 """dec_chains_a.py — cadenas de procesado (A): adsb, rds, dab, ais, dsc, aprs.
-Sale de src/decoders/<id>*.c y de la sección «Cadena DSP» de docs/decoders/<id>.md.
+Sale de src/decoders/<id>*.c y de la sección «Cadena DSP» de docs/protocolos/<id>.md.
 Formato: id: (título, subtítulo, [(etapa, texto, icono)], salida)."""
 D = {}
 D["adsb"] = ("ADS-B / Mode S", "src/decoders/adsb.c · WIDE · 2 000 000 muestras/s exactas (½ µs por muestra)", [

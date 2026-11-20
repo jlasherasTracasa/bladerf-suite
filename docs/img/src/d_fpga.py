@@ -1,4 +1,4 @@
-"""Imagen FPGA «lab»: ruta de RX con el motor de espectro y el banco Wishbone (docs/FIRMWARE.md §9–§12)."""
+"""Imagen FPGA «lab»: ruta de RX con el motor de espectro y el banco Wishbone (docs/hardware/FIRMWARE.md §9–§12)."""
 from lib import *
 
 

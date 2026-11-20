@@ -9,7 +9,7 @@
  * Además se comprueban propiedades definidas en 3GPP TS 36.211 (PSS: |d| = 1 y raíces 25/29/34 de la
  * tabla 6.11.1.1; SSS ±1, N_ID1 y subtrama 0/5 dan secuencias distintas y casi ortogonales) y la
  * codificación del PBCH de TS 36.212 §5.3.1 por ida y vuelta con errores de canal. La prueba
- * extremo a extremo es modulador → canal → decodificador (ver docs/decoders/lte.md).
+ * extremo a extremo es modulador → canal → decodificador (ver docs/protocolos/lte.md).
  */
 #include "test_util.h"
 #include "vec_real.h"

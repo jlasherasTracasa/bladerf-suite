@@ -1,5 +1,5 @@
 /*
- * rs41.c — Decodificador de la radiosonda Vaisala RS41. Ver docs/decoders/rs41.md
+ * rs41.c — Decodificador de la radiosonda Vaisala RS41. Ver docs/protocolos/rs41.md
  * y rs41_frame.h (estructura de la trama).
  *
  * Capa física: GFSK a 4800 Bd, desviación ±2,4 kHz (índice de modulación 1), a

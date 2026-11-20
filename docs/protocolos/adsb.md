@@ -5,8 +5,8 @@
 ## Visión rápida
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/decoders/adsb-cadena-dark.png">
-  <img src="img/decoders/adsb-cadena-light.png" alt="Cadena de procesado de ADS-B">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/adsb-cadena-dark.png">
+  <img src="../img/decoders/adsb-cadena-light.png" alt="Cadena de procesado de ADS-B">
 </picture>
 
 *Figura. Cadena de procesado de ADS-B, dibujada a partir del código de `src/` y de la sección «Cadena DSP» de este documento.*
@@ -14,15 +14,15 @@
 ### Así es la señal
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/decoders/adsb-trama-dark.png">
-  <img src="img/decoders/adsb-trama-light.png" alt="Módulo de una trama DF17 a 2 Msps: preámbulo y 112 bits PPM. Señal sintética.">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/adsb-trama-dark.png">
+  <img src="../img/decoders/adsb-trama-light.png" alt="Módulo de una trama DF17 a 2 Msps: preámbulo y 112 bits PPM. Señal sintética.">
 </picture>
 
 *Figura. Módulo de una trama DF17 a 2 Msps: preámbulo y 112 bits PPM. Señal sintética.*
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/decoders/adsb-estructura-dark.png">
-  <img src="img/decoders/adsb-estructura-light.png" alt="Campos de la trama DF17 y del ME de posición.">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/decoders/adsb-estructura-dark.png">
+  <img src="../img/decoders/adsb-estructura-light.png" alt="Campos de la trama DF17 y del ME de posición.">
 </picture>
 
 *Figura. Campos de la trama DF17 y del ME de posición.*
@@ -80,7 +80,7 @@ Evento `dec` (campo `msg`, listas largas recortadas):
 
 ### En la web
 
-![ADS-B en la interfaz web](img/decoders/adsb-web.png)
+![ADS-B en la interfaz web](../img/decoders/adsb-web.png)
 
 *Captura de la interfaz con un servidor `--replay` propio mostrando ADS-B.*
 
@@ -89,8 +89,8 @@ Evento `dec` (campo `msg`, listas largas recortadas):
 ## Figuras
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/adsb-cadena-dark.png">
-  <img src="img/adsb-cadena-light.png" alt="Cadena de ADS-B">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/adsb-cadena-dark.png">
+  <img src="../img/adsb-cadena-light.png" alt="Cadena de ADS-B">
 </picture>
 
 *Figura. Cadena del decodificador ADS-B: del módulo a 2 Msps al estado de aeronaves.*

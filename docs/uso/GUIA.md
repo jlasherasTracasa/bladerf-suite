@@ -5,8 +5,8 @@ Una guía paso a paso de BladeRF Lab: desde el primer arranque hasta la TDT, con
 > Las capturas (`img/guia/captura-*.png`) son de la interfaz actual a 1440 px, con recuadros numerados y una leyenda debajo. Salen de servidores propios con señales generadas con `--gen` (FM con RDS, AIS y APRS) y un TS de prueba; la única captura con **datos de demostración** (`tests/web_mock.js`, no es radio real) está rotulada como tal. Se regeneran con `node build/doc2b/shots.mjs`.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/arquitectura-dark.png">
-  <img src="img/arquitectura-light.png" alt="Arquitectura de BladeRF Lab">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/arquitectura-dark.png">
+  <img src="../img/arquitectura-light.png" alt="Arquitectura de BladeRF Lab">
 </picture>
 
 ## Índice
@@ -50,7 +50,7 @@ Opciones útiles: `--port`, `--host`, `--serial`, `--rate`, `--freq`, `--no-gpu`
 
 ## 2. Receptor: espectro, cascada y audio
 
-<img src="img/guia/captura-receptor.png" alt="Pestaña Receptor" width="100%">
+<img src="../img/guia/captura-receptor.png" alt="Pestaña Receptor" width="100%">
 
 *Receptor con una FM generada con `--gen rds`: el espectro, la cascada y el panel RDS.*
 
@@ -65,8 +65,8 @@ Opciones útiles: `--port`, `--host`, `--serial`, `--rate`, `--freq`, `--no-gpu`
 El filtro del canal depende del modo; en USB y LSB solo pasa un lado de la portadora:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/dsp/cfir-canal-dark.png">
-  <img src="img/dsp/cfir-canal-light.png" alt="Filtros de canal">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/dsp/cfir-canal-dark.png">
+  <img src="../img/dsp/cfir-canal-light.png" alt="Filtros de canal">
 </picture>
 
 ## 3. Escuchar FM y ver el RDS
@@ -83,7 +83,7 @@ Sin antena: `./build/bladerf-lab --gen rds --gen-freq 100300000 --gen-center 100
 
 La banda capturada es `centro ± tasa/2`. Si haces clic en una frecuencia que queda fuera, el canal de audio pasa a **fuera de banda** (bandera 4: el audio calla) y el decodificador de esa frecuencia queda en estado `esperando`, que no es un error.
 
-<img src="img/guia/captura-fuera-de-banda.png" alt="Frecuencia fuera de banda" width="100%">
+<img src="../img/guia/captura-fuera-de-banda.png" alt="Frecuencia fuera de banda" width="100%">
 
 Dos formas de resolverlo:
 
@@ -94,7 +94,7 @@ Los canales no pueden caer en el pico de continua del centro; por eso los perfil
 
 ## 5. Hardware: sintonía, ganancia y grabación
 
-<img src="img/guia/captura-hardware.png" alt="Pestaña Hardware" width="100%">
+<img src="../img/guia/captura-hardware.png" alt="Pestaña Hardware" width="100%">
 
 - **Sintonía y muestreo.** Frecuencia central, tasa y ancho RF. El tamaño de banda capturada (la tasa) es lo que deja a los decodificadores ver varios canales a la vez. Con más de 61,44 Msps se activa el modo de 122,88 Msps (FPGA ≥ 0.15).
 - **Ganancia.** Automática, manual o los AGC rápido, lento e híbrido del AD9361. Si existe tabla de calibración se muestra el nivel en dBm.
@@ -106,13 +106,13 @@ Los canales no pueden caer en el pico de continua del centro; por eso los perfil
 La escala del espectro está calibrada: un tono complejo de amplitud 1,0 mide 0 dBFS con un error máximo de 0,09 dB, y con el tono entre dos bins la ventana pierde ≈ 0,8 dB.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/dsp/calibracion-espectro-dark.png">
-  <img src="img/dsp/calibracion-espectro-light.png" alt="Calibración del espectro">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/dsp/calibracion-espectro-dark.png">
+  <img src="../img/dsp/calibracion-espectro-light.png" alt="Calibración del espectro">
 </picture>
 
 ## 6. Usar los perfiles
 
-<img src="img/guia/captura-protocolos.png" alt="Pestaña Protocolos" width="100%">
+<img src="../img/guia/captura-protocolos.png" alt="Pestaña Protocolos" width="100%">
 
 *Perfiles agrupados por familia, con el catálogo de decodificadores debajo.*
 
@@ -139,16 +139,16 @@ Cómo se usan:
 3. Si cambias el centro o la tasa a mano, el perfil deja de figurar como activo.
 4. Algunos perfiles traen `auto`: el host crea instancias sobre las señales que detecta el detector dentro de la banda útil (como máximo 8, y las retira si la señal lleva 60 s sin verse).
 
-La lista completa está en [AGENTS.md §5](../AGENTS.md) y en [PROTOCOLOS.md](PROTOCOLOS.md).
+La lista completa está en [AGENTS.md §5](../../AGENTS.md) y en [PROTOCOLOS.md](PROTOCOLOS.md).
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/mapa-bandas-dark.png">
-  <img src="img/mapa-bandas-light.png" alt="Mapa de bandas de los perfiles">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/mapa-bandas-dark.png">
+  <img src="../img/mapa-bandas-light.png" alt="Mapa de bandas de los perfiles">
 </picture>
 
 ## 7. Decodificadores y «decodificar como…»
 
-<img src="img/guia/captura-decodificadores.png" alt="Pestaña Decodificadores" width="100%">
+<img src="../img/guia/captura-decodificadores.png" alt="Pestaña Decodificadores" width="100%">
 
 *Instancias en marcha: AIS y APRS generados con `--gen`.*
 
@@ -159,11 +159,11 @@ La lista completa está en [AGENTS.md §5](../AGENTS.md) y en [PROTOCOLOS.md](PR
 
 **Decodificar como… desde una señal detectada**
 
-<img src="img/guia/captura-decodificar-como.png" alt="Menú Decodificar como" width="100%">
+<img src="../img/guia/captura-decodificar-como.png" alt="Menú Decodificar como" width="100%">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/guia/decodificar-como-dark.png">
-  <img src="img/guia/decodificar-como-light.png" alt="Decodificar como">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/guia/decodificar-como-dark.png">
+  <img src="../img/guia/decodificar-como-light.png" alt="Decodificar como">
 </picture>
 
 1. En el **Receptor**, busca una barra amarilla del detector sobre el espectro: es una portadora con su frecuencia, ancho y SNR.
@@ -177,15 +177,15 @@ La lista completa está en [AGENTS.md §5](../AGENTS.md) y en [PROTOCOLOS.md](PR
 - **Tablas.** Los decodificadores que mantienen una tabla (aviones, barcos, celdas, redes WiFi…) la muestran en «Estado de las tablas».
 - Los decodificadores *wide* (ADS-B, DAB, WiFi, NR) exigen una tasa de captura concreta (2 Msps, 2,048 Msps, 20 Msps…); los *narrow* funcionan con cualquier tasa que contenga su canal.
 
-La figura del [marco de decodificadores](ARQUITECTURA.md) explica el recorrido interno.
+La figura del [marco de decodificadores](../arquitectura/ARQUITECTURA.md) explica el recorrido interno.
 
 ## 8. Mapa
 
-<img src="img/guia/captura-mapa.png" alt="Pestaña Mapa" width="100%">
+<img src="../img/guia/captura-mapa.png" alt="Pestaña Mapa" width="100%">
 
 *Barcos AIS y estación APRS generados con `--gen` y decodificados por el servidor. Abajo, la misma pestaña con **datos de demostración** (`tests/web_mock.js`), que llena más capas:*
 
-<img src="img/guia/captura-mapa-demo.png" alt="Pestaña Mapa con datos de demostración" width="100%">
+<img src="../img/guia/captura-mapa-demo.png" alt="Pestaña Mapa con datos de demostración" width="100%">
 
 1. Pon tu **ubicación** en la pestaña Hardware: da un punto de referencia y las distancias.
 2. Cualquier decodificador cuya tabla tenga objetos con `lat` y `lon` se dibuja en el mapa por capas (AIS, APRS, Meshtastic, ADS-B, RS41…).
@@ -194,11 +194,11 @@ La figura del [marco de decodificadores](ARQUITECTURA.md) explica el recorrido i
 
 ## 9. Mensajes y tablas
 
-<img src="img/guia/captura-mensajes.png" alt="Pestaña Mensajes" width="100%">
+<img src="../img/guia/captura-mensajes.png" alt="Pestaña Mensajes" width="100%">
 
 *AIS y APRS generados y decodificados por el servidor.*
 
-- **Mensajes.** El flujo de eventos de todos los decodificadores: texto RDS, mensajes POCSAG y FLEX, texto de Meshtastic, ACARS… Se puede filtrar por protocolo, buscar texto y pausar. Al conectar se reenvían los últimos 100 (marcados `replay`). Recuerda el [aviso legal](../README.md#aviso-legal) sobre comunicaciones no públicas.
+- **Mensajes.** El flujo de eventos de todos los decodificadores: texto RDS, mensajes POCSAG y FLEX, texto de Meshtastic, ACARS… Se puede filtrar por protocolo, buscar texto y pausar. Al conectar se reenvían los últimos 100 (marcados `replay`). Recuerda el [aviso legal](../../README.md#aviso-legal) sobre comunicaciones no públicas.
 - **Tablas.** Cualquier `dec_state` que contenga un array de objetos se muestra como tabla sin código específico: aviones con ICAO, indicativo y altura; barcos con MMSI; celdas con PCI; redes con SSID y BSSID. Las filas caducan solas.
 - **Eventos por consola.** Con `--print` los eventos salen como JSON por la salida estándar y con `--log-events <dir>` se guardan en un directorio.
 
@@ -219,24 +219,24 @@ La figura del [marco de decodificadores](ARQUITECTURA.md) explica el recorrido i
 
 ## 11. Barrido de banda ancha
 
-<img src="img/guia/captura-barrido.png" alt="Barra de barrido" width="100%">
+<img src="../img/guia/captura-barrido.png" alt="Barra de barrido" width="100%">
 
 *Con una fuente de fichero la barra se abre pero no se puede barrer; con la placa recorre todo el rango.*
 
 1. Pulsa **Barrido** bajo el espectro: aparece la barra con **Inicio** y **Fin** (por omisión de 70 MHz a 6 GHz; el equipo admite 47 MHz–6 GHz).
 2. Pulsa para empezar. El servidor recorre el rango con sintonía rápida y pinta el espectro de todo el intervalo (mensajes binarios de tipo 4) con el progreso de cada pasada.
 3. Úsalo para ver **dónde hay señal** antes de elegir un perfil; haz clic en un pico y apunta su frecuencia.
-4. Mientras barre no hay espectro normal, detector, audio, decodificadores ni grabación; al parar se repone la configuración. No funciona con una fuente de fichero. Detalle en [HARDWARE.md](HARDWARE.md).
+4. Mientras barre no hay espectro normal, detector, audio, decodificadores ni grabación; al parar se repone la configuración. No funciona con una fuente de fichero. Detalle en [HARDWARE.md](../hardware/HARDWARE.md).
 
 ## 12. Emisión en modo fichero y su política
 
-<img src="img/guia/captura-emision.png" alt="Pestaña Emisión" width="100%">
+<img src="../img/guia/captura-emision.png" alt="Pestaña Emisión" width="100%">
 
 La pestaña **Emisión** solo aparece si el servidor se arrancó con `--enable-tx` (captura con `--enable-tx --callsign EA2XXX` sobre un fichero; no se emitió nada). Muestra la política vigente (aire activado o no, indicativo, ganancia máxima, bandas permitidas).
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/politica-tx-dark.png">
-  <img src="img/politica-tx-light.png" alt="Política de emisión">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/politica-tx-dark.png">
+  <img src="../img/politica-tx-light.png" alt="Política de emisión">
 </picture>
 
 **Probar una emisión de punta a punta, sin radiar**
@@ -253,13 +253,13 @@ La pestaña **Emisión** solo aparece si el servidor se arrancó con `--enable-t
 | `loopback` | `--enable-tx` | bucle interno del RFIC con la ganancia al mínimo; nada sale por la antena |
 | `air` | `--enable-tx-air` **y** la política | solo ISM/SRD de 433 y 868 MHz o radioaficionado con `--callsign`, ganancia ≤ `--tx-max-gain` (0 dB por defecto), 5 s por orden y ciclo ≤ 1 %/h en 868,0–868,6 MHz |
 
-Los protocolos de aviación, marítimo, radiosondas, telefonía o radiodifusión nunca se radian. Antes de aceptar `air`, el servidor mide el **ancho ocupado** de la señal (99,98 % de la potencia) y exige que quepa entera en una banda permitida; ver [TX.md](TX.md).
+Los protocolos de aviación, marítimo, radiosondas, telefonía o radiodifusión nunca se radian. Antes de aceptar `air`, el servidor mide el **ancho ocupado** de la señal (99,98 % de la potencia) y exige que quepa entera en una banda permitida; ver [TX.md](../arquitectura/TX.md).
 
-Los modos `loopback` y `air` no se han probado todavía contra la placa. **Radiar exige cumplir la normativa de tu país** (ver el [aviso legal](../README.md#aviso-legal)).
+Los modos `loopback` y `air` no se han probado todavía contra la placa. **Radiar exige cumplir la normativa de tu país** (ver el [aviso legal](../../README.md#aviso-legal)).
 
 ## 13. TV (TDT)
 
-<img src="img/guia/captura-tv.png" alt="Pestaña TV" width="100%">
+<img src="../img/guia/captura-tv.png" alt="Pestaña TV" width="100%">
 
 *Vídeo H.264 y audio MP2 desde un TS de prueba en bucle (`--tv-ts fichero.ts`), sin radio.*
 
@@ -271,8 +271,8 @@ Los modos `loopback` y `air` no se han probado todavía contra la placa. **Radia
 Requisitos: el vídeo lo decodifica el navegador con WebCodecs (Chrome o Edge con H.264) y WebCodecs exige `localhost` o HTTPS ([§15](#15-usar-el-servidor-desde-otra-máquina)). Solo se reproducen H.264 y audio MP2; AAC, AC-3 y E-AC-3 se listan sin sonido. No se descifra ningún servicio de pago. **Con la antena actual la señal de UHF no basta** ([§17](#17-consejos-de-antena)).
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/cadena-tdt-dark.png">
-  <img src="img/cadena-tdt-light.png" alt="Cadena TDT">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/cadena-tdt-dark.png">
+  <img src="../img/cadena-tdt-light.png" alt="Cadena TDT">
 </picture>
 
 ## 14. Probar sin antena con `--gen`
@@ -280,8 +280,8 @@ Requisitos: el vídeo lo decodifica el navegador con WebCodecs (Chrome o Edge co
 Cada protocolo trae su modulador, así que puedes **generar** una señal y decodificarla sin radio:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/guia/flujo-sin-antena-dark.png">
-  <img src="img/guia/flujo-sin-antena-light.png" alt="Generar, reproducir y decodificar">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/guia/flujo-sin-antena-dark.png">
+  <img src="../img/guia/flujo-sin-antena-light.png" alt="Generar, reproducir y decodificar">
 </picture>
 
 ```sh
@@ -308,8 +308,8 @@ Cada protocolo trae su modulador, así que puedes **generar** una señal y decod
 ## 16. Solución de problemas
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/guia/solucion-problemas-dark.png">
-  <img src="img/guia/solucion-problemas-light.png" alt="Solución de problemas">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/guia/solucion-problemas-dark.png">
+  <img src="../img/guia/solucion-problemas-light.png" alt="Solución de problemas">
 </picture>
 
 **Equipo ocupado.** El servidor no puede abrir el bladeRF y lo dice en el registro. Otro proceso lo tiene abierto (típicamente el servicio `openwebrx`). Para el otro programa antes de arrancar este; no hay forma de compartir el dispositivo. Mientras tanto puedes seguir probando con `--replay`.
@@ -320,11 +320,11 @@ Cada protocolo trae su modulador, así que puedes **generar** una señal y decod
 - `drops`: bloques que el hilo DSP no consumió a tiempo (anillo lleno). Libera CPU, activa la GPU o baja la tasa y el tamaño de FFT. En una instancia de decodificador, los descartes indican que esa instancia va retrasada, no el motor.
 - `ring_ms` cerca del tamaño del anillo significa que el DSP va justo.
 
-Medidas en [RENDIMIENTO.md](RENDIMIENTO.md):
+Medidas en [RENDIMIENTO.md](../arquitectura/RENDIMIENTO.md):
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/rendimiento/rendimiento-bladerf-dark.png">
-  <img src="img/rendimiento/rendimiento-bladerf-light.png" alt="Rendimiento con el bladeRF real">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/rendimiento/rendimiento-bladerf-dark.png">
+  <img src="../img/rendimiento/rendimiento-bladerf-light.png" alt="Rendimiento con el bladeRF real">
 </picture>
 
 **Sin señal.** Cascada plana o solo ruido, decodificadores en `esperando`, audio mudo:
@@ -336,7 +336,7 @@ Medidas en [RENDIMIENTO.md](RENDIMIENTO.md):
 
 **Antena.** Con la antena actual **no llega ADS-B** (1090 MHz) ni UHF suficiente para la **TDT**; la causa es la antena, no el decodificador (probado con vectores públicos y señal sintética). Para la TDT usa la **toma de antena de TV de casa**.
 
-**La web no conecta o se queda sin datos.** Comprueba que el servidor sigue vivo; el cliente reintenta solo (0,5 s, multiplicando por 1,7 hasta 6 s). El diagrama de la sesión está en [PROTOCOLO.md](PROTOCOLO.md).
+**La web no conecta o se queda sin datos.** Comprueba que el servidor sigue vivo; el cliente reintenta solo (0,5 s, multiplicando por 1,7 hasta 6 s). El diagrama de la sesión está en [PROTOCOLO.md](../arquitectura/WEBSOCKET.md).
 
 ## 17. Consejos de antena
 

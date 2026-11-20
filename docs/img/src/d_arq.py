@@ -1,4 +1,4 @@
-"""Arquitectura: hilos y flujo de datos (src/engine.c, src/decoders/host.c, docs/CUDA.md)."""
+"""Arquitectura: hilos y flujo de datos (src/engine.c, src/decoders/host.c, docs/arquitectura/CUDA.md)."""
 from lib import *
 
 

@@ -1,4 +1,4 @@
-"""Protocolo WebSocket (docs/PROTOCOLO.md)."""
+"""Protocolo WebSocket (docs/arquitectura/WEBSOCKET.md)."""
 from lib import *
 
 

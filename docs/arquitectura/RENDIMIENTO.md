@@ -7,7 +7,7 @@ Código: `src/engine.{h,c}`, `src/dsp/channel.{h,c}`. Prueba: `tests/test_engine
 
 Medido con el bladeRF real (un cliente WebSocket, espectro en GPU): 61,44 Msps pedidos → 60,3
 reales y 57 overruns en 20 s; 122,88 → 52,2 Msps y 13 914 overruns; el hilo DSP al 0,9.
-Causas (C2, `docs/CUDA.md` §7): (1) cada cliente mezclaba y diezmaba TODAS las muestras aunque
+Causas (C2, `docs/arquitectura/CUDA.md` §7): (1) cada cliente mezclaba y diezmaba TODAS las muestras aunque
 no escuchara; (2) quitar la continua con un IIR por muestra costaba 3,4 ms por bloque de 1 Mi;
 (3) `source_read` iba en el mismo hilo que el procesado: cualquier pausa era un overrun.
 
@@ -148,7 +148,7 @@ uno de los dos factores.
 
 ## 6. Pendientes para otros ficheros
 * `host.{h,c}`: `dec_host_needs_float()` ya existe (C2); `engine.c` puede sustituir su deducción por esa llamada.
-* (hecho) `docs/PROTOCOLO.md`: `stats.drops`, `stats.ring_ms`, `overruns`.
+* (hecho) `docs/arquitectura/WEBSOCKET.md`: `stats.drops`, `stats.ring_ms`, `overruns`.
 * `Makefile`/`filter.c`: `firdec_process` y `cfir_process` siguen siendo serie (los usa el DDC del host).
 
 ## 7. Barrido a modo lento (no medido)
@@ -159,15 +159,15 @@ No se midió la latencia de retuneo frente al tiempo de asentamiento: `src/sdr/s
 Las barras usan solo las cifras de las tablas de este documento.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/rendimiento/rendimiento-ficheros-dark.png">
-  <img src="img/rendimiento/rendimiento-ficheros-light.png" alt="Motor DSP antes y después con ficheros">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/rendimiento/rendimiento-ficheros-dark.png">
+  <img src="../img/rendimiento/rendimiento-ficheros-light.png" alt="Motor DSP antes y después con ficheros">
 </picture>
 
 *Figura 1. §3: tasa sostenida y CPU del proceso antes y después, con fuentes de fichero. «n/d»: la medida «antes» no sostuvo la tasa y no dio cifra de núcleos.*
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/rendimiento/rendimiento-bladerf-dark.png">
-  <img src="img/rendimiento/rendimiento-bladerf-light.png" alt="Rendimiento con el bladeRF real">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/rendimiento/rendimiento-bladerf-dark.png">
+  <img src="../img/rendimiento/rendimiento-bladerf-light.png" alt="Rendimiento con el bladeRF real">
 </picture>
 
 *Figura 2. §4: con el bladeRF real. Los overruns de 122,88 Msps se midieron con la máquina a carga 56; con el equipo libre fueron 22 en 25 s (tabla de repetición).*

@@ -1,5 +1,5 @@
 /*
- * pocsag.c — Decodificador POCSAG (512 / 1200 / 2400 bit/s). Ver docs/decoders/pocsag.md.
+ * pocsag.c — Decodificador POCSAG (512 / 1200 / 2400 bit/s). Ver docs/protocolos/pocsag.md.
  *
  * Cadena: IQ 48 kHz → FIR de canal → discriminador FM → tres receptores en
  * paralelo (uno por velocidad: sps = 93,75 / 40 / 20), cada uno con su filtro

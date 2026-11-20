@@ -1,6 +1,6 @@
 /*
  * vdl2.c — Decodificador VDL Modo 2 (D8PSK 10 500 símb/s, ICAO Doc 9776 /
- * ETSI EN 301 841-1). Ver docs/decoders/vdl2.md.
+ * ETSI EN 301 841-1). Ver docs/protocolos/vdl2.md.
  *
  * Señal. Cada ráfaga lleva 3 bits por símbolo codificados en el INCREMENTO de fase
  * (D8PSK: Δφ = k·π/4), filtrada con raíz de coseno alzado α = 0,6. Una ráfaga =
@@ -448,7 +448,7 @@ static void burst(vdl2_t *s, const cf32 *x, int n, int start, double now, dec_em
         return;
     }
     /* La longitud: la cabecera de 25 bits (3 reservados + 17 de longitud + 5 de paridad) NO se
-     * pudo contrastar con la grabación real (ver docs/decoders/vdl2.md), así que no se usa
+     * pudo contrastar con la grabación real (ver docs/protocolos/vdl2.md), así que no se usa
      * como única fuente: se prueba primero la longitud de la cabecera si es verosímil y después
      * todas las longitudes D tales que datos+paridad RS cabe en los bits recibidos (±3 bytes por
      * los símbolos de rampa de bajada). */

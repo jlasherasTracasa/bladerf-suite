@@ -1,6 +1,6 @@
 /*
  * vdl2_frame.c — Cabecera, aleatorizador, FEC Reed-Solomon entrelazado y HDLC de
- * VDL2. Ver vdl2_frame.h y docs/decoders/vdl2.md.
+ * VDL2. Ver vdl2_frame.h y docs/protocolos/vdl2.md.
  */
 #include "vdl2_frame.h"
 #include "../dsp/crc.h"
@@ -72,7 +72,7 @@ int vdl2_hdr_decode(const uint8_t bits[VDL2_HDR_BITS], uint32_t *len)
 /* ---- Aleatorizador ------------------------------------------------------- */
 /* Aleatorizador aditivo. Registro de 15 bits con x^15 + x^14 + 1: la secuencia cumple
  * g[n] = g[n-1] ^ g[n-15]. CONTRASTADO con grabación real (sigidwiki "VDL-M2 IQ", ver
- * docs/VALIDACION.md): se actúa solo sobre los datos (el primer bit tras la cabecera de 25
+ * docs/calidad/VALIDACION.md): se actúa solo sobre los datos (el primer bit tras la cabecera de 25
  * bits; la cabecera NO se aleatoriza) y los 15 primeros bits de la secuencia son
  * 010011100011111 (obtenidos de bursts cuyo primer octeto es la bandera 0x7E y la dirección
  * 0x14; coinciden en varias ráfagas y la recurrencia predice los bits siguientes). */

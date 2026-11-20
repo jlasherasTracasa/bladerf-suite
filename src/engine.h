@@ -10,7 +10,7 @@
  * Hilos: un LECTOR (source_read en bucle sobre un anillo de 0,25–0,5 s) y el DSP, que
  * consume del anillo. Si el DSP se atrasa más de lo que cabe en el anillo, se
  * descartan bloques enteros (status.stats.drops); los overruns que declara el
- * hardware se cuentan aparte (status.stats.overruns). Ver docs/RENDIMIENTO.md.
+ * hardware se cuentan aparte (status.stats.overruns). Ver docs/arquitectura/RENDIMIENTO.md.
  *
  * Por cada bloque de muestras (~20 ms):
  *   1. Toma el bloque más viejo del anillo.

@@ -6,7 +6,7 @@
  * pilotos continuos y dispersos (4/3), portadoras TPS DBPSK y prefijo cíclico. Los bloques
  * de codificación son los mismos que usa el receptor (src/tv/dvbt_tab.c), de modo que un
  * error de constantes común a ambos lo detectaría solo un vector externo (ver
- * tests/test_dvbt_rx.c y docs/decoders/dvbt.md: validado contra GNU Radio gr-dtv).
+ * tests/test_dvbt_rx.c y docs/protocolos/dvbt.md: validado contra GNU Radio gr-dtv).
  *
  * Jerarquía: el flujo HP ocupa y0,y1 y el LP el resto de bits; α = 1, 2, 4 (campo TPS).
  *

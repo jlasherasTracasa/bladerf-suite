@@ -1,5 +1,5 @@
 /*
- * adsb.c — Decodificador Mode S / ADS-B. Ver adsb.h y docs/ADSB.md.
+ * adsb.c — Decodificador Mode S / ADS-B. Ver adsb.h y docs/protocolos/adsb.md.
  *
  * Numeración de bits: como en la bibliografía, los campos se describen con
  * bits numerados desde 1 (el primer bit de la trama es el bit 1). La función

@@ -35,7 +35,7 @@
  * CRC) están contrastadas con las implementaciones de código abierto
  * gr-lora_sdr (EPFL), LoRa-SDR (Pothosware) y gr-lora (rpp0) leídas como
  * referencia de HECHOS; LoRa es propietario y NO se han verificado contra
- * tramas de un chip Semtech real: ver docs/decoders/lora.md (limitaciones).
+ * tramas de un chip Semtech real: ver docs/protocolos/lora.md (limitaciones).
  *
  * Receptor (lora_rx_*): trabaja a 2·BW. Por cada SF activo, ventanas de N·2
  * muestras sin solape detectan el preámbulo (mismo bin de pico ≥ 4 veces),

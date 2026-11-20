@@ -12,7 +12,7 @@
  * le suma un suelo ε = 1e-4·(potencia media de x)·max(tlen) para que las señales sin ruido (ficheros
  * sintéticos) no den correlaciones espurias en los huecos de energía casi nula.
  * Método: solape-guardado con FFT de tamaño nfft; la FFT de cada bloque de x se
- * comparte entre las NT plantillas (E38 de docs/INVESTIGACION.md): coste ≈ (1+NT)
+ * comparte entre las NT plantillas (E38 de docs/investigacion/INVESTIGACION.md): coste ≈ (1+NT)
  * FFT de nfft por cada nfft − maxlen + 1 muestras.
  */
 #ifndef BLADERF_LAB_NR_CORR_H

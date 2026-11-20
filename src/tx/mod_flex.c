@@ -4,7 +4,7 @@
  * Genera UNA trama FLEX con la estructura de decoders/flex.h (Sync 1 = dotting
  * + palabra A, FIW, Sync 2 = 16 símbolos de dotting a la velocidad de datos, y
  * 11 bloques por fase con entrelazado 8×32). Las constantes no confirmadas se
- * listan en flex.h y docs/decoders/flex.md; el decodificador y este modulador
+ * listan en flex.h y docs/protocolos/flex.md; el decodificador y este modulador
  * comparten esa interpretación, así que el test sintético NO valida la
  * concordancia con transmisores reales.
  *

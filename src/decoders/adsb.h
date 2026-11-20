@@ -29,7 +29,7 @@
  *
  * Referencia principal: Junzi Sun, "The 1090 Megahertz Riddle: A Guide to
  * Decoding Mode S and ADS-B Signals", 2ª ed., TU Delft OPEN Publishing, 2021.
- * Ver docs/ADSB.md para la explicación detallada.
+ * Ver docs/protocolos/adsb.md para la explicación detallada.
  */
 #ifndef BLADERF_LAB_ADSB_H
 #define BLADERF_LAB_ADSB_H

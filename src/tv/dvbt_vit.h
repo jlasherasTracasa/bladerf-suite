@@ -13,7 +13,7 @@
  *     new[j+32] = máx(pm[2j] − M_j, pm[2j+1] + M_j)
  * Convención soft: positivo = más probable el bit 0; 0 = borrado (perforado).
  *
- * Tasa medida: ver docs/decoders/dvbt.md.
+ * Tasa medida: ver docs/protocolos/dvbt.md.
  */
 #ifndef BLADERF_LAB_DVBT_VIT_H
 #define BLADERF_LAB_DVBT_VIT_H

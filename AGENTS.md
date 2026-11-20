@@ -285,7 +285,7 @@ reconstruye su tabla en cada llamada (en bucles usa `crc_t`).
 
 ### 4.6 Protocolo WebSocket (`GET /ws`)
 
-Todo en little-endian. A1 lo documenta ampliado en `docs/PROTOCOLO.md`.
+Todo en little-endian. A1 lo documenta ampliado en `docs/arquitectura/WEBSOCKET.md`.
 
 **Binario servidor → cliente** (byte 0 = tipo):
 
@@ -486,30 +486,30 @@ D1–D9, C1, H1, T1, W2 y F1 (implementación). **Fase 3**: integración y verif
 
 | Agente | Tarea | Ficheros que posee |
 |---|---|---|
-| A0 investigación | Papers implementables (decodificación, emisión, CUDA, firmware) | `docs/INVESTIGACION.md` |
+| A0 investigación | Papers implementables (decodificación, emisión, CUDA, firmware) | `docs/investigacion/INVESTIGACION.md` |
 | A1 base | Makefile, main.c, perfiles, host, DDC, `cresamp_t`, TX (tx.c, iqbuf, política), stubs, migrar ADS-B, test_util, docs de arquitectura | `Makefile`, `src/main.c`, `src/profiles.*`, `src/engine.*`, `src/decoders/{decoder.h,host.*,registry.c}`, `src/decoders/adsb.*` (envoltorio), `src/dsp/ddc.*`, `src/dsp/filter.*`, `src/tx/{mod.h,iqbuf.c,modreg.c,tx.*}`, stubs `src/decoders/<id>.c` y `src/tx/mod_<id>.c`, `tests/{test_util.h,run_tests.sh,test_dsp.c,test_json.c,test_adsb.c,test_host.c}`, `docs/{ARQUITECTURA,PROTOCOLO,DSP,ADSB,TX}.md`, `.gitignore` |
 | A2 web | Interfaz completa según §4.6 | `web/**` |
 | A3 DSP común | FEC (Viterbi, RS, BCH, Golay, Hamming), CRC genérico, sincronía (Gardner, M&M, Costas, PLL, FLL, Farrow), pulsos (RRC, gaussiano), FIR real/complejo con coeficientes propios, utilidades de bits | `src/dsp/{fec,crc,sync,pulse,bits}.*`, `tests/{test_fec,test_crc,test_sync}.c` |
-| D1 radiodifusión | rds, dab | `src/decoders/{rds,dab*}.c/h`, `src/tx/mod_{rds,dab}.c`, `tests/test_{rds,dab}.c`, `docs/decoders/{rds,dab}.md` |
+| D1 radiodifusión | rds, dab | `src/decoders/{rds,dab*}.c/h`, `src/tx/mod_{rds,dab}.c`, `tests/test_{rds,dab}.c`, `docs/protocolos/{rds,dab}.md` |
 | D2 marítimo/AX.25 | ais, dsc, aprs | `src/decoders/{ais,dsc,aprs,hdlc}.*`, `src/tx/mod_{ais,dsc,aprs}.c`, tests, docs |
 | D3 busca/DMR | pocsag, flex, dmr | `src/decoders/{pocsag,flex,dmr}.*`, mods, tests, docs |
 | D4 aviación | acars, vdl2 | `src/decoders/{acars,vdl2}.*`, mods, tests, docs |
 | D5 ISM/telemetría | ism, rs41 | `src/decoders/{ism*,rs41}.*`, mods, tests, docs |
 | D6 LoRa | lora, meshtastic | `src/decoders/{lora*,meshtastic,aes}.*`, mods, tests, docs |
 | D7 celular | lte, nr, gsm | `src/decoders/{lte,nr,gsm}*.*`, mods, tests, docs |
-| D9 ADS-B+ | Mejoras de INVESTIGACION.md E1/E2: confianza por bit, corrección CRC de 1–2 bits en bits dudosos, entramado por CRC como modo alternativo, superposición de tramas | `src/decoders/adsb.*`, `tests/test_adsb.c` (ampliar), `docs/ADSB.md` |
+| D9 ADS-B+ | Mejoras de docs/investigacion/INVESTIGACION.md E1/E2: confianza por bit, corrección CRC de 1–2 bits en bits dudosos, entramado por CRC como modo alternativo, superposición de tramas | `src/decoders/adsb.*`, `tests/test_adsb.c` (ampliar), `docs/protocolos/adsb.md` |
 | D8 WiFi/TDT | wifi, dvbt | `src/decoders/{wifi,dvbt}*.*`, mods, tests, docs |
-| C1 CUDA | Canalizador polifásico en GPU para alimentar muchos decodificadores, mejoras de espectro, lo que salga de A0 | `src/gpu/**`, integración en `host.c` y en `spectrum.*`, `docs/CUDA.md`, `tests/test_gpu.c` |
-| H1 hardware (host) | Funciones de la FPGA 0.16 desde el host (oversample 122,88 Msps SC8, AGC rápida/lenta, calibración de ganancia, quick-tune y barrido), y la parte de host de lo que haga F1 | `src/sdr/**`, `engine_sanitize`/`alloc_block` en `engine.c`, órdenes nuevas en `main.c`, `docs/HARDWARE.md`, `tests/test_source.c` |
-| F1 FPGA | Copia del árbol oficial, compilación reproducible con Quartus 20.1, simulación, bloques DSP nuevos en la FPGA (fase 1: cadena de herramientas y análisis; fase 2: implementación según A0) | `firmware/**`, `docs/FIRMWARE.md` |
-| T1 emisión | Mejoras de TX según A0 (calibración IQ/LO por bucle interno, reproducción de SigMF, simulador de canal) | `src/tx/tx.*`, `src/tx/cal*.c`, `tests/test_tx.c`, `docs/TX.md` |
+| C1 CUDA | Canalizador polifásico en GPU para alimentar muchos decodificadores, mejoras de espectro, lo que salga de A0 | `src/gpu/**`, integración en `host.c` y en `spectrum.*`, `docs/arquitectura/CUDA.md`, `tests/test_gpu.c` |
+| H1 hardware (host) | Funciones de la FPGA 0.16 desde el host (oversample 122,88 Msps SC8, AGC rápida/lenta, calibración de ganancia, quick-tune y barrido), y la parte de host de lo que haga F1 | `src/sdr/**`, `engine_sanitize`/`alloc_block` en `engine.c`, órdenes nuevas en `main.c`, `docs/hardware/HARDWARE.md`, `tests/test_source.c` |
+| F1 FPGA | Copia del árbol oficial, compilación reproducible con Quartus 20.1, simulación, bloques DSP nuevos en la FPGA (fase 1: cadena de herramientas y análisis; fase 2: implementación según A0) | `firmware/**`, `docs/hardware/FIRMWARE.md` |
+| T1 emisión | Mejoras de TX según A0 (calibración IQ/LO por bucle interno, reproducción de SigMF, simulador de canal) | `src/tx/tx.*`, `src/tx/cal*.c`, `tests/test_tx.c`, `docs/arquitectura/TX.md` |
 | W2 web 2 | Vistas específicas: mapa (ADS-B, AIS, APRS, Meshtastic, RS41), RDS en el panel de audio, listas de buscas, celdas y redes | `web/**` |
 
 `README.md` y `AGENTS.md` solo los edita el orquestador.
 
 **Traspasos al empezar la fase 2** (A1, A2 y A3 han terminado y están verificados):
-`src/decoders/adsb.*`, `tests/test_adsb.c`, `tests/test_host.c`, `docs/ADSB.md` → D9 ·
-`src/tx/tx.*`, `docs/TX.md` → T1 · `src/decoders/host.c` (solo el enganche de
+`src/decoders/adsb.*`, `tests/test_adsb.c`, `tests/test_host.c`, `docs/protocolos/adsb.md` → D9 ·
+`src/tx/tx.*`, `docs/arquitectura/TX.md` → T1 · `src/decoders/host.c` (solo el enganche de
 GPU) → C1 · `src/net/server.c` (guardia de `_GNU_SOURCE` y avisos de truncado)
 y `web/**` → W2 · `src/main.c`: H1 y T1 añaden órdenes (relee antes de cada
 edición). `Makefile`, `profiles.c`, `ddc.*`, `filter.*`: sin dueño; pide cambios
@@ -526,7 +526,7 @@ array de objetos se muestra como tabla.
 
 Recogidos por el orquestador de los informes verificados de fase 2:
 
-1. `docs/PROTOCOLO.md` + web: mensaje binario tipo 4 (barrido), órdenes
+1. `docs/arquitectura/WEBSOCKET.md` + web: mensaje binario tipo 4 (barrido), órdenes
    `sweep`/`sweep_stop`/`tx_play`/`tx_cal`, campos nuevos de `status`
    (`sweep`, `format`, `oversample`, `dbm_offset`, `gain_mode` fast/slow/hybrid,
    `device.rate_max_oversample`) y de `dec_state` de ADS-B (`fps`, `fix1`,
@@ -553,7 +553,7 @@ Recogidos por el orquestador de los informes verificados de fase 2:
     oculta o agrupa (UX1), pero hay que corregirlo en origen: excluir los bordes y
     fusionar las detecciones contiguas dentro del ancho ocupado.
 11. Web (pulido menor): RDS `af` se muestra en Hz crudos (pasar a MHz); «Ancho RF»
-    sale «—» con fuente de fichero (ver `docs/QA_WEB.md`).
+    sale «—» con fuente de fichero (ver `docs/calidad/QA_WEB.md`).
 12. Enlace USB: el 2026-11-16 la placa estaba en USB 2.0 Hi-Speed (≈ 45 MB/s,
     ≈ 11 Msps). Volver a medir el caudal (RX normal, 61,44 Msps y el modo espectro
     de la imagen lab) con USB 3 SuperSpeed (`bladeRF-cli -e info`).
@@ -608,7 +608,7 @@ Debe sostener en tiempo real 64-QAM 2/3 (≈ 20–24 Mb/s de TS) en ≤ 1,5
 núcleos: Viterbi con AVX2/SSE (o GPU si hiciera falta) y nada de `malloc` por
 símbolo.
 
-**Protocolo de TV2** (ampliar `docs/PROTOCOLO.md`):
+**Protocolo de TV2** (ampliar `docs/arquitectura/WEBSOCKET.md`):
 - Órdenes: `{"cmd":"tv","freq":Hz}` (sintoniza un múltiplex: centro y tasa
   del hardware y crea la instancia "tdt"), `{"cmd":"tv_service","sid":N}`,
   `{"cmd":"tv_stop"}`, `{"cmd":"tv_scan","start":Hz,"stop":Hz}` (recorre los
@@ -626,8 +626,8 @@ símbolo.
 
 | Agente | Tarea | Ficheros |
 |---|---|---|
-| TV1 receptor | DVB-T completo hasta TS (sincronía, ecualización, demapeo blando, desentrelazado interno y externo, Viterbi rápido, RS(204,188), desaleatorizado), validado con IQ real de esta ubicación | `src/tv/dvbt_rx.*`, `src/tv/dvbt_*.{h,c}`, `src/decoders/dvbt*.{c,h}` (absorbe el de D8), `src/tx/mod_dvbt.c` (modulador completo de TS para tests), `tests/test_dvbt*.c`, `docs/decoders/dvbt.md`, `docs/TDT.md` (parte del receptor) |
-| TV2 TS y reproductor | Demux TS, PSI/SI con nombres de canal, PES/PTS, decodificador MP2 propio, decodificador "tdt" en el host, órdenes y mensajes, pestaña TV en la web con WebCodecs y sincronía A/V | `src/tv/{ts,psi,pes,mp2,tv}.{h,c}`, `src/decoders/tdt.c` (+ registro en `registry.c`), órdenes `tv*` en `main.c`, `web/js/tv.js` + pestaña en `web/`, `tests/test_{ts,mp2,tv}.c`, `docs/TDT.md` (parte de TS/reproductor), `docs/PROTOCOLO.md` (sección TV) |
+| TV1 receptor | DVB-T completo hasta TS (sincronía, ecualización, demapeo blando, desentrelazado interno y externo, Viterbi rápido, RS(204,188), desaleatorizado), validado con IQ real de esta ubicación | `src/tv/dvbt_rx.*`, `src/tv/dvbt_*.{h,c}`, `src/decoders/dvbt*.{c,h}` (absorbe el de D8), `src/tx/mod_dvbt.c` (modulador completo de TS para tests), `tests/test_dvbt*.c`, `docs/protocolos/dvbt.md`, `docs/protocolos/tdt.md` (parte del receptor) |
+| TV2 TS y reproductor | Demux TS, PSI/SI con nombres de canal, PES/PTS, decodificador MP2 propio, decodificador "tdt" en el host, órdenes y mensajes, pestaña TV en la web con WebCodecs y sincronía A/V | `src/tv/{ts,psi,pes,mp2,tv}.{h,c}`, `src/decoders/tdt.c` (+ registro en `registry.c`), órdenes `tv*` en `main.c`, `web/js/tv.js` + pestaña en `web/`, `tests/test_{ts,mp2,tv}.c`, `docs/protocolos/tdt.md` (parte de TS/reproductor), `docs/arquitectura/WEBSOCKET.md` (sección TV) |
 
 ## 9. Estilo
 

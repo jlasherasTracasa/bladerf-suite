@@ -207,11 +207,11 @@ def frames():
     frame_render("rds-estructura", "RDS: estructura de un grupo (4 bloques × 26 bits)", [
         ("Grupo 0A (nombre de emisora, PS)", [("PI", 16, "A + 10 CRC"), ("grupo/B0/TP/PTY", 16, "tipo 0A, TP, PTY"), ("TA MS DI seg.", 16, "2 car. de PS"), ("AF", 16, "frecuencias"), ("PS", 16, "2 caracteres")]),
         ("Grupo 2A (RadioText)", [("PI", 16, "bloque A"), ("2A + A/B", 16, "bloque B"), ("RT", 16, "2 caracteres"), ("RT", 16, "2 caracteres")]),
-    ], "Estructura según EN 50067 y docs/decoders/rds.md. Cada bloque son 16 bits de información + 10 de síndrome con offset. Ilustración dibujada.", rh=1.1)
+    ], "Estructura según EN 50067 y docs/protocolos/rds.md. Cada bloque son 16 bits de información + 10 de síndrome con offset. Ilustración dibujada.", rh=1.1)
     frame_render("pocsag-estructura", "POCSAG: estructura de un lote (17 palabras de 32 bits)", [
         ("Transmisión", [("preámbulo", 18, "576 bit 1010…"), ("sincronía", 2, "0x7CD215D8"), ("lote 0", 16, "8 tramas × 2 palabras"), ("sincronía", 2, ""), ("lote 1", 16, "")]),
         ("Palabra de 32 bits", [("0/1", 1, "dir./msj"), ("20 bits", 20, "dirección (18) + función (2) o texto"), ("BCH(31,21)", 10, "10 bits"), ("par.", 1, "paridad")]),
-    ], "Estructura según ITU-R M.584 y docs/decoders/pocsag.md. Ilustración dibujada.", rh=1.2)
+    ], "Estructura según ITU-R M.584 y docs/protocolos/pocsag.md. Ilustración dibujada.", rh=1.2)
     frame_render("ism-estructura", "ISM: un sensor meteorológico OOK (Oregon / LaCrosse)", [
         ("Ráfaga, repetida varias veces", [("preámbulo", 12, "sincronía"), ("id/canal", 14, "tipo de sensor"), ("temp.", 16, "BCD"), ("humedad", 10, ""), ("batería", 6, ""), ("CRC / suma", 14, "valida el protocolo")]),
     ], "Esquema genérico; los campos exactos de cada modelo están en src/decoders/ism_protocols.c. Ilustración dibujada.", rh=1.5)

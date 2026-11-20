@@ -153,7 +153,7 @@ Capturas de la interfaz real, a 1440 px. Las del receptor, la emisión y la TV s
 </tr>
 </table>
 
-Más capturas, pestaña por pestaña, en la [guía de uso](docs/GUIA.md).
+Más capturas, pestaña por pestaña, en la [guía de uso](docs/uso/GUIA.md).
 
 ---
 
@@ -176,7 +176,7 @@ Más capturas, pestaña por pestaña, en la [guía de uso](docs/GUIA.md).
 | Televisión | **DVB-T** (parámetros TPS) y **TDT** completa (vídeo y audio) |
 
 Solo se decodifica información de difusión o de sistema: nada de voz digital, identidades de abonados ni tráfico cifrado.
-Una ficha por protocolo (qué es, frecuencia, cadena y validación) en [docs/PROTOCOLOS.md](docs/PROTOCOLOS.md).
+Una ficha por protocolo (qué es, frecuencia, cadena y validación) en [docs/uso/PROTOCOLOS.md](docs/uso/PROTOCOLOS.md).
 
 ---
 
@@ -187,7 +187,7 @@ Una ficha por protocolo (qué es, frecuencia, cadena y validación) en [docs/PRO
   <img src="docs/img/arquitectura-light.png" alt="Hilos y flujo de datos: lector, hilo DSP, host de decodificadores, servidor WebSocket, TX y TV">
 </picture>
 
-El hilo DSP no se bloquea nunca: `dec_host_feed()` solo encola punteros a bloques compartidos con contador de referencias, y cada instancia de decodificador trabaja en su propio hilo con su propio DDC (o con el DDC por lotes en GPU). Más detalle en [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md), [docs/PROTOCOLO.md](docs/PROTOCOLO.md) y [docs/CUDA.md](docs/CUDA.md).
+El hilo DSP no se bloquea nunca: `dec_host_feed()` solo encola punteros a bloques compartidos con contador de referencias, y cada instancia de decodificador trabaja en su propio hilo con su propio DDC (o con el DDC por lotes en GPU). Más detalle en [docs/arquitectura/ARQUITECTURA.md](docs/arquitectura/ARQUITECTURA.md), [docs/arquitectura/WEBSOCKET.md](docs/arquitectura/WEBSOCKET.md) y [docs/arquitectura/CUDA.md](docs/arquitectura/CUDA.md).
 
 <details>
 <summary><b>Estructura del repositorio</b></summary>
@@ -256,13 +256,13 @@ Cada protocolo tiene su modulador, así que se puede probar un decodificador de 
 ./build/bladerf-lab --replay /tmp/ais.sigmf-meta --decode ais@161975000 --print
 ```
 
-Los perfiles (`--profile`) y todos los pasos de uso, con capturas, están en la [guía de uso](docs/GUIA.md).
+Los perfiles (`--profile`) y todos los pasos de uso, con capturas, están en la [guía de uso](docs/uso/GUIA.md).
 
 ---
 
 ## Emisión
 
-La emisión está desactivada por defecto y sigue una política estricta (detalles en [AGENTS.md §6](AGENTS.md) y [docs/TX.md](docs/TX.md)):
+La emisión está desactivada por defecto y sigue una política estricta (detalles en [AGENTS.md §6](AGENTS.md) y [docs/arquitectura/TX.md](docs/arquitectura/TX.md)):
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/politica-tx-dark.png">
@@ -290,7 +290,7 @@ Los 21 decodificadores superan la prueba de extremo a extremo (generar la señal
 - **TDT:** el receptor reproduce un TS idéntico al de gr-dtv, pero con la antena actual la SNR en el aire (≈ −9 dB) no permite sacar TS.
 - **Hardware:** no llega ADS-B a 1090 MHz con la antena actual; los modos `loopback` y `air`, el modo de 122,88 Msps y la imagen FPGA «lab» no se han probado en la placa.
 
-Detalle en [docs/VALIDACION.md](docs/VALIDACION.md) y en cada `docs/decoders/<protocolo>.md`.
+Detalle en [docs/calidad/VALIDACION.md](docs/calidad/VALIDACION.md) y en cada `docs/protocolos/<protocolo>.md`.
 
 ---
 
@@ -298,17 +298,17 @@ Detalle en [docs/VALIDACION.md](docs/VALIDACION.md) y en cada `docs/decoders/<pr
 
 | | Documento | Contenido |
 |---|---|---|
-| <img src="docs/img/screens/receptor.png" width="96" alt=""> | [**Guía de uso**](docs/GUIA.md) | Paso a paso con capturas: perfiles, decodificadores, mapa, grabación, barrido, emisión y TV; consejos de antena |
-| <img src="docs/img/mapa-bandas-light.png" width="96" alt=""> | [**Protocolos**](docs/PROTOCOLOS.md) | Una ficha por protocolo con el mapa de bandas |
-| <img src="docs/img/arquitectura-light.png" width="96" alt=""> | [Arquitectura](docs/ARQUITECTURA.md) | Hilos, host de decodificadores, módulos |
-| <img src="docs/img/protocolo-ws-light.png" width="96" alt=""> | [Protocolo WebSocket](docs/PROTOCOLO.md) | Mensajes binarios y JSON |
-| <img src="docs/img/canal-audio-light.png" width="96" alt=""> | [DSP](docs/DSP.md) | Filtros, remuestreo, DDC y canal de audio |
-| <img src="docs/img/cadena-tdt-light.png" width="96" alt=""> | [TDT](docs/TDT.md) | Demux, audio MP2 y reproductor; receptor DVB-T |
-| <img src="docs/img/politica-tx-light.png" width="96" alt=""> | [Emisión](docs/TX.md) | Moduladores, política de `air`, calibración |
-| <img src="docs/img/gpu-light.png" width="96" alt=""> | [CUDA](docs/CUDA.md) | DDC por lotes, PFB y espectro asíncrono, con medidas |
-| <img src="docs/img/fpga-lab-light.png" width="96" alt=""> | [Hardware](docs/HARDWARE.md) · [Firmware/FPGA](docs/FIRMWARE.md) | Funciones del equipo y la imagen «lab» |
-| <img src="docs/img/matriz-validacion-light.png" width="96" alt=""> | [Validación](docs/VALIDACION.md) | Qué se ha contrastado con señales reales |
-| | [ADS-B](docs/ADSB.md) · [Rendimiento](docs/RENDIMIENTO.md) · [Investigación](docs/INVESTIGACION.md) | Detalle de ADS-B, medidas de rendimiento y papers aplicados |
+| <img src="docs/img/screens/receptor.png" width="96" alt=""> | [**Guía de uso**](docs/uso/GUIA.md) | Paso a paso con capturas: perfiles, decodificadores, mapa, grabación, barrido, emisión y TV; consejos de antena |
+| <img src="docs/img/mapa-bandas-light.png" width="96" alt=""> | [**Protocolos**](docs/uso/PROTOCOLOS.md) | Una ficha por protocolo con el mapa de bandas |
+| <img src="docs/img/arquitectura-light.png" width="96" alt=""> | [Arquitectura](docs/arquitectura/ARQUITECTURA.md) | Hilos, host de decodificadores, módulos |
+| <img src="docs/img/protocolo-ws-light.png" width="96" alt=""> | [Protocolo WebSocket](docs/arquitectura/WEBSOCKET.md) | Mensajes binarios y JSON |
+| <img src="docs/img/canal-audio-light.png" width="96" alt=""> | [DSP](docs/arquitectura/DSP.md) | Filtros, remuestreo, DDC y canal de audio |
+| <img src="docs/img/cadena-tdt-light.png" width="96" alt=""> | [TDT](docs/protocolos/tdt.md) | Demux, audio MP2 y reproductor; receptor DVB-T |
+| <img src="docs/img/politica-tx-light.png" width="96" alt=""> | [Emisión](docs/arquitectura/TX.md) | Moduladores, política de `air`, calibración |
+| <img src="docs/img/gpu-light.png" width="96" alt=""> | [CUDA](docs/arquitectura/CUDA.md) | DDC por lotes, PFB y espectro asíncrono, con medidas |
+| <img src="docs/img/fpga-lab-light.png" width="96" alt=""> | [Hardware](docs/hardware/HARDWARE.md) · [Firmware/FPGA](docs/hardware/FIRMWARE.md) | Funciones del equipo y la imagen «lab» |
+| <img src="docs/img/matriz-validacion-light.png" width="96" alt=""> | [Validación](docs/calidad/VALIDACION.md) | Qué se ha contrastado con señales reales |
+| | [ADS-B](docs/protocolos/adsb.md) · [Rendimiento](docs/arquitectura/RENDIMIENTO.md) · [Investigación](docs/investigacion/INVESTIGACION.md) | Detalle de ADS-B, medidas de rendimiento y papers aplicados |
 | | [AGENTS.md](AGENTS.md) | Contratos entre módulos, catálogo de protocolos y plan de trabajo |
 
 Los diagramas se generan con `python3 docs/img/src/gen.py` y se renderizan a PNG (claro y oscuro) con `docs/img/render.sh`.

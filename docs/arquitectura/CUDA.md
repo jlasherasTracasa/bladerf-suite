@@ -3,8 +3,8 @@
 ## Figuras
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/gpu-dark.png">
-  <img src="img/gpu-light.png" alt="DDC por lotes, PFB y espectro asíncrono en GPU">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/gpu-dark.png">
+  <img src="../img/gpu-light.png" alt="DDC por lotes, PFB y espectro asíncrono en GPU">
 </picture>
 
 *Figura. Las tres piezas de CUDA con las cifras medidas de este documento (máquina de medida: RTX 4080 Laptop, CUDA 13.2).*
@@ -301,15 +301,15 @@ FFT (CPU: `w/2048`; GPU: `k_load`) y `norm_db` volvía a incluir ×2048. Ahora `
 ## Figuras de rendimiento
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/cuda/cuda-ddc-dark.png">
-  <img src="img/cuda/cuda-ddc-light.png" alt="DDC por lotes en GPU">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/cuda/cuda-ddc-dark.png">
+  <img src="../img/cuda/cuda-ddc-light.png" alt="DDC por lotes en GPU">
 </picture>
 
 *Figura 1. §1: 16 instancias con el DDC en CPU (5,2 núcleos) frente a GPU (0,32), y rendimiento sostenido del banco.*
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/cuda/cuda-espectro-nr-pfb-dark.png">
-  <img src="img/cuda/cuda-espectro-nr-pfb-light.png" alt="Espectro asíncrono, correlación NR y PFB">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/cuda/cuda-espectro-nr-pfb-dark.png">
+  <img src="../img/cuda/cuda-espectro-nr-pfb-light.png" alt="Espectro asíncrono, correlación NR y PFB">
 </picture>
 
 *Figura 2. §2, §6 y §7: espectro asíncrono frente a síncrono, correlación de NR en CPU y GPU, y PFB M = 1024.*

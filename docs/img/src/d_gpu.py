@@ -1,4 +1,4 @@
-"""GPU: DDC por lotes, canalizador PFB y espectro asíncrono (docs/CUDA.md)."""
+"""GPU: DDC por lotes, canalizador PFB y espectro asíncrono (docs/arquitectura/CUDA.md)."""
 from lib import *
 
 
@@ -74,5 +74,5 @@ def build():
     tile(c, tx + 4, y + 112, 206, "122,9 Msps", ["sostenidos con espectro a", "~20 fps (4096–65536)"], "g-av")
     tile(c, tx + 224, y + 112, 206, "0,62 ms", ["por bloque de 1 Mi (FFT 4096,", "122,88 Msps); antes 1,43 ms"], "g-spec")
     tile(c, tx + 444, y + 112, 206, "880–1000", ["Msps de la GPU en sí:", "12–14 % a 122,88 Msps"], "g-ham")
-    c.text(W - 48, H - 24, "Medidas de docs/CUDA.md (DDC: make test T=gpu; carga: --replay de 12 s). Pueden variar con la máquina.", 12, 400, "f-var", "end")
+    c.text(W - 48, H - 24, "Medidas de docs/arquitectura/CUDA.md (DDC: make test T=gpu; carga: --replay de 12 s). Pueden variar con la máquina.", 12, 400, "f-var", "end")
     return c

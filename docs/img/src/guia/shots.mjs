@@ -1,4 +1,4 @@
-// Capturas anotadas de la web para docs/GUIA.md (DOC2b). Puertos propios 8931–8935.
+// Capturas anotadas de la web para docs/uso/GUIA.md (DOC2b). Puertos propios 8931–8935.
 // Uso (desde la raíz): node docs/img/src/guia/shots.mjs   → docs/img/guia/captura-<nombre>.png
 process.env.BIN = path_resolve(process.env.BIN || 'build/doc2b/bladerf-lab');
 function path_resolve(p) { return new URL(p, 'file://' + process.cwd() + '/').pathname; }

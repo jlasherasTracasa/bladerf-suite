@@ -6,7 +6,7 @@
  * en formato Q11 (±2048 = fondo de escala), que es el nativo del bladeRF 2.0.
  *
  * Fuentes disponibles:
- *   - bladeRF:  vía libbladeRF (API síncrona, ver docs/ARQUITECTURA.md).
+ *   - bladeRF:  vía libbladeRF (API síncrona, ver docs/arquitectura/ARQUITECTURA.md).
  *   - fichero:  "cs16" crudo (como el que guarda bladeRF-cli o la propia app)
  *               o una grabación SigMF (.sigmf-meta + .sigmf-data). Se lee a
  *               ritmo real y en bucle, ideal para probar sin hardware.
@@ -85,7 +85,7 @@ bool source_oversample(const source_t *s);
 const char *source_format(const source_t *s);
 /* Desplazamiento dBFS → dBm (dBm = dBFS + off) si hay tabla de calibración de
  * ganancia cargada y el modo la admite; devuelve 0, o <0 si no hay dato.
- * Con la calibración de libbladeRF dBm = dBFS − gain_target (ver docs/HARDWARE.md). */
+ * Con la calibración de libbladeRF dBm = dBFS − gain_target (ver docs/hardware/HARDWARE.md). */
 int source_dbm_offset(source_t *s, double *off_db);
 /* Conversión SC8_Q7 (int8, ±128 = fondo de escala) → Q11 (×16); n_values = 2·muestras. */
 void source_sc8_to_q11(const int8_t *in, int16_t *out, size_t n_values);

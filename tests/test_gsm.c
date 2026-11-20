@@ -10,7 +10,7 @@
  * grabación pública "GSM_downlink_BCCH.zip" de sigidwiki.com (BCCH de una celda con BSIC 23 =
  * NCC 2, BCC 7). El test la remuestrea a 1,0833 MS/s y exige FCCH + SCH con CRC correcto y el
  * BSIC. Con esta grabación se descubrió que el orden de los bits del SCH (T1/T2/T3') era
- * distinto del supuesto (ver docs/decoders/gsm.md). El BCCH/SI3 real NO decodifica todavía.
+ * distinto del supuesto (ver docs/protocolos/gsm.md). El BCCH/SI3 real NO decodifica todavía.
  */
 #include "test_util.h"
 #include "vec_real.h"

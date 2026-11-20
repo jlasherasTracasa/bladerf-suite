@@ -2,7 +2,7 @@
 // web_mock.js — servidor de pruebas de la interfaz web (Node puro, sin npm).
 //
 // Sirve web/ con las mismas cabeceras de seguridad que src/net/server.c y habla
-// el protocolo WebSocket de docs/PROTOCOLO.md, el que implementa src/net/server.c
+// el protocolo WebSocket de docs/arquitectura/WEBSOCKET.md, el que implementa src/net/server.c
 // (saludo RFC 6455 con http + crypto): espectro binario con ruido y señales, audio
 // (tonos), signals, decoders, profiles, dec_list, dec de varios protocolos,
 // dec_state con tablas (aviones, barcos, estaciones APRS, nodos, sondas, RDS) y

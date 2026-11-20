@@ -4,7 +4,7 @@
  * Se alimenta con un TS sintético (PAT, PMT, SDT, NIT con LCN, PES de vídeo H.264 con
  * SPS real de 1280×720 y PES de audio MP2 silencioso) y se examinan los mensajes que
  * se enviarían al navegador (JSON «tv»/«tv_scan», binarios tipo 5 y 6, ver
- * docs/PROTOCOLO.md):
+ * docs/arquitectura/WEBSOCKET.md):
  *   - lista de servicios con nombre, proveedor, LCN, códecs y tamaño del vídeo;
  *   - nada de vídeo hasta el primer fotograma clave; SPS/PPS antepuestos si faltan;
  *   - PTS/DTS en la cabecera; audio PCM estéreo a 48 kHz con PTS espaciados 2160 ticks;

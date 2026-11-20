@@ -1,6 +1,6 @@
 /*
  * gsm.c — Sincronización GSM (FCCH, SCH → BSIC y número de trama) y System Information 3/4
- * del BCCH (MCC, MNC, LAC, Cell ID). Ver docs/decoders/gsm.md.
+ * del BCCH (MCC, MNC, LAC, Cell ID). Ver docs/protocolos/gsm.md.
  *
  * SOLO información de difusión: FCCH, SCH y las 4 ráfagas del BCCH (tramas 2–5 de la
  * multitrama de 51 en la ranura 0). No se decodifica ningún canal de aviso/acceso (PCH,

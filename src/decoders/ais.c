@@ -673,7 +673,7 @@ static uint32_t hash_bits(const uint8_t *b, int n)
     return h ^ (uint32_t)n;
 }
 
-/* Orden de bits real (validado con grabaciones públicas, ver docs/VALIDACION.md):
+/* Orden de bits real (validado con grabaciones públicas, ver docs/calidad/VALIDACION.md):
  * el HDLC envía cada octeto con el bit menos significativo primero y los campos
  * de ITU-R M.1371 se definen sobre los octetos ya reordenados, es decir, el
  * bit k del flujo recibido es el bit (7 - k%8) del octeto k/8. Sin esta inversion

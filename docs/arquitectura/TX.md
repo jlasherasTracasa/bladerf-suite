@@ -3,8 +3,8 @@
 ## Figuras
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/politica-tx-dark.png">
-  <img src="img/politica-tx-light.png" alt="Política de emisión">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/politica-tx-dark.png">
+  <img src="../img/politica-tx-light.png" alt="Política de emisión">
 </picture>
 
 *Figura. Decisión de emisión: `file`, `loopback` y `air`, con la lista blanca de bandas, el ciclo de trabajo y `air_ok`.*
@@ -149,8 +149,8 @@ Rice, potencias de caminos, varianza del ruido de fase, IRR teórico, deriva en 
 ## Ejemplo de medida de ancho ocupado
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/tx/ancho-ocupado-dark.png">
-  <img src="img/tx/ancho-ocupado-light.png" alt="Ancho ocupado de tres señales generadas">
+  <source media="(prefers-color-scheme: dark)" srcset="../img/tx/ancho-ocupado-dark.png">
+  <img src="../img/tx/ancho-ocupado-light.png" alt="Ancho ocupado de tres señales generadas">
 </picture>
 
 *Figura. Medida de `measure_occupancy()` (tx.c) sobre la señal por omisión de los moduladores `aprs`, `ism` y `lora`: periodograma de Welch con FFT de 1024 y ventana Blackman-Harris, bordes que dejan el 0,01 % de la potencia a cada lado. Las bandas sombreadas contienen el 99,98 % de la potencia; el ancho medido decide si la señal cabe en una banda permitida. Los datos los vuelca `build/doc2b/occupancy.c`, que replica el algoritmo (la función original es privada). Para `aprs` el resultado coincide con el que escribe `--gen aprs` en su salida: 13 969 Hz.*

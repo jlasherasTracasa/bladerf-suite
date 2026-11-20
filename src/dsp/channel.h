@@ -4,7 +4,7 @@
  * Cada cliente conectado tiene su propio canal, así varias personas pueden
  * escuchar frecuencias distintas dentro de la misma banda capturada.
  *
- * Cadena de procesado (ver docs/DSP.md para las fórmulas y el porqué):
+ * Cadena de procesado (ver docs/arquitectura/DSP.md para las fórmulas y el porqué):
  *
  *   IQ @ fs ──► NCO (desplaza la emisora a 0 Hz)
  *          ──► diezmado en etapas (÷8, ÷8, ÷6…) hasta la tasa de canal fch
