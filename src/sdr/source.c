@@ -73,6 +73,8 @@ struct source {
     bool tx_on;
     bool oversample;      /* feature OVERSAMPLE activa: SC8_Q7 a > 61,44 Msps */
     bool low_latency;     /* búferes pequeños (barrido) */
+    bool spec_stream;     /* flujo de espectro de la FPGA lab: poco caudal, búferes pequeños */
+    unsigned rx_timeout_ms; /* tiempo de espera de sync_rx (0 = SYNC_TIMEOUT_MS) */
     bool fast;            /* fichero: sin ritmo real ni bucle, acaba con SOURCE_EOF (--replay-fast) */
     qt_entry_t qt[QT_MAX];
     int qt_n;
@@ -93,6 +95,18 @@ int64_t source_frequency(const source_t *s) { return s->freq; }
 uint32_t source_rate(const source_t *s) { return s->rate; }
 bool source_oversample(const source_t *s) { return s->oversample; }
 void source_set_low_latency(source_t *s, bool on) { s->low_latency = on; }
+
+/* Flujo del motor de espectro de la FPGA lab: ~0,1..0,5 Mpalabras/s en vez de decenas de Msps.
+ * Búferes de 2048 palabras (= el múltiplo al que la FPGA rellena cada trama, así que cada trama
+ * llena transferencias enteras y el FX3 no retiene paquetes) y poco colchón; el tiempo de espera
+ * se ajusta al periodo de una imagen (4 periodos, entre 1 y 10 s) para no esperar 3,5 s por un
+ * timeout ni cortar una cascada lenta. Se aplica en el siguiente source_start(). */
+void source_set_spectrum_stream(source_t *s, bool on, double frame_period_s)
+{
+    s->spec_stream = on;
+    double ms = on ? 4000.0 * frame_period_s : 0.0;
+    s->rx_timeout_ms = on ? (unsigned)(ms < 1000.0 ? 1000.0 : ms > 10000.0 ? 10000.0 : ms) : 0;
+}
 void source_set_fast(source_t *s, bool on) { s->fast = on && !s->dev; }
 
 const char *source_format(const source_t *s)
@@ -225,7 +239,12 @@ static int bladerf_stream_config(source_t *s)
      * Con "META" cada lectura devuelve la marca de tiempo (necesaria para el barrido). */
     bladerf_format fmt = s->oversample ? BLADERF_FORMAT_SC8_Q7_META : BLADERF_FORMAT_SC16_Q11_META;
     unsigned nbuf = SYNC_BUFFERS, len = SYNC_BUFLEN, xfers = SYNC_XFERS;
-    if (s->low_latency) {
+    unsigned tmo = s->rx_timeout_ms ? s->rx_timeout_ms : SYNC_TIMEOUT_MS;
+    if (s->spec_stream) {
+        nbuf = 16;
+        len = 2048;
+        xfers = 4;
+    } else if (s->low_latency) {
         /* Barrido: 4096 muestras por transferencia (~0,1 ms a 40 Msps) para que el
          * retraso lector↔FPGA sea mínimo y los retunes programados lleguen a tiempo. */
         nbuf = 64;
@@ -237,7 +256,7 @@ static int bladerf_stream_config(source_t *s)
         len = 65536;
         xfers = 32;
     }
-    int st = bladerf_sync_config(s->dev, BLADERF_RX_X1, fmt, nbuf, len, xfers, SYNC_TIMEOUT_MS);
+    int st = bladerf_sync_config(s->dev, BLADERF_RX_X1, fmt, nbuf, len, xfers, tmo);
     if (st < 0) {
         SETERR(s, "sync_config: %s", bladerf_strerror(st));
         return st;
@@ -677,11 +696,11 @@ static int bladerf_read(source_t *s, int16_t *iq, unsigned n, uint64_t *ts, unsi
     while (got < n) {
         struct bladerf_metadata meta;
         memset(&meta, 0, sizeof meta);
-        meta.flags = BLADERF_META_FLAG_RX_NOW;
+        meta.flags = UINT32_C(1) << 31; /* = BLADERF_META_FLAG_RX_NOW; la macro (1 << 31) es UB con int */
         /* En oversample se lee SC8 al búfer auxiliar y se convierte; si no, se
          * lee directamente a iq. (void*: la API es la misma para ambos formatos.) */
         void *dst = s->oversample ? (void *)(s->raw + 2 * (size_t)got) : (void *)(iq + 2 * (size_t)got);
-        int st = bladerf_sync_rx(s->dev, dst, n - got, &meta, SYNC_TIMEOUT_MS);
+        int st = bladerf_sync_rx(s->dev, dst, n - got, &meta, s->rx_timeout_ms ? s->rx_timeout_ms : SYNC_TIMEOUT_MS);
         if (st < 0) {
             SETERR(s, "sync_rx: %s", bladerf_strerror(st));
             return st;

@@ -48,6 +48,14 @@
 #include <string.h>
 
 #define NMAX 8192
+/* Ventana máxima (muestras) de la búsqueda por CP en cada modo: 8k usa 24
+ * símbolos, 2k usa 120. Compartido entre la reserva y search_cp para que no
+ * vuelvan a divergir. El acumulado sc_* necesita nl+1 entradas. */
+#define SEARCH_WIN_8K (24 * (8192 + 8192 / 4))
+#define SEARCH_WIN_2K (120 * (2048 + 2048 / 4))
+#define SEARCH_WIN_MAX (SEARCH_WIN_8K > SEARCH_WIN_2K ? SEARCH_WIN_8K : SEARCH_WIN_2K)
+#define SC_CAP (SEARCH_WIN_MAX + 16)
+#define BUF_MAX_SAMPLES ((size_t)1 << 24) /* tope duro del búfer de entrada */
 #define KMAX 6817
 #define NGRID 2273         /* (6816/3)+1 puntos de la rejilla de canal */
 #define BATCH 24           /* símbolos del lote de adquisición */
@@ -281,7 +289,7 @@ dvbt_rx_t *dvbt_rx_create(double rate_in, char *err, size_t errlen)
     r->fs = DVBT_FS;
     r->cap = 1 << 20;
     r->buf = malloc(sizeof(cf32) * r->cap);
-    size_t A = 2 * NMAX + 24 * (NMAX + NMAX / 4) + 4096;
+    size_t A = SC_CAP;
     r->sc_re = malloc(sizeof(double) * A);
     r->sc_im = malloc(sizeof(double) * A);
     r->sc_e = malloc(sizeof(double) * A);
@@ -379,6 +387,22 @@ void dvbt_rx_reset(dvbt_rx_t *r)
  * ------------------------------------------------------------------------- */
 static void buf_append(dvbt_rx_t *r, const cf32 *iq, int n)
 {
+    if (n <= 0)
+        return;
+    if (r->len + (size_t)n > BUF_MAX_SAMPLES) {
+        /* Sin enganche el búfer no debe crecer sin límite: se descarta lo más viejo. */
+        size_t drop = r->len + (size_t)n - BUF_MAX_SAMPLES;
+        if (drop >= r->len) {
+            r->base += (int64_t)r->len + (int64_t)(drop - r->len);
+            iq += drop - r->len;
+            n -= (int)(drop - r->len);
+            r->len = 0;
+        } else {
+            memmove(r->buf, r->buf + drop, sizeof(cf32) * (r->len - drop));
+            r->len -= drop;
+            r->base += (int64_t)drop;
+        }
+    }
     if (r->len + (size_t)n > r->cap) {
         size_t nc = r->cap;
         while (nc < r->len + (size_t)n)
@@ -415,7 +439,6 @@ static void buf_drop_before(dvbt_rx_t *r, int64_t keep_from)
 static bool search_cp(dvbt_rx_t *r)
 {
     static const int gd[4] = {4, 8, 16, 32};
-    const int A = 2 * NMAX + 4 * 1024;
     int navail = (int)r->len;
     double best_z = 0, best_peak = 0;
     int best_N = 0, best_g = 0;
@@ -425,10 +448,11 @@ static bool search_cp(dvbt_rx_t *r)
         const int N = ni ? 2048 : 8192;
         if (r->forced_n && r->forced_n != N)
             continue;
-        int nl = MIN(navail, N == 8192 ? 24 * (N + N / 4) : 120 * (N + N / 4)) - N;
+        int nl = MIN(navail, N == 8192 ? SEARCH_WIN_8K : SEARCH_WIN_2K) - N;
+        if (nl + 1 > (int)SC_CAP)
+            nl = (int)SC_CAP - 1; /* defensa: nunca escribir fuera de sc_* */
         if (nl < 6 * (N + N / 32))
             continue;
-        (void)A;
         double cr = 0, ci = 0, e = 0;
         r->sc_re[0] = r->sc_im[0] = r->sc_e[0] = 0;
         for (int i = 0; i < nl; i++) {

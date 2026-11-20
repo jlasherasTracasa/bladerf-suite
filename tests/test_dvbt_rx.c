@@ -146,8 +146,62 @@ static void test_viterbi(void)
     free(in); free(cod); free(soft); free(out);
 }
 
+/* Regresión: sin señal (ruido puro) la búsqueda por CP recorre las ventanas máximas de
+ * 2k y 8k; antes escribía fuera de sc_* con >= ~307 k muestras acumuladas. Con SAN=1
+ * cualquier desbordamiento aborta. Se prueban tamaños de bloque variados. */
+static void test_noise_no_lock(void)
+{
+    static const int blocks[] = {1, 777, 4096, 65536, 300000, 1000001};
+    const long total = 20000000; /* > 2 s a 64/7 MHz */
+    for (unsigned bi = 0; bi < sizeof blocks / sizeof *blocks; bi++) {
+        char err[128] = "";
+        dvbt_rx_t *r = dvbt_rx_create(64e6 / 7, err, sizeof err);
+        CHECK(r != NULL);
+        if (!r)
+            return;
+        int bl = blocks[bi];
+        cf32 *b = malloc(sizeof(cf32) * (size_t)bl);
+        long done = 0;
+        long lim = bl == 1 ? 700000 : total; /* bloques de 1 muestra: solo para el camino de append */
+        while (done < lim) {
+            for (int i = 0; i < bl; i++) {
+                b[i].re = (float)((int)(rnd() & 0xFFFF) - 32768) / 65536.f;
+                b[i].im = (float)((int)(rnd() & 0xFFFF) - 32768) / 65536.f;
+            }
+            dvbt_rx_process(r, b, bl, sink, NULL);
+            done += bl;
+        }
+        dvbt_rx_stats_t st;
+        dvbt_rx_get_stats(r, &st);
+        CHECK(!st.lock);
+        free(b);
+        dvbt_rx_destroy(r);
+    }
+    /* secuencia de exploración: crear/procesar ruido/destruir el decodificador "tdt" */
+    extern const decoder_desc_t DEC_TDT;
+    for (int k = 0; k < 4; k++) {
+        char err[200] = "";
+        dec_cfg_t cfg = {.rate = DEC_TDT.rate, .freq_hz = 474000000 + 8000000 * k, .center_hz = 474000000, .opts = NULL};
+        void *s = DEC_TDT.create(&cfg, err, sizeof err);
+        CHECK(s != NULL);
+        if (!s)
+            continue;
+        cf32 *b = malloc(sizeof(cf32) * 65536);
+        for (long done = 0; done < 5000000; done += 65536) {
+            for (int i = 0; i < 65536; i++) {
+                b[i].re = (float)((int)(rnd() & 0xFFFF) - 32768) / 65536.f;
+                b[i].im = (float)((int)(rnd() & 0xFFFF) - 32768) / 65536.f;
+            }
+            DEC_TDT.process(s, b, 65536, 1.0 + (double)done / DEC_TDT.rate, NULL, NULL);
+        }
+        free(b);
+        DEC_TDT.destroy(s);
+    }
+}
+
 int main(void)
 {
+    test_noise_no_lock();
     for (int i = 0; i < NPK; i++) {
         uint8_t *q = g_src + (size_t)i * 188;
         q[0] = 0x47; q[1] = 0x01; q[2] = 0; q[3] = (uint8_t)(0x10 | (i & 15)); q[4] = (uint8_t)i; q[5] = (uint8_t)(i >> 8);
