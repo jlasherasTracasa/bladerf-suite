@@ -4,11 +4,9 @@ import { S, bus, $, h, fmtHz, parseHz, fmtTime, fillSelect, toast, editing } fro
 import { send } from './ws.js';
 import { setChannel } from './receiver.js';
 import { stateView } from './tables.js';
+import { createEventList } from './evlist.js';
 
-const MAX_EV = 500, MAX_ROWS = 150;
 const msps = (r) => `${+(r / 1e6).toFixed(3)} Msps`;   // tasas de muestreo en Msps (no «MHz»)
-const events = [];
-let evPaused = false;
 
 export function addDecoder(proto, freq, opts) {
   const d = S.decoders.find((x) => x.id === proto);
@@ -25,9 +23,6 @@ function fillProtoSelect() {
   for (const d of S.decoders) { if (!groups.has(d.group)) groups.set(d.group, []); groups.get(d.group).push(d); }
   sel.replaceChildren(...[...groups].map(([g, ds]) => h('optgroup', { label: g }, ...ds.map((d) => h('option', { value: d.id, text: d.name })))));
   if (cur && S.decoders.some((d) => d.id === cur)) sel.value = cur;
-  const f = $('#ev-filter'), fc = f.value;
-  f.replaceChildren(h('option', { value: '', text: 'Todos' }), ...S.decoders.map((d) => h('option', { value: d.id, text: d.name })));
-  f.value = fc;
   onProtoChange();
 }
 function onProtoChange() {
@@ -69,29 +64,15 @@ const short = (v) => { const s = typeof v === 'object' ? JSON.stringify(v) : Str
 
 function renderEvent(ev) {
   const m = ev.msg || {}, d = S.decoders.find((x) => x.id === ev.proto);
-  const kv = Object.entries(m).filter(([k]) => k !== 'text').map(([k, v]) => h('span', {}, k + ': ', h('b', { text: short(v) })));
+  // Cada valor es un botón de filtro: un clic lo copia a la búsqueda (MMSI, indicativo, ICAO…).
+  const kv = Object.entries(m).filter(([k]) => k !== 'text').map(([k, v]) => h('span', {}, k + ': ', h('b', { class: typeof v === 'object' ? '' : 'kvv', 'data-v': typeof v === 'object' ? null : String(v), title: typeof v === 'object' ? null : 'Filtrar por este valor', text: short(v) })));
   const kindTxt = KIND[m.kind] || m.kind;                       // ADS-B: new|callsign|squawk|emerg
   return h('div', { class: 'ev' + (ev.replay ? ' replay' : '') },
     h('div', { class: 'h' }, h('span', { text: fmtTime(ev.t) }), h('b', { text: d ? d.name : ev.proto }), m.kind ? h('span', { class: 'kind ' + m.kind, text: kindTxt }) : null, h('span', { text: fmtHz(ev.freq, 4) }), h('span', { text: '#' + ev.inst })),
     m.text != null ? h('div', { class: 'txt', text: m.text }) : null,
     kv.length ? h('div', { class: 'kvs' }, kv) : null);
 }
-const passes = (ev) => {
-  const f = $('#ev-filter').value, q = $('#ev-search').value.trim().toLowerCase();
-  return (!f || ev.proto === f) && (!q || JSON.stringify(ev.msg).toLowerCase().includes(q));
-};
-function renderAllEvents() {
-  const box = $('#ev-list');
-  box.replaceChildren(...events.filter(passes).slice(-MAX_ROWS).reverse().map(renderEvent));
-}
-function onDec(ev) {
-  events.push(ev); if (events.length > MAX_EV) events.shift();
-  if (evPaused || !passes(ev)) return;
-  if (!decVisible()) return;   // la lista se reconstruye al abrir la pestaña
-  const box = $('#ev-list');
-  box.prepend(renderEvent(ev));
-  while (box.childElementCount > MAX_ROWS) box.lastElementChild.remove();
-}
+export const evList = createEventList({ prefix: 'ev', max: 5000, render: renderEvent, empty: 'Sin eventos todavía. Añade un decodificador y espera al primer mensaje.', visible: () => decVisible() });
 
 /* ---------- resumen de ADS-B (métricas de la recepción) ---------- */
 function adsbSummary(st) {
@@ -124,9 +105,6 @@ function renderStates() {
   for (const [k, det] of stateBoxes) if (!S.decState[k]) { det.remove(); stateBoxes.delete(k); }
 }
 
-/* ---------- menú «decodificar como…» ---------- */
-let menuOpen = false;
-function closeMenu() { const m = $('#sig-menu'); m.hidden = true; menuOpen = false; }
 /* Rejilla de canalización según la banda: 25 kHz en aviación y marina, 100 kHz en FM comercial, 12,5 kHz en el resto de estrechas. */
 function gridFor(d, f) {
   if ((f >= 118e6 && f <= 137e6) || (f >= 156e6 && f <= 163e6)) return 25e3;
@@ -143,47 +121,6 @@ export function snapFreq(d, f) {
   const g = gridFor(d, f);
   return g ? Math.round(f / g) * g : Math.round(f);
 }
-/* Probabilidad (0–7) de que la señal sea de ese protocolo: banda (cerca de sus frecuencias típicas) + ancho ocupado. */
-function score(d, sig) {
-  let sc = 0;
-  const near = (d.freqs || []).filter(Boolean).reduce((m, t) => Math.min(m, Math.abs(t - sig.freq)), Infinity);
-  if (near < Math.max(d.bw || 0, 25e3)) sc += 4;          // en uno de sus canales
-  else if (near < 3e6) sc += 2;                           // en su banda
-  if (d.kind === 'narrow' && d.bw > 0) {
-    const r = sig.bw / d.bw;
-    if (r >= 0.25 && r <= 2.5) sc += r >= 0.5 && r <= 1.5 ? 3 : 2;
-  } else if (d.kind === 'wide' && near < 3e6) sc += 1;
-  return sc;
-}
-function chosen(d, sig) {
-  const f = snapFreq(d, sig.freq);
-  addDecoder(d.id, f); closeMenu();
-  toast(`Añadido ${d.name} en ${fmtHz(f, 4)}: abriendo la vista del decodificador`, 'ok');
-  const tab = document.getElementById('tab-decoders');
-  if (tab) tab.click();   // lleva a la persona a ver la instancia y sus mensajes
-}
-function showSignalMenu({ sig, x, y }) {
-  const m = $('#sig-menu');
-  const sorted = [...S.decoders].sort((a, b) => score(b, sig) - score(a, sig) || a.name.localeCompare(b.name));
-  const nTop = Math.min(5, Math.max(Math.min(3, sorted.length), sorted.filter((d) => score(d, sig) >= 4).length));
-  const item = (d, star) => h('button', { role: 'menuitem', onclick: () => chosen(d, sig) },
-    d.name, star ? ' ★' : '', h('span', { class: 'muted', text: ` · ${d.group}${d.kind === 'wide' ? ' (banda ancha)' : ''}` }));
-  const rest = sorted.slice(nTop);
-  const more = h('div', { hidden: true }, ...rest.map((d) => item(d, false)));
-  m.replaceChildren(
-    h('div', { class: 'mh', text: `${fmtHz(sig.freq, 4)} · ${fmtHz(sig.bw)} de ancho · SNR ${sig.snr.toFixed(0)} dB` }),
-    h('button', { role: 'menuitem', text: 'Escuchar aquí', onclick: () => { setChannel({ freq: Math.round(sig.freq / 100) * 100 }, { user: true }); closeMenu(); } }),
-    h('div', { class: 'mh', text: 'Decodificar como… (los más probables)' }),
-    ...sorted.slice(0, nTop).map((d) => item(d, score(d, sig) > 0)),
-    rest.length ? h('button', { role: 'menuitem', 'aria-expanded': 'false', text: `Más protocolos (${rest.length})…`, onclick: (e) => { more.hidden = !more.hidden; e.currentTarget.setAttribute('aria-expanded', String(!more.hidden)); } }) : null,
-    more);
-  m.hidden = false; menuOpen = true;
-  const r = m.getBoundingClientRect();
-  m.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 4)) + 'px';
-  m.style.top = Math.max(4, Math.min(y + 8, innerHeight - r.height - 4)) + 'px';
-  m.querySelector('button').focus();
-}
-
 export function initDecoders() {
   $('#da-proto').addEventListener('change', onProtoChange);
   $('#da-add').addEventListener('click', () => {
@@ -195,19 +132,11 @@ export function initDecoders() {
     if (t) { try { opts = JSON.parse(t); } catch (e) { toast('Opciones JSON no válidas: ' + e.message, 'err'); return; } }
     addDecoder(proto, freq, opts);
   });
-  $('#ev-filter').addEventListener('change', renderAllEvents);
-  $('#ev-search').addEventListener('input', renderAllEvents);
-  $('#ev-pause').addEventListener('change', (e) => { evPaused = e.target.checked; if (!evPaused) renderAllEvents(); });
-  $('#ev-clear').addEventListener('click', () => { events.length = 0; renderAllEvents(); });
   bus.on('msg:decoders', fillProtoSelect);
   bus.on('msg:dec_list', () => { renderInstances(); });
-  bus.on('msg:dec', onDec);
   bus.on('msg:dec_state', renderStates);
   bus.on('msg:dec_list', renderStates);
-  bus.on('sig-menu', showSignalMenu);
-  bus.on('tab', (t) => { if (t === 'decoders') { renderStates(); renderAllEvents(); } });
-  document.addEventListener('pointerdown', (e) => { if (menuOpen && !e.target.closest('#sig-menu')) closeMenu(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && menuOpen) closeMenu(); });
-  window.addEventListener('scroll', () => { if (menuOpen) closeMenu(); }, true);
+  bus.on('tab', (t) => { if (t === 'decoders') renderStates(); });
+  evList.init();
   renderInstances();
 }

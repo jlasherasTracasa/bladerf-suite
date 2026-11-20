@@ -7,9 +7,10 @@ import { initSpectrum, zoomBy, zoomReset, xToFreq, freqToX, getView } from './sp
 import { initSweep } from './sweep.js';
 import { initHardware, toggleRecording } from './hardware.js';
 import { initProtocols } from './protocols.js';
-import { initDecoders } from './decoders.js';
+import { initDecoders, evList } from './decoders.js';
+import { initSignal } from './signal.js';
 import { initMap } from './map.js';
-import { initMessages } from './messages.js';
+import { initMessages, msList } from './messages.js';
 import { initRds } from './rds.js';
 import { initTx } from './tx.js';
 import { initTv } from './tv.js';
@@ -115,7 +116,7 @@ function shortcuts(e) {
 }
 
 function boot() {
-  initAudio(); initReceiver(); initSpectrum(); initSweep(); initHardware(); initProtocols(); initDecoders(); initMap(); initMessages(); initRds(); initTx(); initTv(); initPalette();
+  initAudio(); initReceiver(); initSpectrum(); initSweep(); initHardware(); initProtocols(); initDecoders(); initSignal(); initMap(); initMessages(); initRds(); initTx(); initTv(); initPalette();
   buildTabs(); showTab(decodeURIComponent(location.hash.slice(1)) || 'receptor');
   bus.on('tabs-changed', () => { buildTabs(); showTab(curTab); });
   window.addEventListener('hashchange', () => showTab(decodeURIComponent(location.hash.slice(1)) || 'receptor'));
@@ -126,10 +127,10 @@ function boot() {
   bus.on('msg:status', renderTop);
   const setTitle = () => { document.title = `${fmtHz(S.chan.freq, 3)} · BladeRF Lab`; };
   bus.on('chan', setTitle); setTitle();
-  bus.on('msg:error', (m) => toast(m.msg || 'Error del servidor', 'err'));
+  bus.on('msg:error', (m) => m.level === 'info' || toast(m.msg || 'Error del servidor', 'err'));
   renderTop();
   connect();
 }
 // Gancho de solo lectura para las pruebas E2E (tests/web_e2e.mjs) y la consola del navegador.
-window.__app = { S, bus, xToFreq, freqToX, getView };
+window.__app = { S, bus, xToFreq, freqToX, getView, lists: { ev: evList, ms: msList } };
 boot();

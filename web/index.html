@@ -159,14 +159,22 @@
         <div class="card"><h2>Instancias <span class="badge" id="di-count">0</span></h2>
           <div id="di-list" class="inst-list"></div></div>
         <div class="card"><h2>Estado de las tablas</h2><div id="ds-list" class="muted">Sin datos todavía.</div></div>
-        <div class="card"><h2>Eventos</h2>
-          <div class="row wrap">
+        <div class="card"><h2>Eventos <span class="badge" id="ev-count" title="Mostrados de los recibidos">0</span></h2>
+          <div class="row wrap evbar">
             <label class="inl">Protocolo <select id="ev-filter"><option value="">Todos</option></select></label>
+            <label class="inl">Instancia <select id="ev-inst"><option value="">Todas</option></select></label>
             <label class="inl">Buscar <input id="ev-search" type="search" placeholder="texto…"></label>
+            <label class="chk"><input type="checkbox" id="ev-pinned"><span>Solo fijados</span></label>
             <label class="chk"><input type="checkbox" id="ev-pause"><span>Pausa</span></label>
             <button class="btn small" id="ev-clear">Limpiar</button>
+            <span class="sp"></span>
+            <button class="btn small" id="ev-copy" title="Copiar lo filtrado como JSONL">Copiar</button>
+            <button class="btn small" id="ev-jsonl" title="Descargar lo filtrado en JSONL">JSONL</button>
+            <button class="btn small" id="ev-csv" title="Descargar lo filtrado en CSV">CSV</button>
           </div>
+          <div class="pins" id="ev-pins" hidden></div>
           <div class="events" id="ev-list" role="log" aria-live="off" aria-label="Registro de eventos"></div>
+          <div class="detail" id="ev-detail" hidden></div>
         </div>
       </div>
 
@@ -181,13 +189,21 @@
 
       <div class="panel" id="p-mensajes" role="tabpanel" data-title="Mensajes" data-key="6">
         <div class="card"><h2>Mensajes <span class="badge" id="ms-count">0</span></h2>
-          <div class="row wrap">
+          <div class="row wrap evbar">
             <label class="inl">Protocolo <select id="ms-filter"><option value="">Todos</option></select></label>
+            <label class="inl">Instancia <select id="ms-inst"><option value="">Todas</option></select></label>
             <label class="inl">Buscar <input id="ms-search" type="search" placeholder="texto…"></label>
+            <label class="chk"><input type="checkbox" id="ms-pinned"><span>Solo fijados</span></label>
             <label class="chk"><input type="checkbox" id="ms-pause"><span>Pausa</span></label>
             <button class="btn small" id="ms-clear">Limpiar</button>
+            <span class="sp"></span>
+            <button class="btn small" id="ms-copy" title="Copiar lo filtrado como JSONL">Copiar</button>
+            <button class="btn small" id="ms-jsonl" title="Descargar lo filtrado en JSONL">JSONL</button>
+            <button class="btn small" id="ms-csv" title="Descargar lo filtrado en CSV">CSV</button>
           </div>
+          <div class="pins" id="ms-pins" hidden></div>
           <div class="msgs" id="ms-list" role="log" aria-live="off" aria-label="Mensajes de texto"></div>
+          <div class="detail" id="ms-detail" hidden></div>
         </div>
       </div>
 
@@ -259,7 +275,7 @@
   </section>
 </main>
 
-<div class="menu" id="sig-menu" role="menu" hidden></div>
+<div class="sigpanel" id="sig-panel" role="dialog" aria-label="¿Qué es esta señal?" hidden></div>
 <dialog id="help-dlg" aria-labelledby="help-t"><h2 id="help-t">Atajos de teclado</h2>
   <table class="tbl keys"><tbody>
   <tr><td><kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Paleta de órdenes: perfiles, modos, decodificadores, pestañas, «100.3m»…</td></tr>

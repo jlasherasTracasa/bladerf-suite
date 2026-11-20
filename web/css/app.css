@@ -165,10 +165,41 @@ kbd { background: var(--s4); border-radius: 5px; padding: 1px 6px; font-size: 12
 .result.ok { color: var(--ok); } .result.err { color: var(--err); }
 
 /* ---- menú, diálogo, avisos ---- */
-.menu { position: fixed; z-index: 60; min-width: 220px; max-width: 92vw; max-height: 60vh; overflow-y: auto; background: var(--s4); border: 1px solid var(--outline); border-radius: 12px; padding: 6px; box-shadow: 0 8px 28px rgba(0,0,0,.6); }
-.menu .mh { padding: 6px 10px; font-size: 12px; color: var(--on-var); }
-.menu button { display: block; width: 100%; text-align: left; background: transparent; border: 0; color: var(--on); padding: 8px 10px; border-radius: 8px; cursor: pointer; font: inherit; }
-.menu button:hover, .menu button:focus-visible { background: var(--primary-c); }
+/* ---- «¿Qué es esta señal?» (signal.js) ---- */
+.sigpanel { position: fixed; z-index: 60; width: min(380px, 94vw); max-height: min(78vh, 640px); overflow-y: auto; background: var(--s4); border: 1px solid var(--outline); border-radius: 14px; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.6); font-size: 13px; }
+.sigpanel[hidden] { display: none; }
+.sigpanel .sp-h { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.sigpanel .sp-h b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.sigpanel .sp-x { margin-left: auto; }
+.sigpanel .sp-m { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.sigpanel canvas { width: 100%; height: 56px; display: block; background: var(--s1); border-radius: 8px; }
+.sigpanel .sp-shape { margin: 6px 0; color: var(--on-var); }
+.sigpanel .sp-shape b { color: var(--on); }
+.sigpanel .sp-h2 { margin: 10px 0 4px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--on-var); }
+.sigpanel .cand { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; padding: 6px 8px; margin-bottom: 4px; border-radius: 10px; background: var(--s3); }
+.sigpanel .cand .nm { font-weight: 700; }
+.sigpanel .cand .why { grid-column: 1 / -1; font-size: 11.5px; color: var(--on-var); }
+.sigpanel .cand .bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--s1); overflow: hidden; }
+.sigpanel .cand .bar i { display: block; height: 100%; background: var(--primary); }
+.sigpanel details > summary { cursor: pointer; color: var(--on-var); padding: 4px 0; }
+.sigpanel .row { display: flex; gap: 6px; flex-wrap: wrap; }
+/* ---- eventos y mensajes: fijados, detalle, filas compactas ---- */
+.evbar .sp { flex: 1; }
+.ev .h .pin, .msg .h .pin { margin-left: auto; background: transparent; border: 0; color: var(--on-var); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 4px; border-radius: 6px; }
+.ev .h .pin.on, .msg .h .pin.on, .ev.compact .pin.on { color: var(--warn); }
+.ev .h .pin:hover, .msg .h .pin:hover { background: var(--s3); }
+.evrow { cursor: pointer; } .evrow.sel { outline: 2px solid var(--primary); outline-offset: -2px; } .evrow.pinned { border-left: 3px solid var(--warn); }
+.ev .kvv { cursor: pointer; } .ev .kvv:hover { text-decoration: underline; color: var(--primary); }
+.ev.compact { display: flex; gap: 8px; align-items: center; padding: 0 8px; box-sizing: border-box; overflow: hidden; white-space: nowrap; }
+.ev.compact .t, .ev.compact .f { color: var(--on-var); font-size: 11px; } .ev.compact b { color: var(--primary); }
+.ev.compact .x { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; } .ev.compact .pin { margin-left: 0; background: transparent; border: 0; color: var(--on-var); cursor: pointer; }
+.events.virtual { position: relative; }
+.pins { max-height: 200px; overflow-y: auto; margin: 6px 0; border: 1px solid var(--warn); border-radius: 8px; background: var(--s1); }
+.pins .pinh { padding: 4px 8px; font-size: 11px; }
+.msgs .msg.evrow { cursor: pointer; }
+.detail { margin-top: 8px; padding: 8px 10px; background: var(--s1); border-radius: 10px; border: 1px solid var(--outline-v); }
+.detail .evx { margin: 6px 0; }
+.detail pre.json { margin: 6px 0 0; max-height: 280px; overflow: auto; font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all; color: var(--on); }
 dialog { background: var(--s2); color: var(--on); border: 1px solid var(--outline); border-radius: 20px; max-width: min(520px, 94vw); padding: 20px; }
 dialog h3.sub { margin: 14px 0 6px; font-size: 13px; color: var(--on-var); }
 dialog.palette { padding: 0; width: min(560px, 94vw); max-width: none; margin-top: 12vh; overflow: hidden; }

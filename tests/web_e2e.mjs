@@ -922,6 +922,97 @@ suites.latencia = async (ctx) => {
   check('latencia UI de sintonía (campo → canal y texto) < 100 ms', med < 100, lat.map((x) => x.toFixed(0)).join(', ') + ' ms');
 };
 
+
+/* W9: «¿Qué es esta señal?» + lista de eventos (búsqueda, filtros, fijados, detalle, exportación, virtualización).
+ * Grabación real de tests/data/real (AIS de Long Beach, sigidwiki) con --replay; sin hardware. */
+suites.senal_eventos = async (ctx) => {
+  const rec = '/tmp/ux1-e2e-rec-8809'; fs.rmSync(rec, { recursive: true, force: true }); fs.mkdirSync(rec, { recursive: true });
+  const srv = launch(BIN, ['--port', '8809', '--replay', path.join(ROOT, 'tests/data/real/ais.sigmf-meta'), '--config', 'none', '--recdir', rec, '--web', path.join(ROOT, 'web')]);
+  await waitHttp('http://127.0.0.1:8809/');
+  const pg = await openApp(ctx.br, 8809);
+  let clicks = 0; const click = async (x, y) => { clicks++; await pg.click(x, y); };
+  const F = 161975000;
+  // 1) abrir el panel: marcador del detector si existe en ese canal; si no, clic derecho sobre el espectro
+  const sg = await pg.ev(`(()=>{const S=__app.S;return S.signals.list.map(s=>({f:S.signals.center+s[0],bw:s[1],snr:s[3]})).sort((a,b)=>Math.abs(a.f-${F})-Math.abs(b.f-${F}))[0]||null})()`);
+  const cv = await pg.ev(`(()=>{const c=document.querySelector('#spec-wrap canvas.ov');const r=c.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width}})()`);
+  const fx = await pg.ev(`__app.freqToX(${sg && Math.abs(sg.f - F) < 20000 ? sg.f : F})`);
+  if (sg && Math.abs(sg.f - F) < 20000) await click(cv.x + fx, cv.y + 8);
+  else { clicks++; await pg.ev(`(()=>{const c=document.querySelector('#spec-wrap canvas.ov');const r=c.getBoundingClientRect();c.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:${cv.x + fx},clientY:${cv.y + 40}}))})()`); }
+  const opened = await pg.waitFor(`!document.querySelector('#sig-panel').hidden`, 3000).then(() => true, () => false);
+  check('clic en el marcador (o clic derecho) abre el panel «¿Qué es esta señal?»', opened, JSON.stringify(sg));
+  const info = await pg.ev(`(()=>{const m=document.querySelector('#sig-panel'),t=m.textContent;return {t,cv:!!m.querySelector('canvas'),cands:[...m.querySelectorAll('.cand')].map(c=>c.querySelector('.nm').textContent),r:m.getBoundingClientRect().toJSON(),vw:innerWidth,vh:innerHeight}})()`);
+  check('el panel muestra frecuencia, ancho y SNR', /MHz/.test(info.t) && /ancho/.test(info.t) && /SNR/.test(info.t), info.t.slice(0, 120));
+  check('el panel muestra el esbozo y la forma espectral', info.cv && /Forma:/.test(info.t));
+  check('AIS está entre las 3 propuestas con su probabilidad', info.cands.slice(0, 3).some((c) => /^AIS · \d+ %/.test(c)), info.cands.join(' | '));
+  check('el panel cabe en la ventana', info.r.left >= 0 && info.r.right <= info.vw && info.r.bottom <= info.vh + 1, JSON.stringify(info.r));
+  check('ofrece «Escuchar»', /Escuchar/.test(info.t));
+  await pg.shot(`${shotsDir()}/w9_panel_senal.png`);
+  // 2) Decodificar en el segundo clic y llegar a los eventos
+  const b = await pg.ev(`(()=>{const c=[...document.querySelectorAll('#sig-panel .cand')].find(c=>/^AIS/.test(c.textContent));const r=c.querySelector('button').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+  await click(b.x, b.y);
+  check('de la señal a la instancia en ≤ 2 clics, ajustada al canal 161,975 MHz', clicks <= 2 && await pg.waitFor(`__app.S.decList.some(i=>i.proto==='ais'&&i.freq===${F})`, 4000).then(() => true, () => false), `${clicks} clics`);
+  check('lleva a la pestaña Decodificadores', await pg.ev(`document.querySelector('[role=tab][aria-selected=true]').id`) === 'tab-decoders');
+  check('el panel se cierra', await pg.ev(`document.querySelector('#sig-panel').hidden`));
+  check('la lista de eventos queda filtrada a la instancia nueva', await pg.waitFor(`document.querySelector('#ev-inst').value!==''`, 3000).then(() => true, () => false), await pg.ev(`document.querySelector('#ev-inst').value`));
+  const got = await pg.waitFor(`document.querySelectorAll('#ev-list .ev').length>0`, 20000).then(() => true, () => false);
+  check('primer mensaje decodificado visible tras el segundo clic', got);
+  if (!got) return;
+  // 3) detalle con JSON y campos de etiquetado
+  const r0 = await pg.rect('#ev-list .ev .txt'); await click(r0.x + 10, r0.y + 5);
+  const det = await pg.ev(`(()=>{const d=document.querySelector('#ev-detail');return {vis:!d.hidden,t:d.textContent}})()`);
+  check('clic en un evento abre el detalle con el JSON formateado', det.vis && /"mmsi": 367003560/.test(det.t), det.t.slice(0, 100));
+  check('el detalle destaca sample, snr_db y rssi_dbfs', /sample/.test(det.t) && /snr_db/.test(det.t) && /rssi_dbfs/.test(det.t));
+  // 4) fijar
+  await pg.clickSel('#ev-list .ev .pin');
+  check('fijar muestra el evento en la sección Fijados', await pg.ev(`!document.querySelector('#ev-pins').hidden && document.querySelectorAll('#ev-pins .evrow').length===1`), await pg.ev(`document.querySelector('#ev-pins').outerHTML.slice(0,300)`));
+  await pg.clickSel('#ev-pinned'); await sleep(150);
+  check('«Solo fijados» deja solo el fijado', await pg.ev(`__app.lists.ev.count()`) === 1);
+  await pg.clickSel('#ev-pinned');
+  // 5) búsqueda y filtros
+  const tot = await pg.ev(`__app.lists.ev.total()`);
+  await pg.fill('#ev-search', '367003560', false); await sleep(200);
+  check('búsqueda por MMSI conserva las coincidencias y muestra «n de m»', await pg.ev(`__app.lists.ev.count()`) >= 1 && /^\d+( de \d+)?$/.test(await pg.ev(`document.querySelector('#ev-count').textContent`)));
+  await pg.fill('#ev-search', 'zzz_no', false); await sleep(200);
+  check('búsqueda sin resultados: 0 filas y mensaje', await pg.ev(`__app.lists.ev.count()`) === 0 && /Ningún evento/.test(await pg.ev(`document.querySelector('#ev-list').textContent`)) && (await pg.ev(`document.querySelector('#ev-count').textContent`)) === `0 de ${tot}`, await pg.ev(`document.querySelector('#ev-count').textContent`));
+  await pg.ev(`(()=>{const f=document.querySelector('#ev-search');f.value='';f.dispatchEvent(new Event('input',{bubbles:true}))})()`);
+  await pg.ev(`(()=>{const s=document.querySelector('#ev-filter');s.value='pocsag';s.dispatchEvent(new Event('change',{bubbles:true}))})()`); await sleep(150);
+  check('filtro por protocolo (POCSAG) vacía la lista', await pg.ev(`__app.lists.ev.count()`) === 0);
+  await pg.ev(`(()=>{const s=document.querySelector('#ev-filter');s.value='ais';s.dispatchEvent(new Event('change',{bubbles:true}))})()`); await sleep(150);
+  check('filtro por protocolo (AIS) la llena', await pg.ev(`__app.lists.ev.count()`) >= 1);
+  check('el selector de instancia lista la instancia', await pg.ev(`document.querySelector('#ev-inst').options.length`) >= 2);
+  await pg.ev(`(()=>{const s=document.querySelector('#ev-inst');s.value=s.options[1].value;s.dispatchEvent(new Event('change',{bubbles:true}))})()`); await sleep(150);
+  check('filtro por instancia', await pg.ev(`__app.lists.ev.count()`) >= 1);
+  // 6) exportación (se captura el Blob que se descargaría)
+  await pg.ev(`window.__dl=[];const oc=URL.createObjectURL.bind(URL);URL.createObjectURL=(b)=>{b.text().then(t=>__dl.push([b.type,t]));return oc(b)};0`);
+  const n0 = await pg.ev(`__app.lists.ev.count()`);
+  await pg.clickSel('#ev-jsonl'); await pg.clickSel('#ev-csv');
+  await pg.waitFor(`__dl.length===2`, 3000).catch(() => {});
+  const dl = await pg.ev(`JSON.stringify(__dl)`), n = await pg.ev(`__app.lists.ev.count()`), D = JSON.parse(dl);
+  const jl = (D[0] || ['', ''])[1].trim().split('\n'), cs = (D[1] || ['', ''])[1].trim().split('\r\n');
+  check('JSONL: una línea JSON válida por evento filtrado', jl.length >= n0 && jl.length <= n && jl.every((l) => { try { return JSON.parse(l).msg.mmsi === 367003560; } catch { return false; } }), `${jl.length} vs ${n}`);
+  check('CSV: cabecera fija + columnas del mensaje y n filas', /^t,proto,inst,freq_hz,/.test(cs[0]) && /snr_db/.test(cs[0]) && cs.length - 1 >= n0 && cs.length - 1 <= n, cs[0].slice(0, 80));
+  await pg.shot(`${shotsDir()}/w9_eventos.png`);
+  // 7) virtualización con 2600 eventos sintéticos (sin limpiar los reales)
+  await pg.ev(`(()=>{const s=document.querySelector('#ev-inst');s.value='';s.dispatchEvent(new Event('change',{bubbles:true}));const f=document.querySelector('#ev-filter');f.value='';f.dispatchEvent(new Event('change',{bubbles:true}));
+    for(let i=0;i<2600;i++)__app.bus.emit('msg:dec',{type:'dec',inst:99,proto:'pocsag',freq:466075000,t:1.8e9+i,msg:{text:'sintético '+i,n:i}});0})()`);
+  await sleep(400);
+  const v = await pg.ev(`(()=>{const b=document.querySelector('#ev-list');return {virt:b.classList.contains('virtual'),rows:b.querySelectorAll('.ev').length,h:b.scrollHeight,total:__app.lists.ev.total(),count:document.querySelector('#ev-count').textContent}})()`);
+  check('con > 2000 eventos la lista se virtualiza (pocas filas en el DOM, altura total completa)', v.virt && v.rows < 120 && v.h > 2000 * 20, JSON.stringify(v));
+  await pg.ev(`document.querySelector('#ev-list').scrollTop=1e9;0`); await sleep(300);
+  const v2 = await pg.ev(`(()=>{const b=document.querySelector('#ev-list');return {rows:b.querySelectorAll('.ev').length,last:b.querySelector('.ev:last-of-type .x, .ev:nth-last-child(2) .x')?.textContent||''}})()`);
+  check('al desplazarse al final se pintan las filas del final', v2.rows > 5 && v2.rows < 120, JSON.stringify(v2));
+  await pg.ev(`(()=>{const f=document.querySelector('#ev-search');f.value='sintético 2599';f.dispatchEvent(new Event('input',{bubbles:true}))})()`); await sleep(300);
+  check('la búsqueda saca de la virtualización y encuentra el evento 2599', await pg.ev(`__app.lists.ev.count()===1 && document.querySelector('#ev-list').textContent.includes('sintético 2599')`));
+  await pg.ev(`(()=>{const f=document.querySelector('#ev-search');f.value='';f.dispatchEvent(new Event('input',{bubbles:true}))})()`);
+  // 8) Mensajes: mismas herramientas
+  await pg.ev(`__app.bus.emit('msg:dec',{type:'dec',inst:98,proto:'pocsag',freq:466075000,t:1.8e9,msg:{text:'POCSAG alfa',message:'Mensaje de prueba largo',snr_db:12.5,sample:77}});location.hash='mensajes';0`); await sleep(400);
+  check('Mensajes: aparece el texto y se puede filtrar y fijar', await pg.ev(`document.querySelectorAll('#ms-list article').length`) >= 1);
+  await pg.clickSel('#ms-list article'); await sleep(150);
+  check('Mensajes: el detalle muestra el JSON con snr_db', await pg.ev(`!document.querySelector('#ms-detail').hidden && /snr_db/.test(document.querySelector('#ms-detail').textContent)`));
+  check('Mensajes: exporta CSV con el cuerpo', /message/.test(await pg.ev(`__app.lists.ms.text('csv')`)));
+  srv.kill('SIGKILL'); pg.close();
+};
+
 suites.errores = async (ctx) => {
   const all = [...(ctx.pgs || [])];
   check('cero excepciones no capturadas en toda la batería', ctx.allExceptions.length === 0, ctx.allExceptions.slice(0, 3).join(' | '));

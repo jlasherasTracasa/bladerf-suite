@@ -412,7 +412,14 @@ function frame() {
 
 /* ---- interacción ---- */
 const ptrs = new Map();
-let drag = null;
+let drag = null, lpTimer = 0;
+/** Bins del último espectro (dBFS) para el panel «¿Qué es esta señal?»; solo lectura. */
+export const spectrumBins = () => ({ db: lastDb, n, center: S.spec.center, rate: S.spec.rate, sweep: sweeping() });
+/** Pulsación larga o clic derecho: pide el panel en una frecuencia cualquiera (tol = 10 px en Hz). */
+function askHere(cx, cy, x) {
+  if (sweeping() || !S.spec.rate) return;
+  bus.emit('sig-menu', { sig: null, freq: xToFreq(x), tol: (10 / W) * view.span * S.spec.rate, x: cx, y: cy });
+}
 
 function hitEdge(x, tol = 7) {
   if (sweeping()) return null;
@@ -470,6 +477,8 @@ function onDown(e) {
   const force = e.button === 1 || e.shiftKey;
   if (e.button === 1) e.preventDefault();
   const edge = force ? null : hitEdge(p.x, e.pointerType === 'touch' ? 16 : 7), sig = edge || force ? null : hitSignal(p.x, p.y);
+  clearTimeout(lpTimer);
+  if (e.pointerType === 'touch' && !edge && ptrs.size === 1) { const cx = e.clientX, cy = e.clientY, px0 = p.x; lpTimer = setTimeout(() => { if (drag && !drag.moved) { drag = { type: 'none' }; askHere(cx, cy, px0); } }, 550); }
   drag = { type: edge ? 'edge' : sig ? 'sig' : 'pan', force, edge, sig, x0: p.x, y0: p.y, start0: view.start, moved: false, cx: e.clientX, cy: e.clientY, hist: [[performance.now(), p.x]] };
 }
 const dist = () => { const [a, b] = [...ptrs.values()]; return Math.hypot(a.x - b.x, a.y - b.y) || 1; };
@@ -487,7 +496,7 @@ function onMove(e) {
     const ns = clamp(drag.span0 * (drag.d0 / dist()), minSpan(), 1);
     view.start = clamp(mid - (((a.x + b.x) / 2) / W) * ns, 0, 1 - ns); view.span = ns; dirty = true; return;
   }
-  if (Math.hypot(p.x - drag.x0, p.y - drag.y0) > 4) drag.moved = true;
+  if (Math.hypot(p.x - drag.x0, p.y - drag.y0) > 4) { drag.moved = true; clearTimeout(lpTimer); }
   if (drag.type === 'edge') setEdge(drag.edge, p.x);
   else if (drag.moved && (drag.type === 'pan' || drag.type === 'sig')) {
     drag.type = 'pan';
@@ -497,6 +506,7 @@ function onMove(e) {
   hover = e.pointerType === 'mouse' ? p : null; dirty = true;
 }
 function onUp(e) {
+  clearTimeout(lpTimer);
   ptrs.delete(e.pointerId);
   if (drag && drag.type === 'pinch') { if (ptrs.size < 2) drag = ptrs.size ? { type: 'none' } : null; return; }
   const d = drag; drag = null;
@@ -546,6 +556,7 @@ export function initSpectrum() {
   ovC.addEventListener('pointerleave', () => { hover = null; dirty = true; });
   ovC.addEventListener('wheel', onWheel, { passive: false });
   ovC.addEventListener('dblclick', (e) => { if (!sweeping()) centerViewOn(xToFreq(localPt(e).x)); });
+  ovC.addEventListener('contextmenu', (e) => { e.preventDefault(); const p = localPt(e); askHere(e.clientX, e.clientY, p.x); });
   ovC.addEventListener('auxclick', (e) => e.preventDefault());   // el botón central desplaza; no debe abrir nada
 
   $('#z-in').addEventListener('click', () => zoomBy(1.6));

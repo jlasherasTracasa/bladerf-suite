@@ -213,18 +213,18 @@ async function main() {
     M.notes.push(`Señal elegida ${(sg.f / 1e6).toFixed(4)} MHz, ancho ${Math.round(sg.bw)} Hz, SNR ${sg.snr.toFixed(0)} dB`);
     const p = await sigX(pg, sg.f);
     await pg.click(p.x, p.y + 8); M.think++;
-    const open = await until(ctx, `!document.querySelector('#sig-menu').hidden`, 2000);
+    const open = await until(ctx, `!document.querySelector('#sig-panel').hidden`, 2000);
     if (open) {
-      const info = await pg.ev(`(()=>{const m=document.querySelector('#sig-menu'),r=m.getBoundingClientRect(),b=[...m.querySelectorAll('button')];return {n:b.length,h:Math.round(r.height),vh:innerHeight,stars:b.filter(x=>x.textContent.includes('★')).map(x=>x.textContent.split('·')[0].trim()),idx:b.findIndex(x=>/^AIS/.test(x.textContent.trim()))}})()`);
-      M.notes.push(`Menú: ${info.n} opciones, ${info.h}px de alto (ventana ${info.vh}px); sugeridas con ★: ${info.stars.join(', ') || 'ninguna'}; AIS es la opción nº ${info.idx + 1}.`);
-      await pg.ev(`[...document.querySelectorAll('#sig-menu button')].find(x=>/^AIS/.test(x.textContent.trim()))?.scrollIntoView({block:'nearest'});0`);
-      const r = await pg.ev(`(()=>{const b=[...document.querySelectorAll('#sig-menu button')].find(x=>/^AIS/.test(x.textContent.trim()));const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+      const info = await pg.ev(`(()=>{const m=document.querySelector('#sig-panel'),r=m.getBoundingClientRect(),c=[...m.querySelectorAll('.cand')].map(x=>x.querySelector('.nm').textContent);return {n:c.length,h:Math.round(r.height),vh:innerHeight,c,idx:c.findIndex(x=>/^AIS/.test(x))}})()`);
+      M.notes.push(`Panel «¿Qué es esta señal?»: ${info.n} propuestas visibles, ${info.h}px de alto (ventana ${info.vh}px); orden: ${info.c.join(', ') || 'ninguna'}; AIS es la propuesta nº ${info.idx + 1}.`);
+      const r = await pg.ev(`(()=>{const b=[...document.querySelectorAll('#sig-panel .cand')].find(x=>/^AIS/.test(x.textContent.trim())).querySelector('button');const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
       await pg.click(r.x, r.y);
-    } else M.dead.push('el clic sobre la marca de señal no abre el menú «decodificar como…»');
+    } else M.dead.push('el clic sobre la marca de señal no abre el panel «¿Qué es esta señal?»');
     ctx.ok = await until(ctx, `__app.S.decList.some(i=>i.proto==='ais'&&Math.abs(i.freq-${Math.round(sg.f)})<15000)`, 4000);
     ctx.ms = Date.now() - t0;
     M.notes.push('Instancia creada: ' + await pg.ev(`__app.S.decList.map(i=>i.proto+'@'+i.freq+':'+i.state).join(', ')`));
-    M.notes.push('Tras elegir, el único aviso es un toast efímero: la persona no sabe dónde ver la instancia ni sus mensajes (la pestaña Decod. no se abre sola).');
+    ctx.ok = ctx.ok && await until(ctx, `document.querySelector('[role=tab][aria-selected=true]').id==='tab-decoders' && document.querySelector('#ev-inst').value!==''`, 3000);
+    M.notes.push('Tras elegir se abre Decod. con la lista de eventos filtrada a la instancia nueva; el primer mensaje aparece ahí.');
     ctx.slug = 'decodificar_como'
   });
 
