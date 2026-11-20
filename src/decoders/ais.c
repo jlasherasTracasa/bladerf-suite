@@ -835,6 +835,10 @@ static void on_frame(ais_t *a, const uint8_t *raw, int nbits, int64_t last_start
         a->fixed++;
     }
     a->span[a->span_pos] = (span_t){a->mk0, a->mk1};
+    /* Convención de posición (decoder.h): el mensaje empieza en el primer símbolo modulado, es decir,
+     * la secuencia de entrenamiento de 24 bits (ITU-R M.1371-5, Anexo 2 §3.1) que precede a la
+     * bandera de apertura. La deduplicación de arriba sigue usando la trama sin entrenamiento. */
+    a->mk0 -= 24 * SPS;
     a->span_pos = (a->span_pos + 1) % SPAN_N;
     a->dd[a->dd_pos] = (dedup_t){h, a->n};
     a->dd_pos = (a->dd_pos + 1) % DEDUP_N;

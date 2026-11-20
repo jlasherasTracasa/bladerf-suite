@@ -10,8 +10,8 @@ Los identificadores se eligen en rangos válidos del protocolo (MMSI de 9 cifras
 RIC de 7 bits de dirección, ICAO de 24 bits, FCnt de 16 bits).
 """
 PROTOS = {
-    "ais": dict(params=lambda i: {"mmsi": 200000000 + i, "types": [1]},
-                key=lambda m: m["mmsi"] - 200000000),
+    "ais": dict(params=lambda i: {"mmsi": 201000000 + i, "types": [1]},
+                key=lambda m: m["mmsi"] - 201000000),
     "pocsag": dict(params=lambda i: {"baud": 2400, "messages": [
                        {"ric": 1000000 + i, "func": 3, "text": "T%05d" % i}]},
                    key=lambda m: m["ric"] - 1000000),

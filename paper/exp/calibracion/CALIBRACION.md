@@ -211,16 +211,15 @@ símbolo del mensaje (bandera de cierre, última palabra de código, último pul
   (el demodulador tarda unos símbolos en engancharse y la primera bandera llega estropeada en el
   ~40 % de las tramas). Con tolerancia 2 hay demasiadas falsas extensiones sobre ruido (20 %).
 * POCSAG: ya marcaba el inicio del preámbulo (P3c); solo estaba mal la verdad.
-* AIS (`ais.c`, en edición por D9, **no tocado**): sigue marcando la bandera de apertura; el
-  arreglo es `a->mk0 = last_start - (int64_t)((7.5 + 24) * SPS) - AIS_DELAY;` (la secuencia de
-  entrenamiento de 24 bits, ITU-R M.1371-5 Anexo 2 §3.1, precede a la bandera; SPS = 5 muestras/bit).
-  Pendiente de aplicar; con ello el sesgo de 23,5 pasa a ≈ −0,5.
+* AIS (`ais.c`): `mk0` se retrasa 24·SPS (la secuencia de entrenamiento de 24 bits, ITU-R M.1371-5
+  Anexo 2 §3.1, precede a la bandera) después de registrar el intervalo de deduplicación, que sigue
+  usando la trama sin entrenamiento; compatible con la segunda pasada y el `AIS_DELAY` de D9.
 * `tests/test_labels.c`: verdad inyectada según la convención (APRS: fin del silencio inicial;
-  POCSAG: fin de la portadora), con ±1 símbolo. AIS sigue con la bandera y queda marcado como pendiente.
+  POCSAG: fin de la portadora; AIS: inicio del entrenamiento), con ±1 símbolo.
 
 | Proto | Sesgo antes (símbolos) | Sesgo ahora | Dispersión p95 (centrada) |
 |---|---|---|---|
-| ais | 24,4 | 23,5 (pendiente: −24 al aplicar el arreglo, → −0,5) | 0,12 |
+| ais | 24,4 | −0,5 (1 símbolo de rampa del modulador, medido con SNR ≥ SNR90) | 0,11 |
 | aprs | 120,5 | 1,0 | 8,5 (cuantizado en banderas de 8 símbolos: ~12 % de copias pierden 1 bandera, ~7 % ganan 1) |
 | pocsag | 121,1 | 1,1 (22 muestras a 48 kS/s) | 0,00 |
 | lora | 0,04 | 0,04 | 0,00 |
@@ -293,3 +292,17 @@ Curvas en `curvas_def2.png`; columnas `*_def2` de `resumen.csv`.
 
 Recomendación para el artículo: curvas de blanco como referencia, `real_rf` con SNR 1 y SNR 2 y
 la anchura de la transición (SNR90 − SNR50) como indicador de no estacionariedad.
+
+### Actualización AIS (tras el decodificador de D9)
+
+* Posición de AIS re-medida: sesgo −0,51 símbolos (blanco; real_rf −0,51), p95 centrado 0,11.
+* El decodificador de D9 rechaza MMSI con MID fuera de 201–799 (`mmsi_plausible`); el inyector
+  usaba 200000000 + i y no se decodificaba ninguna copia. `protos.py` usa ahora 201000000 + i
+  (`exp/piloto/comun.py` conserva el antiguo, solo válido con el decodificador anterior).
+* Sensibilidad con el decodificador de D9: blanco SNR50 8,1 / SNR90 9,5 (antes 9,4 / 11,4),
+  real_rf 9,2 / 12,9 (SNR 2: 8,7), techo 1,00 / 0,95.
+* Residuo de `snr_db` (+0,9 dB): no es un desplazamiento constante. En LoRa con ruido blanco crece de
+  +0,3 dB (SNR −4) a +1,0 dB (SNR +20), es decir, pendiente 1,03. No es la fracción de señal fuera
+  de B (≥ 0,98), ni la tasa del DDC (el test sintético a 48 kS/s da +0,00 dB), ni la contaminación del
+  suelo por copias vecinas (iría en sentido contrario). No localizado: hipótesis pendiente, la escala
+  global de las pasadas que superan ±2040 LSB o el redondeo a ci16 de la mezcla.

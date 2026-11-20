@@ -8,8 +8,7 @@
  *   alineados con la ráfaga. CONVENCIÓN (P3d): "sample" = primer símbolo modulado de la señal transmitida
  *   (preámbulo, banderas de relleno o secuencia de entrenamiento incluidos; no la portadora sin modular
  *   previa), "sample_end" = último símbolo del mensaje. El evento debe traer "sample" a ±1 símbolo de la
- *   verdad inyectada (primera bandera de relleno en APRS, preámbulo en POCSAG/ADS-B/LoRa; en AIS marca
- *   hoy la bandera de apertura, 24 símbolos después: pendiente, ver docs), con
+ *   verdad inyectada (primera bandera de relleno en APRS, preámbulo en POCSAG/ADS-B/LoRa; secuencia de entrenamiento en AIS), con
  *   "sample_src":"mark", "snr_db" = SNR inyectada en el ancho ocupado (±1,5 dB, a 8 dB y a la nominal) y "rssi_dbfs". POCSAG marca el inicio
  *   del preámbulo de la transmisión (a ±1 bit a 1200 Bd).
  * Parte 2 (binario, solo si existe ../bladerf-lab): genera un fichero con una ráfaga AIS y una portadora
@@ -222,8 +221,8 @@ static void test_positions(void)
     /* AIS: 48 kHz → captura de 1 Msps con el canal 25 kHz por debajo del centro */
     case_t ais = {.proto = "ais", .params = "{\"types\":[18]}", .rate = 1e6, .center = 162000000LL,
                   .freq = 161975000LL, .snr_db = 15, .lead_s = 0.2345,
-                  .truth_off = 0.1 + (24 * 5 + 5) / 48000.0, .ref_bw = 18844};
-    check_case("AIS: sample del evento (bandera de apertura; PENDIENTE: convencion = inicio de la secuencia de entrenamiento, 24 simbolos antes)", &ais, 1e6 / 9600.0, "\"sample_src\":\"mark\"");
+                  .truth_off = 0.1 + 5 / 48000.0, .ref_bw = 18844};
+    check_case("AIS: sample del evento (inicio de la secuencia de entrenamiento)", &ais, 1e6 / 9600.0, "\"sample_src\":\"mark\"");
     check_snr8(&ais);
 
     /* APRS: 2400 muestras de silencio + 15 banderas de relleno, la 16.ª abre la trama (40 muestras/bit) */
