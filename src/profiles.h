@@ -44,8 +44,11 @@ extern const int PROFILE_COUNT;
 const profile_t *profile_find(const char *id);
 /* Mensaje "profiles". */
 void profiles_json(sb_t *sb);
+/* Frecuencia del canal de audio dentro de la banda capturada (ver profiles.c). true = se movió. */
+bool profile_pick_audio_freq(int64_t chan_freq, int64_t center, double rate, const int64_t *sig_hz, int nsig,
+                             int64_t *out);
 /* Aplica el perfil. client: cliente WebSocket cuyo canal de audio se ajusta
- * (−1 = ninguno). Devuelve 0 o <0 con err (los fallos de instancias sueltas
+ * (−1 = ninguno). Devuelve 0, 1 (aplicado con aviso en err) o <0 con err (los fallos de instancias sueltas
  * solo se registran como aviso). */
 int profile_apply(const profile_t *p, engine_t *e, dec_host_t *h, int client, char *err, size_t errlen);
 

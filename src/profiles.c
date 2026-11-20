@@ -5,7 +5,9 @@
 
 #include "dsp/channel.h"
 
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define MHZ(x) ((int64_t)((x) * 1e6 + 0.5))
@@ -98,10 +100,38 @@ void profiles_json(sb_t *sb)
     sb_puts(sb, "]}");
 }
 
+/* Elige la frecuencia real del canal de audio. Si 'chan_freq' cae dentro de la banda capturada
+ * [centro ± tasa/2] se respeta. Si no (fuente de fichero: el centro no se puede mover), un canal
+ * fuera de banda solo daría ruido y "FUERA -150 dBFS": se coloca en la señal detectada más cercana
+ * dentro de banda (el 90 % central, para evitar el filtro analógico) o, sin señales, en
+ * centro + tasa/4, lejos del pico de continua del centro. Devuelve true si hubo que moverlo. */
+bool profile_pick_audio_freq(int64_t chan_freq, int64_t center, double rate, const int64_t *sig_hz, int nsig,
+                             int64_t *out)
+{
+    double half = rate / 2.0;
+    if (chan_freq >= center - half && chan_freq <= center + half) {
+        *out = chan_freq;
+        return false;
+    }
+    int64_t best = center + (int64_t)(rate / 4.0);
+    int64_t dmin = INT64_MAX;
+    for (int i = 0; sig_hz && i < nsig; i++) {
+        if (sig_hz[i] < center - 0.45 * rate || sig_hz[i] > center + 0.45 * rate)
+            continue;
+        int64_t d = llabs(sig_hz[i] - chan_freq);
+        if (d < dmin) {
+            dmin = d;
+            best = sig_hz[i];
+        }
+    }
+    *out = best;
+    return true;
+}
+
 int profile_apply(const profile_t *p, engine_t *e, dec_host_t *h, int client, char *err, size_t errlen)
 {
-    (void)errlen;
     err[0] = '\0';
+    int ret = 0;
     dec_host_auto_clear(h); /* antes de quitar: que el hilo auto no repueble */
     dec_host_remove_owner(h, 1);
 
@@ -118,7 +148,17 @@ int profile_apply(const profile_t *p, engine_t *e, dec_host_t *h, int client, ch
         int m = mode_from_name(p->mode);
         if (m >= 0) {
             cp.mode = (demod_mode_t)m;
-            cp.freq_hz = p->chan_freq;
+            /* Banda real tras sanear: con fichero es la del fichero, no la del perfil. */
+            engine_cfg_t real;
+            engine_get_config(e, &real);
+            int64_t f;
+            if (profile_pick_audio_freq(p->chan_freq, real.center_hz, real.rate, NULL, 0, &f)) {
+                snprintf(err, errlen, "el canal de audio del perfil (%.3f MHz) queda fuera de la banda capturada; se coloca en %.3f MHz",
+                         (double)p->chan_freq / 1e6, (double)f / 1e6);
+                LOG_W("Perfil %s: %s", p->id, err);
+                ret = 1; /* aviso, no error */
+            }
+            cp.freq_hz = f;
             cp.bw_hz = p->bw ? p->bw : mode_default_bw(cp.mode);
             engine_set_channel(e, client, &cp);
         }
@@ -138,5 +178,5 @@ int profile_apply(const profile_t *p, engine_t *e, dec_host_t *h, int client, ch
         if (dec_host_add(h, d->proto, f, NULL, 1, derr, sizeof derr) < 0)
             LOG_W("Perfil %s: no se pudo crear %s: %s", p->id, d->proto, derr);
     }
-    return 0;
+    return ret;
 }

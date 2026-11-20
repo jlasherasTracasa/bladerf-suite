@@ -423,7 +423,17 @@ suites.perfiles = async (ctx) => {
     check(`perfil ${id}: se aplica y el canal queda dentro de la banda`, good, `${r[0]} ${r[1]} canal ${r[2]}`);
     const marked = await pg.ev(`document.querySelector('.pcard[data-id="${id}"]').getAttribute('aria-pressed')`);
     check(`perfil ${id}: tarjeta marcada activa`, marked === 'true');
-    if (p && p.mode && p.chan_freq) check(`perfil ${id}: modo y frecuencia de audio del perfil`, (await S_(pg, 'S.chan.mode')) === p.mode && (await S_(pg, 'S.chan.freq')) === p.chan_freq, await S_(pg, '[S.chan.mode,S.chan.freq]'));
+    if (p && p.mode && p.chan_freq) {
+      // Con decodificador «follow» la web sintoniza la señal detectada más fuerte a ±300 kHz del canal del
+      // perfil (y si no hay, deja chan_freq). Sin «follow», chan_freq exacto (o, fuera de banda, lo que decida el servidor).
+      const m = await S_(pg, '[S.chan.mode,S.chan.freq,S.status.center,S.status.rate,(S.signals&&S.signals.list||[]).map(s=>(S.signals.center+s[0]))]');
+      const inBand = p.chan_freq >= m[2] - m[3] / 2 && p.chan_freq <= m[2] + m[3] / 2;
+      const follow = (p.decoders || []).some((d) => d.follow);
+      let okf;
+      if (follow) okf = m[1] === p.chan_freq || m[4].some((f) => Math.abs(f - p.chan_freq) <= 300e3 && Math.abs(m[1] - f) <= 50e3);
+      else okf = inBand ? m[1] === p.chan_freq : (m[1] >= m[2] - m[3] / 2 && m[1] <= m[2] + m[3] / 2);
+      check(`perfil ${id}: modo y frecuencia de audio del perfil`, m[0] === p.mode && okf, JSON.stringify(m));
+    }
     check(`perfil ${id}: sin excepciones`, pg.exceptions.length === nx);
   }
   await pg.ev(`document.querySelector('.pcard[data-id="fm"]').click()`); await sleep(400);
@@ -675,6 +685,9 @@ suites.atajos = async (ctx) => {
   await pg.key('f'); await sleep(100);
   check('F enfoca la frecuencia', (await pg.ev(`document.activeElement.id`)) === 'freq-input');
   await pg.key('Escape'); await pg.ev(`document.activeElement.blur();0`);
+  // Estado conocido: audio silenciado (un perfil «follow» anterior puede haberlo arrancado).
+  if (await S_(pg, 'S.chan.audio')) { await pg.key(' '); await sleep(400); }
+  check('Espacio: partimos de audio silenciado', (await S_(pg, 'S.chan.audio')) === false);
   await pg.key(' '); await sleep(500);
   const on = await S_(pg, 'S.chan.audio'); check('Espacio activa el audio', on === true, on);
   await pg.key(' '); await sleep(300); check('Espacio lo silencia', (await S_(pg, 'S.chan.audio')) === false);
