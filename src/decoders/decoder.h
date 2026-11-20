@@ -83,7 +83,15 @@ typedef struct {
  * más "snr_db"/"rssi_dbfs" medidos en el canal. Si el emisor no es el host
  * (pruebas) el JSON sigue siendo válido y los campos pasan tal cual. Un
  * decodificador que no llama a dec_emit_span() recibe por omisión el inicio de
- * la llamada en curso (precisión de un bloque). */
+ * la llamada en curso (precisión de un bloque).
+ *
+ * CONVENCIÓN DE POSICIÓN (P3d, la misma en todos): off0 = primer símbolo MODULADO de la señal
+ * transmitida, preámbulo incluido (secuencia de entrenamiento AIS, banderas de relleno HDLC en
+ * APRS, preámbulo en POCSAG/ADS-B/LoRa); la portadora sin modular previa no cuenta. off1 = último
+ * símbolo del mensaje (bandera de cierre, última palabra de código, último pulso). Un
+ * decodificador que no pueda saber dónde empezó el preámbulo marca el primer símbolo que sí vio y
+ * debe documentarlo. Se comprueba contra la verdad inyectada en tests/test_labels.c y
+ * paper/exp/calibracion. */
 static inline void dec_emit_span(dec_emit_fn emit, void *ctx, int64_t off0, int64_t off1, const char *json,
                                  size_t len)
 {

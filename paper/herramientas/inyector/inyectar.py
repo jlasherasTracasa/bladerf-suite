@@ -105,14 +105,43 @@ def band_power(x, fs, f0, bw, nseg=2048):
     return acc / max(cnt, 1)
 
 
-def local_noise(bg, start, end, f_off, bw):
-    """P_ruido del fondo en la ventana [start,end) y banda f_off±bw/2 (ver cabecera)."""
+def shaped_power(x, fs, f0, bw, shape, nseg=2048):
+    """Segunda definición de ruido (P3d): potencia de ruido equivalente TRAS el filtro de canal.
+    shape = (f, h2): respuesta en potencia |H(f)|² del canal del decodificador (medida con el DDC real,
+    ddc_resp.c), centrada en f0. La PSD local se pondera con |H(f − f0)|²; la densidad media ponderada
+    se multiplica por el ancho de referencia bw (el de la SNR 1, el ocupado), de modo que sobre ruido
+    blanco coincide con band_power() y, con un fondo no llano (espurios, portadoras), pesa lo que el
+    decodificador ve de verdad dentro de su filtro y no un rectángulo de ancho bw."""
+    nseg = min(nseg, len(x))
+    w = np.hanning(nseg); k = np.sum(w ** 2)
+    f = np.fft.fftfreq(nseg, 1 / fs)
+    wt = np.interp(f - f0, shape[0], shape[1], left=0.0, right=0.0)
+    acc, cnt = 0.0, 0
+    for s in range(0, len(x) - nseg + 1, max(1, nseg // 2)):
+        X = np.fft.fft(x[s:s + nseg] * w)
+        acc += np.sum(wt * np.abs(X) ** 2) / (nseg * k) / max(np.sum(wt), 1e-30) * (bw * nseg / fs); cnt += 1
+    return acc / max(cnt, 1)
+
+
+def mod_offset(x, i0, thr=0.1):
+    """Primer símbolo MODULADO: índice (relativo a i0, primera muestra activa) de la primera muestra
+    que se aparta más de thr·max|x| de x[i0]. Una portadora sin modular delante (POCSAG: 50 ms)
+    es señal activa pero no tiene símbolos; la convención de posición (P3d) empieza en el primero."""
+    d = np.nonzero(np.abs(x[i0:] - x[i0]) > thr * np.abs(x).max())[0]
+    return int(d[0]) if len(d) else 0
+
+
+def local_noise(bg, start, end, f_off, bw, shape=None):
+    """P_ruido del fondo en la ventana [start,end) y banda f_off±bw/2 (ver cabecera).
+    Con shape=(f,h2) la banda se pondera con la respuesta del canal (shaped_power)."""
     n = end - start
     if n < MIN_WIN:
         extra = MIN_WIN - n
         start -= extra // 2; end = start + MIN_WIN
         if start < 0: start, end = 0, MIN_WIN
         if end > bg.n: start, end = bg.n - MIN_WIN, bg.n
+    if shape is not None:
+        return shaped_power(bg.read(start, end), bg.fs, f_off, bw, shape), (start, end)
     return band_power(bg.read(start, end), bg.fs, f_off, bw), (start, end)
 
 

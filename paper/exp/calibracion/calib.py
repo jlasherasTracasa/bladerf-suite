@@ -31,6 +31,10 @@ BGDIR = os.environ.get("BGDIR", os.path.join(RAIZ, "build/p3/bg"))
 WORK = os.environ.get("WORK", os.path.join(RAIZ, "build/p3/work"))
 DATOS = os.path.join(AQUI, "datos")
 REAL = os.path.join(RAIZ, "tests/data/real")
+try:
+    RESP = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ddc_resp.json")))
+except OSError:
+    RESP = {}
 SIGMA = 60.0           # ruido blanco: LSB Q11 por muestra compleja (igual que el piloto)
 
 F48_REC = ["acars", "ais", "aprs", "flex", "pocsag512", "pocsag1200", "pocsag2400", "rs41"]
@@ -181,7 +185,9 @@ def gen_copy(proto, i, fs, center):
     if proto == "adsb": i1 = min(i1, i0 + c["trim"])     # solo la 1.ª trama: una copia = una trama
     pad = int(iny.PAD_S * fs)
     lo, hi = max(i0 - pad, 0), min(i1 + pad, len(x))
-    x, pad = x[lo:hi], (i0 - lo, hi - i1)                # (silencio previo, silencio posterior)
+    # (silencio previo, silencio posterior, desfase del primer símbolo modulado respecto al inicio activo)
+    mo = iny.mod_offset(x, i0)
+    x, pad = x[lo:hi], (i0 - lo, hi - i1, mo)
     bw = float(c.get("bw", bw))
     _cache[key] = (x, pad, bw)
     return _cache[key]
@@ -298,6 +304,10 @@ def run_series(a):
             s0, s1 = jb["start"], jb["start"] + len(x)
             pn, _ = iny.local_noise(bg, s0, s1, jb["f_rel"] + jb["cfo"], bw)
             jb["amp"] = float(np.sqrt(10 ** (jb["snr"] / 10) * pn / psig)); jb["pn"] = float(pn)
+            # segunda definición: ruido tras el filtro de canal del decodificador (solo a la tasa de la serie principal)
+            rs = RESP.get(proto)
+            jb["pnc"] = float(iny.local_noise(bg, s0, s1, jb["f_rel"] + jb["cfo"], bw, (np.array(rs["f"]), np.array(rs["h2"])))[0]) \
+                if rs and abs(rs["fs"] - fs) < 1 and jb["role"] == "t" else float("nan")
         y = bg.read(0, n_bg).astype(np.complex128).copy()
         n_bg = len(y)
         for jb in jobs:
@@ -333,13 +343,15 @@ def run_series(a):
                        and (proto != "ism" or (e["temp"] is not None and abs(e["temp"] - (5 + (jb["id"] % 97) * 0.3)) < 0.15))]
             used.update(hit)
             e = min((evs[k] for k in hit), key=lambda q: q["s"]) if hit else None
-            ds = (e["s"] - s0) if e and e["s"] is not None else ""
+            # verdad = primer símbolo modulado (convención de posición P3d): inicio activo + desfase de modulación
+            ds = (e["s"] - (s0 + jb["pad"][2])) if e and e["s"] is not None else ""
             ingap = int(any(gs < s0 + L + fs and gs + gn > s0 - fs for gs, gn in g))
             rows.append([proto, bgk, cond, seed, npass, round(jb["snr"], 3), round(jb["cfo"], 2), int(bool(hit)), len(hit),
                          ds, e["sm"] if e else "", e["snr"] if e and e["snr"] is not None else "",
                          e["rssi"] if e and e["rssi"] is not None else "",
                          e["cfo"] if e and e["cfo"] is not None else "",
-                         bg.file_at(s0) if pool else "white", round(jb["pn"], 2), s0, L, ingap])
+                         bg.file_at(s0) if pool else "white", round(jb["pn"], 2), s0, L, ingap,
+                         "" if math.isnan(jb["pnc"]) else round(jb["pnc"], 2)])
         if ident:
             ids = {jb["id"] for jb in jobs}
             extras += sum(1 for e in evs if e["id"] not in ids)
@@ -348,7 +360,7 @@ def run_series(a):
     with open(os.path.join(DATOS, tag + ".csv"), "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["proto", "bg", "cond", "seed", "pasada", "snr_inj", "cfo_inj", "rec", "n_ev", "dsample", "sample_src",
-                    "ev_snr", "ev_rssi", "ev_cfo", "fichero_fondo", "pn_local", "start", "len", "en_hueco"])
+                    "ev_snr", "ev_rssi", "ev_cfo", "fichero_fondo", "pn_local", "start", "len", "en_hueco", "pn_chan"])
         w.writerows(rows)
     json.dump(dict(tag=tag, proto=proto, bg=bgk, cond=cond, seed=seed, fs=fs, copies=len(rows), pasadas=npass,
                    segundos_senal=sigsec, eventos_ajenos=extras, gaps=gaps_t, pasadas_escaladas=clipsc,

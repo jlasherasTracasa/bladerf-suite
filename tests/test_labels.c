@@ -5,9 +5,12 @@
  * Parte 1 (host, sin servidor): cada modulador propio genera una ráfaga que se coloca en un índice
  *   CONOCIDO de una captura con ruido, desplazada de frecuencia, a una tasa de fuente mayor que la
  *   del canal (así pasa por el DDC real) y se alimenta con dec_host_feed_at() en bloques que no están
- *   alineados con la ráfaga. El evento debe traer "sample" a ±1 símbolo de la posición verdadera
- *   (inicio de la bandera de apertura en AIS/APRS, inicio del preámbulo en ADS-B y LoRa), con
- *   "sample_src":"mark", "snr_db" cerca de la SNR de canal inyectada y "rssi_dbfs". POCSAG marca el inicio
+ *   alineados con la ráfaga. CONVENCIÓN (P3d): "sample" = primer símbolo modulado de la señal transmitida
+ *   (preámbulo, banderas de relleno o secuencia de entrenamiento incluidos; no la portadora sin modular
+ *   previa), "sample_end" = último símbolo del mensaje. El evento debe traer "sample" a ±1 símbolo de la
+ *   verdad inyectada (primera bandera de relleno en APRS, preámbulo en POCSAG/ADS-B/LoRa; en AIS marca
+ *   hoy la bandera de apertura, 24 símbolos después: pendiente, ver docs), con
+ *   "sample_src":"mark", "snr_db" = SNR inyectada en el ancho ocupado (±1,5 dB, a 8 dB y a la nominal) y "rssi_dbfs". POCSAG marca el inicio
  *   del preámbulo de la transmisión (a ±1 bit a 1200 Bd).
  * Parte 2 (binario, solo si existe ../bladerf-lab): genera un fichero con una ráfaga AIS y una portadora
  *   continua sin decodificador, y lanza `bladerf-lab --replay f --labels l.sigmf-meta`. Comprueba que
@@ -65,6 +68,8 @@ typedef struct {
     double snr_db;         /* SNR de canal (en el ancho del DDC) o en toda la banda si es WIDE */
     double lead_s;         /* posición de la ráfaga en la captura */
     double truth_off;      /* inicio verdadero: segundos tras el principio de la salida del modulador */
+    double trim_s;         /* si > 0, la señal medida es solo este tiempo desde su inicio (ADS-B: la 1.ª trama) */
+    double ref_bw;         /* ancho de referencia de la SNR inyectada (ancho ocupado; 0 = bw_hz del DDC / toda la banda) */
 } case_t;
 
 /* Genera el caso y lo pasa por el host. truth = índice de muestra verdadero del inicio. */
@@ -94,21 +99,22 @@ static bool run_case(const case_t *c, int64_t *truth, int *nsamp)
         x = malloc(sizeof(cf32) * ((size_t)((double)b.n * ratio) + 64));
         n = chan_resample(b.s, b.n, ratio, x);
     }
-    /* potencia de las muestras "encendidas" y desvío al canal */
+    /* potencia de la señal: media sobre la ventana activa (primera a última muestra con |x| > 2 % del
+     * máximo), la misma definición que la SNR local de la calibración (paper/exp/calibracion) */
     double pmax = 0;
     for (int i = 0; i < n; i++)
         pmax = fmax(pmax, (double)x[i].re * x[i].re + (double)x[i].im * x[i].im);
+    int i0 = 0, i1 = n - 1;
+    while (i0 < n - 1 && (double)x[i0].re * x[i0].re + (double)x[i0].im * x[i0].im <= 4e-4 * pmax)
+        i0++;
+    while (i1 > i0 && (double)x[i1].re * x[i1].re + (double)x[i1].im * x[i1].im <= 4e-4 * pmax)
+        i1--;
+    if (c->trim_s > 0)
+        i1 = MIN(i1, i0 + (int)(c->trim_s * c->rate));
     double ps = 0;
-    int non = 0;
-    for (int i = 0; i < n; i++) {
-        double p = (double)x[i].re * x[i].re + (double)x[i].im * x[i].im;
-        if (p >= 0.25 * pmax) {
-            ps += p;
-            non++;
-        }
-    }
-    ps /= non;
-    /* escala: amplitud de pico 0,3 (deja sitio al ruido sin recortar en Q11) */
+    for (int i = i0; i <= i1; i++)
+        ps += (double)x[i].re * x[i].re + (double)x[i].im * x[i].im;
+    ps /= (double)(i1 - i0 + 1);
     float g = (float)(0.3 / sqrt(pmax));
     for (int i = 0; i < n; i++) {
         x[i].re *= g;
@@ -119,8 +125,8 @@ static bool run_case(const case_t *c, int64_t *truth, int *nsamp)
 
     const int64_t k0 = (int64_t)(c->lead_s * c->rate);
     const int total = (int)(k0 + n + (int)(0.3 * c->rate));
-    /* ruido: SNR en el ancho del canal (bw_hz del DDC); WIDE: en toda la banda */
-    double bw = wide ? c->rate : (double)d->bw_hz;
+    /* ruido: SNR en el ancho de referencia (ancho ocupado de la señal, P3d); WIDE: en toda la banda */
+    double bw = c->ref_bw > 0 ? c->ref_bw : wide ? c->rate : (double)d->bw_hz;
     double pn_total = ps / pow(10.0, c->snr_db / 10.0) * (c->rate / bw);
     double sg = sqrt(pn_total / 2.0);
     cf32 *y = calloc((size_t)total, sizeof(cf32));
@@ -186,10 +192,28 @@ static void check_case(const char *title, const case_t *c, double sym_samples, c
         bool hs = ev_num("\"type\":\"dec\"", "snr_db", &snr);
         CHECK(hs);
         if (hs) {
-            printf("  snr_db = %.1f (inyectada %.1f en el canal)\n", snr, c->snr_db);
-            CHECK_NEAR(snr, c->snr_db, 3.5);
+            printf("  snr_db = %.1f (inyectada %.1f en el ancho ocupado, error %+.2f dB)\n", snr, c->snr_db, snr - c->snr_db);
+            CHECK_NEAR(snr, c->snr_db, 1.5);
         }
         CHECK(ev_num("\"type\":\"dec\"", "rssi_dbfs", &snr));
+    }
+}
+
+/* P3d: snr_db del host con otra SNR (8 dB, donde el sesgo del suelo y el ancho de ruido más pesan):
+ * debe coincidir con la inyectada en el ancho ocupado con ±1,5 dB en todos los protocolos. */
+static void check_snr8(const case_t *c0)
+{
+    case_t c = *c0;
+    c.snr_db = 8;
+    int64_t truth;
+    int total;
+    double snr = 0;
+    CHECK(run_case(&c, &truth, &total));
+    bool hs = ev_num("\"type\":\"dec\"", "snr_db", &snr);
+    CHECK(hs);
+    if (hs) {
+        printf("  [%s a 8 dB] snr_db = %.1f (error %+.2f dB)\n", c.proto, snr, snr - 8.0);
+        CHECK_NEAR(snr, 8.0, 1.5);
     }
 }
 
@@ -198,32 +222,37 @@ static void test_positions(void)
     /* AIS: 48 kHz → captura de 1 Msps con el canal 25 kHz por debajo del centro */
     case_t ais = {.proto = "ais", .params = "{\"types\":[18]}", .rate = 1e6, .center = 162000000LL,
                   .freq = 161975000LL, .snr_db = 15, .lead_s = 0.2345,
-                  .truth_off = 0.1 + (24 * 5 + 5) / 48000.0};
-    check_case("AIS: sample del evento (inicio de la bandera de apertura)", &ais, 1e6 / 9600.0, "\"sample_src\":\"mark\"");
+                  .truth_off = 0.1 + (24 * 5 + 5) / 48000.0, .ref_bw = 18844};
+    check_case("AIS: sample del evento (bandera de apertura; PENDIENTE: convencion = inicio de la secuencia de entrenamiento, 24 simbolos antes)", &ais, 1e6 / 9600.0, "\"sample_src\":\"mark\"");
+    check_snr8(&ais);
 
     /* APRS: 2400 muestras de silencio + 15 banderas de relleno, la 16.ª abre la trama (40 muestras/bit) */
     case_t aprs = {.proto = "aprs", .params = "{\"type\":\"status\",\"callsign\":\"EA2XYZ\",\"text\":\"prueba\"}",
                    .rate = 1e6, .center = 144800000LL + 100000LL, .freq = 144800000LL, .snr_db = 22, .lead_s = 0.31,
-                   .truth_off = (2400 + 15 * 8 * 40 + 20) / 48000.0};
-    check_case("APRS: sample del evento (inicio de la bandera de apertura)", &aprs, 1e6 / 1200.0, "\"sample_src\":\"mark\"");
+                   .truth_off = 2400 / 48000.0, .ref_bw = 13969};
+    check_case("APRS: sample del evento (primera bandera de relleno de la racha)", &aprs, 1e6 / 1200.0, "\"sample_src\":\"mark\"");
+    check_snr8(&aprs);
 
     /* ADS-B: WIDE a 2 Msps; verdad = primera muestra de la ráfaga (hueco inicial de 400 muestras) */
     case_t adsb = {.proto = "adsb", .params = NULL, .rate = 2e6, .center = 1090000000LL, .freq = 1090000000LL,
-                   .snr_db = 25, .lead_s = 0.1234, .truth_off = 400 / 2e6};
+                   .snr_db = 25, .lead_s = 0.1234, .truth_off = 400 / 2e6, .trim_s = 120e-6};
     check_case("ADS-B: sample del evento (inicio del preámbulo)", &adsb, 2.0, "\"sample_src\":\"mark\"");
+    check_snr8(&adsb);
 
     /* LoRa: SF7 BW125 a 500 kHz; 0,02 s de silencio y empieza el preámbulo (símbolo = 1,024 ms) */
     case_t lora = {.proto = "lora", .params = NULL, .rate = 2e6, .center = 868000000LL, .freq = 868100000LL,
-                   .snr_db = 12, .lead_s = 0.4, .truth_off = 0.02};
+                   .snr_db = 12, .lead_s = 0.4, .truth_off = 0.02, .ref_bw = 125000};
     check_case("LoRa: sample del evento (inicio del preámbulo)", &lora, 2e6 * 1.024e-3, "\"sample_src\":\"mark\"");
+    check_snr8(&lora);
 
     /* POCSAG (P3c, dec_emit_span): el primer mensaje de una transmisión se marca desde el preámbulo, que
      * empieza tras los 0,05 s de portadora del modulador. Hace falta ≥ 1 s de ruido delante para que el
      * host estime el suelo (tramos de len/8 previos a la ventana, la ventana dura ~1 s). */
     case_t poc = {.proto = "pocsag", .params = NULL, .rate = 1e6, .center = 466000000LL + 200000LL,
-                  .freq = 466000000LL, .snr_db = 20, .lead_s = 1.5, .truth_off = 0.05};
+                  .freq = 466000000LL, .snr_db = 20, .lead_s = 1.5, .truth_off = 0.05, .ref_bw = 16781};
     check_case("POCSAG: sample del evento (inicio de la transmisión, el preámbulo)", &poc, 1e6 / 1200.0,
                "\"sample_src\":\"mark\"");
+    check_snr8(&poc);
 }
 
 /* ---- Parte 2: el binario con --replay-fast y --labels ---------------------------------------- */

@@ -44,12 +44,17 @@ def carga():
             fl = lambda s: float(s) if s != "" else float("nan")
             ser.setdefault(k, []).append((int(r["seed"]), float(r["snr_inj"]), int(r["rec"]), fl(r["dsample"]),
                                           fl(r["ev_snr"]), fl(r["ev_cfo"]), float(r["cfo_inj"]), int(r["en_hueco"]),
-                                          int(r["len"]), j["fs"], r["fichero_fondo"], int(r["n_ev"])))
+                                          int(r["len"]), j["fs"], r["fichero_fondo"], int(r["n_ev"]),
+                                          fl(r.get("pn_local", "")), fl(r.get("pn_chan", ""))))
     out = {}
     for k, v in ser.items():
         a = np.array([x[:9] + (x[9],) for x in v], float)
         out[k] = dict(seed=a[:, 0], snr=a[:, 1], rec=a[:, 2], ds=a[:, 3], esnr=a[:, 4], ecfo=a[:, 5], cfo=a[:, 6],
-                      gap=a[:, 7], len=a[:, 8], fs=a[:, 9], fich=np.array([x[10] for x in v]), nev=np.array([x[11] for x in v]))
+                      gap=a[:, 7], len=a[:, 8], fs=a[:, 9], fich=np.array([x[10] for x in v]), nev=np.array([x[11] for x in v]),
+                      pnl=np.array([x[12] for x in v]), pnc=np.array([x[13] for x in v]))
+        # SNR 2 (P3d): ruido equivalente tras el filtro de canal, redondeada a 1 dB (la rejilla de la curva)
+        with np.errstate(all="ignore"):
+            out[k]["snr2"] = np.round(out[k]["snr"] + 10 * np.log10(out[k]["pnl"] / out[k]["pnc"]))
     return out, meta
 
 
@@ -225,6 +230,12 @@ def main():
                  fs=float(d["fs"][0]), errores=errores(d, fit, proto),
                  ajenos=sum(j["eventos_ajenos"] for t, j in meta.items() if (j["proto"], j["bg"], j["cond"]) == (proto, bg, cond)),
                  fondos=sorted(set(d["fich"])) if bg != "white" else ["blanco"], bins=bi)
+        if np.mean(np.isfinite(d["snr2"])) > 0.9:               # segunda definición de SNR (P3d)
+            s2 = d["snr2"][v]; r2 = rc[np.isfinite(s2)]; s2 = s2[np.isfinite(s2)]
+            r["fit2"] = umbrales(s2, r2, rng); r["bins2"] = bins(s2, r2)
+            dd = (d["snr2"] - d["snr"])[v]; dd = dd[np.isfinite(dd)]
+            r["desplazamiento_snr2_db"] = dict(media=float(np.mean(dd)), std=float(np.std(dd)), p05=pct(dd, 5), p95=pct(dd, 95))
+            pl2 = r2[s2 >= 20]; r["p_meseta2_ge20"] = float(pl2.mean()) if len(pl2) else None
         res.append(r)
         for b in bi: curv.append([proto, bg, cond, b["snr"], b["n"], b["k"], round(b["p"], 4), round(b["lo"], 4), round(b["hi"], 4)])
     fp, ajenos = falsos_positivos(meta)
@@ -237,11 +248,13 @@ def main():
     with open(os.path.join(AQUI, "resumen.csv"), "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["proto", "bg", "cond", "emparejado", "copias", "s50", "s50_lo", "s50_hi", "s90", "s90_lo", "s90_hi", "suelo", "techo",
-                    "p_snr_ge20", "p_snr_le_m5", "pos_bias_sym", "pos_std_sym", "pos_abs_p95_sym", "snr_offset_db", "snr_slope", "snr_res_std_db",
+                    "s50_def2", "s90_def2", "techo_def2", "desplaz_def2_db", "p_snr_ge20", "p_snr_le_m5", "pos_bias_sym", "pos_std_sym", "pos_abs_p95_sym", "snr_offset_db", "snr_slope", "snr_res_std_db",
                     "cfo_std_hz", "ajenos"])
         for r in res:
             ft = r["fit"] or {}; e = r["errores"]
             w.writerow([r["proto"], r["bg"], r["cond"], r["emparejado"], r["copias"]] + [nan(ft.get(k)) for k in ("s50", "s50_lo", "s50_hi", "s90", "s90_lo", "s90_hi", "g", "c")]
+                       + [nan((r.get("fit2") or {}).get("s50")), nan((r.get("fit2") or {}).get("s90")), nan((r.get("fit2") or {}).get("c")),
+                          nan((r.get("desplazamiento_snr2_db") or {}).get("media"))]
                        + [nan(r["p_meseta_ge20"]), nan(r["p_bajo_le_m5"])] + [nan(e.get(k)) for k in ("pos_bias_sym", "pos_std_sym", "pos_abs_p95_sym", "snr_offset_db", "snr_slope", "snr_res_std_db", "cfo_std_hz")]
                        + [r["ajenos"]])
     graficas(res)
@@ -271,6 +284,20 @@ def graficas(res):
         fig.suptitle(titulo, fontsize=11); fig.tight_layout(); fig.savefig(os.path.join(AQUI, fn), dpi=130); plt.close(fig)
     panel(PRINC, "curvas.png", "P(etiquetado | SNR local), 3 semillas, IC Wilson 95 %", 3)
     panel(EMPAR, "curvas_emparejados.png", "Emparejados por tiempo (sin identificador): P(etiquetado | SNR local)", 3)
+    # P3d: curvas con las dos definiciones de SNR (fondo real: tras el filtro de canal)
+    fig, axs = plt.subplots(2, 3, figsize=(12.6, 6.4), squeeze=False)
+    for ax, p in zip(axs.flat, PRINC):
+        for r in res:
+            if r["proto"] != p or r["cond"] != "none" or r["bg"] not in ("white", "real", "real_rf"): continue
+            if r["bg"] == "white":
+                pinta(ax, r, COL["white"], "blanco")
+            elif r.get("fit2"):
+                pinta(ax, r, "#999999", "real, SNR 1 (banda ocupada)", ls="--")
+                r2 = dict(r, bins=r["bins2"], fit=r["fit2"]); pinta(ax, r2, COL["real"], "real, SNR 2 (tras el filtro de canal)")
+        ax.axhline(0.5, color="#999", lw=0.5, ls=":"); ax.axhline(0.9, color="#999", lw=0.5, ls=":")
+        ax.set_title(p); ax.set_xlabel("SNR (dB)"); ax.set_ylabel("P(etiquetado)"); ax.set_ylim(-0.02, 1.03); ax.grid(alpha=0.2); ax.legend(fontsize=7, loc="lower right")
+    axs.flat[-1].axis("off"); fig.suptitle("Fondos reales con dos definiciones de SNR (P3d)", fontsize=11)
+    fig.tight_layout(); fig.savefig(os.path.join(AQUI, "curvas_def2.png"), dpi=130); plt.close(fig)
     # ocupación
     fig, axs = plt.subplots(2, 3, figsize=(12.6, 6.4), squeeze=False)
     for ax, p in zip(axs.flat, PRINC):

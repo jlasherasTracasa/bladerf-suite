@@ -176,3 +176,120 @@ que cubre solo parte de la copia da menos SNR instantánea en esa parte.
   otros decodificadores: la P es la del decodificador aislado, no del sistema.
 * En ocupación, el interferente es del mismo protocolo y solo hay solape temporal
   completo; no cubre ráfagas parciales (±0,5 L de desfase aleatorio sí).
+
+
+## P3d: convención de posición, SNR de fondos reales y `snr_db` del host
+
+Re-medidas (3 semillas, 1 224 copias por serie) las series principales de ais, aprs, pocsag,
+lora y adsb con los cambios de abajo; las series de ocupación y las emparejadas por tiempo
+son las anteriores (sus `snr_db` y posiciones no se usan). Resultados anteriores:
+`resultados_p3c.json`. Cambios en las tablas de arriba: la sensibilidad (SNR50/SNR90) apenas
+se mueve en blanco (ais 10,2 → 9,4: el eje cambió, ver (c)); las columnas de error de posición
+y de SNR de la sección «Error de posición» quedan sustituidas por las de aquí.
+
+### (a) Sesgo constante de `sample`: la discrepancia con `test_labels`
+
+Causa: no era un error de un lado, eran **dos verdades distintas**. `tests/test_labels.c` tomaba
+como verdad la bandera de apertura (AIS, APRS) y el inicio del preámbulo (POCSAG), mientras que el
+inyector toma como inicio de la copia la **primera muestra activa** (|x| > 2 % del máximo), que
+incluye la secuencia de entrenamiento de AIS (24 bits), las 15 banderas de relleno de APRS
+(120 bits = 100 ms) y la portadora sin modular de 50 ms que el modulador POCSAG pone delante
+(2 400 muestras = 120 símbolos a 2 400 Bd). Los sesgos medidos (24,4 / 120,5 / 121,1 símbolos)
+son exactamente esas longitudes; la dispersión ≈ 0 confirma que el decodificador era
+coherente, solo que marcaba otro punto.
+
+**Convención única** (documentada en `src/decoders/decoder.h`): `sample` = primer símbolo
+**modulado** de la señal transmitida, preámbulo incluido (entrenamiento AIS, banderas de relleno
+HDLC, preámbulo POCSAG/ADS-B/LoRa); la portadora sin modular no cuenta. `sample_end` = último
+símbolo del mensaje (bandera de cierre, última palabra de código, último pulso). Cambios:
+
+* Inyector/calibración (`inyectar.mod_offset`, `calib.gen_copy`): la verdad es la primera muestra
+  que se aparta del valor inicial más del 10 % del máximo, no la primera activa. Solo cambia POCSAG
+  (la portadora, 120 símbolos); en el resto es ≤ 1 símbolo.
+* APRS (`aprs.c`): marca la primera bandera de la racha de relleno, no la de apertura. Se sigue la
+  racha con un registro de bits y se extiende hacia atrás hasta 3 banderas con ≤ 1 error de bit
+  (el demodulador tarda unos símbolos en engancharse y la primera bandera llega estropeada en el
+  ~40 % de las tramas). Con tolerancia 2 hay demasiadas falsas extensiones sobre ruido (20 %).
+* POCSAG: ya marcaba el inicio del preámbulo (P3c); solo estaba mal la verdad.
+* AIS (`ais.c`, en edición por D9, **no tocado**): sigue marcando la bandera de apertura; el
+  arreglo es `a->mk0 = last_start - (int64_t)((7.5 + 24) * SPS) - AIS_DELAY;` (la secuencia de
+  entrenamiento de 24 bits, ITU-R M.1371-5 Anexo 2 §3.1, precede a la bandera; SPS = 5 muestras/bit).
+  Pendiente de aplicar; con ello el sesgo de 23,5 pasa a ≈ −0,5.
+* `tests/test_labels.c`: verdad inyectada según la convención (APRS: fin del silencio inicial;
+  POCSAG: fin de la portadora), con ±1 símbolo. AIS sigue con la bandera y queda marcado como pendiente.
+
+| Proto | Sesgo antes (símbolos) | Sesgo ahora | Dispersión p95 (centrada) |
+|---|---|---|---|
+| ais | 24,4 | 23,5 (pendiente: −24 al aplicar el arreglo, → −0,5) | 0,12 |
+| aprs | 120,5 | 1,0 | 8,5 (cuantizado en banderas de 8 símbolos: ~12 % de copias pierden 1 bandera, ~7 % ganan 1) |
+| pocsag | 121,1 | 1,1 (22 muestras a 48 kS/s) | 0,00 |
+| lora | 0,04 | 0,04 | 0,00 |
+| adsb | 0 | −0,5 (1 muestra a 2 MS/s) | 0 |
+
+### (c) `snr_db` del host: causa y corrección
+
+El desplazamiento por protocolo (ais −0,5, aprs −1,1, lora −3,7, adsb +1,7 dB) tenía dos
+causas, ambas en `level_est()` de `src/decoders/host.c`:
+
+1. **Ancho de ruido.** La potencia de ruido que ve el decodificador es N0·ENBW, con ENBW =
+   1,158·`bw_hz` (medido con el DDC real sobre ruido blanco: 28 927 Hz en AIS, 347 392 Hz en LoRa;
+   el ISM, 1,224), mientras que la calibración (y cualquier comparación entre protocolos) refiere
+   la SNR al **ancho ocupado** de la señal (AIS 18,8 kHz; LoRa BW125 = 125 kHz, no los 300 kHz del
+   canal). Diferencia 10·log10(ENBW/B): −1,9 dB en AIS, −4,4 dB en LoRa. Ahora `snr_db` se
+   multiplica por ENBW/B_ref con B_ref = ancho ocupado (tabla `occ_bw_hz`: el que imprime `--gen`;
+   LoRa, la opción `bw`; ADS-B, toda la banda).
+2. **Sesgo del suelo.** El suelo es el percentil 25 de medias de tramos de len/8 muestras. En
+   mensajes cortos (ADS-B: tramos de 30 muestras) ese percentil queda 0,6 dB por debajo de la
+   media del ruido, y el SNR sale más alto. Se corrige dividiendo por el cuantil 0,25 de una
+   Gamma(k)/k, con k = muestras independientes del tramo (Wilson-Hilferty; k = tramo·ENBW/tasa).
+
+Test (`tests/test_labels.c`, ruido blanco, SNR en el ancho ocupado): error de `snr_db` de
+−0,1…+0,3 dB en los cinco protocolos a la SNR nominal y a 8 dB (antes ±3,5 dB de tolerancia).
+
+En la calibración (SNR ∈ [8, 20] dB, ruido blanco, mediana de `snr_db` − SNR inyectada): ais
++0,9, aprs +0,5, lora +0,8, adsb +1,1, pocsag +1,1 dB. **Dispersión entre protocolos 0,6 dB**
+(antes 5,4 dB: −3,7 … +1,7), con un residuo común de ≈ +0,9 dB respecto al test sintético que no
+se ha localizado (la calibración mide la señal como potencia media de la ventana activa y el
+ruido con Welch/Hann; el test usa la misma definición pero a una SNR fija, sin fondo variable).
+En pocsag y aprs la SNR del evento satura a SNR alta (σ residual grande): con las copias a
+80–120 ms unas de otras, los 64 tramos del suelo caen sobre copias vecinas. Es un artefacto de la
+densidad de copias, no del estimador; en un fondo vacío no ocurre.
+
+### (b) SNR de fondos reales: segunda definición
+
+Segunda definición, `SNR 2` = P_señal(B) / P_ruido tras el filtro de canal. La respuesta |H(f)|²
+del canal de cada decodificador se midió con el DDC real (`ddc_resp.c`, `ddc_resp.json`: un tono por
+frecuencia, ENBW de salida 28 959 / 18 514 / 14 472 / 347 292 Hz para ais/aprs/pocsag/lora, coincide con la
+medida con ruido) y la PSD local del fondo (Welch, ventana de la copia) se pondera con
+|H(f − f0)|² (`inyectar.shaped_power`), normalizada al ancho B para que coincida con SNR 1 en
+blanco (verificado: desplazamiento 0,00 ± 0,00 dB en blanco). El dato necesario (potencia de ruido
+tras el filtro) no se guardaba: se añadió la columna `pn_chan` y se re-midieron las series (no se
+puede reanalizar sin volver a decodificar). ADS-B (ancho completo, sin filtro) no tiene SNR 2.
+Curvas en `curvas_def2.png`; columnas `*_def2` de `resumen.csv`.
+
+| Proto (fondo real_rf / real) | SNR50 blanco | SNR50 real, SNR 1 | SNR50 real, SNR 2 | Desplazamiento medio SNR2 − SNR1 |
+|---|---|---|---|---|
+| ais | 9,4 | 10,5 | 9,8 | −1,3 ± 4,6 dB |
+| aprs | 9,3 | 13,9 | 13,5 | −0,3 ± 0,8 |
+| pocsag | 0,9 | −1,4 | −1,0 | +0,4 ± 1,2 |
+| lora | −4,8 | −5,6 | −2,6 | +3,0 ± 0,1 |
+| adsb | 6,7 | 3,9 | — | — |
+
+**¿Quedan las curvas reales coherentes con el blanco? Solo en parte.** Con SNR 2:
+* ais se acerca (diferencia con el blanco 1,1 → 0,4 dB): era un problema de definición.
+* lora cambia de signo: el fondo real (LTE/GSM remuestreado) tiene la densidad más baja en los
+  bordes del canal de 300 kHz (hipótesis: rolloff del remuestreador; el desplazamiento es de 3,0 dB casi constante), así que el ruido «equivalente» es 3,0 dB
+  menor que el medido en 125 kHz; SNR 1 hacía parecer el fondo real más fácil (−5,6) y SNR 2
+  lo coloca 2,2 dB peor que el blanco (−2,6), el orden esperado con un fondo no gaussiano.
+* aprs (+4,2 dB) y pocsag (−1,9 dB) no se explican por la definición (desplazamiento ≈ 0): las
+  curvas reales son además **más anchas** (aprs: SNR90 − SNR50 = 4,9 dB en real frente a 0,9 en
+  blanco). Hipótesis (no contrastada): ráfagas ISM impulsivas dentro de la ventana de la copia; la potencia media
+  (de cualquier definición) no describe un ruido no estacionario. POCSAG real «más fácil» que el blanco
+  se debería a lo mismo, a la inversa (las partes tranquilas del fondo, con potencia media alta por
+  las ráfagas, dejan al decodificador más SNR instantánea de la nominal).
+* adsb real (3,9 frente a 6,7) queda sin explicar; para ADS-B la SNR 2 no cambia nada.
+* `real_rec` (grabaciones con portadoras fuertes) cambia de −15 a +22 dB según el protocolo: no
+  es comparable, ver Limitaciones.
+
+Recomendación para el artículo: curvas de blanco como referencia, `real_rf` con SNR 1 y SNR 2 y
+la anchura de la transición (SNR90 − SNR50) como indicador de no estacionariedad.

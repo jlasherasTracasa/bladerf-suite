@@ -44,6 +44,7 @@
 #define FS 48000.0
 #define NSLICE 3
 #define SPS_APRS 40 /* muestras por símbolo: 48000/1200 */
+#define FLAG_TOL 1 /* errores de bit tolerados al extender la racha de banderas hacia atrás */
 #define APRS_DELAY 18 /* FIR de 41 coef. (20) y correlador de símbolo, medido en tests/test_labels.c */
 #define MAX_FRAME_BITS (400 * 8 + 64)
 #define STATION_TTL 3600.0
@@ -532,6 +533,12 @@ typedef struct {
 typedef struct {
     hdlc_rx_t hdlc;
     afsk_t *demod;
+    /* Racha de banderas (convención de posición, ver on_level): últimos 8 bits NRZI-decodificados,
+     * 'pos' del último bit de la primera bandera de la racha y de la última bandera vista. */
+    unsigned sr;
+    uint64_t hist; /* últimos 64 bits NRZI-decodificados (el más reciente en el bit 0) */
+    int prev_level;
+    int64_t run0, run_last;
 } chan_slice_t;
 
 typedef struct {
@@ -783,14 +790,40 @@ static void on_level(void *ctx, int level)
     chan_slice_t *s = &a->sl[a->cur_slicer];
     s->hdlc.pos = afsk_index(s->demod);
     int nb = hdlc_rx_push_level(&s->hdlc, level);
-    if (nb >= 17 * 8 && nb <= 400 * 8 && nb % 8 == 0) {
-        /* Bandera de apertura: empieza 7,5 símbolos antes del bit en que se detectó (8 bits, el
-         * último centrado en 'pos'); la de cierre acaba medio símbolo después. APRS_DELAY es el
-         * retardo del discriminador, del FIR y del correlador (calibrado en tests/test_labels.c). */
-        a->mk0 = s->hdlc.last_start - (int64_t)(7.5 * SPS_APRS) - APRS_DELAY;
+    const bool frame = nb >= 17 * 8 && nb <= 400 * 8 && nb % 8 == 0;
+    if (frame) {
+        /* Convención de posición (P3d, igual en todos los decodificadores): el mensaje empieza en el
+         * PRIMER símbolo de la señal transmitida, preámbulo incluido; aquí, la primera bandera de la
+         * racha de banderas de relleno (TXDELAY) que precede a la trama, no la última (la de apertura
+         * propiamente dicha). Termina en el último símbolo de la bandera de cierre. Cada bandera
+         * empieza 7,5 símbolos antes del bit en que se detecta (8 bits, el último centrado en 'pos');
+         * la de cierre acaba medio símbolo después. APRS_DELAY es el retardo del discriminador, del FIR
+         * y del correlador (calibrado en tests/test_labels.c). */
+        int64_t first = s->run_last > 0 && s->run0 > 0 ? s->run0 : s->hdlc.last_start;
+        a->mk0 = first - (int64_t)(7.5 * SPS_APRS) - APRS_DELAY;
         a->mk1 = s->hdlc.last_end + SPS_APRS / 2 - APRS_DELAY;
         hdlc_rx_bytes(&s->hdlc, nb, a->buf);
         on_frame(a, a->buf, nb / 8);
+    }
+    /* Seguimiento de la racha de banderas (0x7E = 0,1,1,1,1,1,1,0 tras NRZI). Una bandera que cierra una
+     * trama abre también la racha siguiente (puede servir de apertura a la próxima trama). */
+    s->hist = (s->hist << 1) | (level == s->prev_level ? 1u : 0u);
+    s->sr = (unsigned)(s->hist & 0xFFu);
+    s->prev_level = level & 1;
+    if (s->sr == 0x7Eu) {
+        if (frame || s->hdlc.pos - s->run_last > 10 * SPS_APRS || s->run_last <= 0) {
+            s->run0 = s->hdlc.pos;
+            /* El demodulador tarda unos símbolos en engancharse y la primera bandera suele llegar
+             * estropeada (en ~40 % de las tramas no se reconoce): se extiende la racha hacia atrás
+             * (hasta 3 banderas) mientras el grupo de 8 bits anterior difiera de 0x7E en ≤ 2 bits. */
+            for (int g = 1; g <= 3; g++) {
+                unsigned grp = (unsigned)((s->hist >> (8 * g)) & 0xFFu);
+                if (__builtin_popcount(grp ^ 0x7Eu) > FLAG_TOL)
+                    break;
+                s->run0 -= 8 * SPS_APRS;
+            }
+        }
+        s->run_last = s->hdlc.pos;
     }
 }
 

@@ -104,6 +104,8 @@ typedef struct inst {
     float *pw;      /* anillo de potencia por muestra del decodificador (potencia de 2) */
     size_t pw_cap;  /* 0 = sin anillo (tasa demasiado alta) */
     double pw_scale;
+    double snr_k;   /* ancho de ruido equivalente del canal / ancho de referencia del SNR (lineal) */
+    double snr_dof; /* muestras de ruido independientes por muestra del anillo (1 = banda llena) */
 } inst_t;
 
 #define AUTO_RULES 8
@@ -215,9 +217,61 @@ static void block_unref(dec_host_t *h, block_t *b)
  * decodificador. snr_db: (P_ventana − P_suelo)/P_suelo en dB, con el suelo de ruido
  * estimado en los 64 tramos previos a la ventana como el percentil 25 de la
  * potencia media de cada tramo (los mensajes vecinos caen en el percentil alto y no
- * lo contaminan). Sin ≥ 4 tramos previos no hay SNR. No se resta ninguna ganancia:
- * es SNR de canal, que la calibración por inyección (paper/herramientas/inyector)
- * relaciona con la SNR en el ancho ocupado. */
+ * lo contaminan). Sin ≥ 4 tramos previos no hay SNR. No se resta ninguna ganancia.
+ *
+ * Definición (P3d): snr_db = P_señal / (N0 · B_ref), con B_ref el ANCHO OCUPADO de la señal
+ * (occ_bw_hz), igual que la SNR local de la calibración (paper/exp/calibracion). Antes era la
+ * SNR en el ancho de ruido equivalente del filtro del DDC, que depende del protocolo (el
+ * canal de LoRa mide 300 kHz para una señal de 125 kHz: −3,7 dB; el de AIS, −0,5 dB). Hay dos
+ * correcciones:
+ *  1) Ancho de ruido: la potencia de ruido medida dentro del canal es N0·ENBW, con
+ *     ENBW = 1,158·bw_hz (medido sobre ruido blanco con el DDC real, igual en todos los
+ *     decodificadores salvo ISM, 1,22); se multiplica por snr_k = ENBW / B_ref.
+ *  2) Sesgo del suelo: el percentil 25 de medias de 'seg' muestras de ruido subestima la
+ *     media. La media de k muestras complejas independientes de ruido tiene potencia
+ *     Gamma(k)/k, cuyo cuantil 0,25 es q(k) ≈ (1 − 1/(9k) − 0,6745/(3√k))³ (Wilson-Hilferty).
+ *     Con k = seg·snr_dof muestras independientes (en ADS-B, con tramos de 30 muestras, el
+ *     sesgo es de −0,6 dB), el suelo es p25/q(k). */
+static double occ_bw_hz(const inst_t *in)
+{
+    /* Ancho ocupado nominal de la señal de cada modulador (el que imprime `--gen`). LoRa: la opción bw. */
+    static const struct {
+        const char *id;
+        double hz;
+    } tab[] = {{"ais", 18844}, {"aprs", 13969}, {"pocsag", 16781}, {"acars", 6609}, {"rs41", 12141},
+               {"flex", 15703}, {"dsc", 12797}, {"ism", 234863}};
+    const char *id = in->d->id;
+    if (!strcmp(id, "lora")) {
+        double bw = 125000;
+        if (in->opts) {
+            jtok_t t[128];
+            int nt = json_parse(in->opts, strlen(in->opts), t, 128);
+            int i;
+            if (nt > 0 && (i = json_obj_get(in->opts, t, 0, "bw")) >= 0)
+                json_num(in->opts, t, i, &bw);
+        }
+        return bw;
+    }
+    for (size_t k = 0; k < sizeof tab / sizeof tab[0]; k++)
+        if (!strcmp(id, tab[k].id))
+            return tab[k].hz;
+    return in->d->bw_hz > 0 ? (double)in->d->bw_hz : 0.0;
+}
+
+static void snr_init(inst_t *in, double fs_in)
+{
+    if (in->d->kind == DEC_WIDE) { /* potencia cruda a la tasa del hardware: banda llena, ruido casi blanco */
+        in->snr_k = 1.0;
+        in->snr_dof = 1.0;
+        return;
+    }
+    const double enbw = (!strcmp(in->d->id, "ism") ? 1.224 : 1.158) * in->d->bw_hz;
+    const double bref = occ_bw_hz(in);
+    in->snr_k = bref > 0 ? enbw / bref : 1.0;
+    in->snr_dof = MIN(1.0, enbw / in->d->rate);
+    (void)fs_in;
+}
+
 static int cmp_f(const void *a, const void *b)
 {
     float x = *(const float *)a, y = *(const float *)b;
@@ -255,9 +309,14 @@ static void level_est(const inst_t *in, int64_t o0, int64_t o1, double *rssi, do
         m[i] = (float)pw_mean(in, (uint64_t)(a - (int64_t)(i + 1) * seg), (uint64_t)(a - (int64_t)i * seg));
     qsort(m, (size_t)ns, sizeof m[0], cmp_f);
     double pf = (double)m[ns / 4] * in->pw_scale;
+    {
+        double k = MAX(1.0, (double)seg * in->snr_dof);
+        double q = 1.0 - 1.0 / (9.0 * k) - 0.6745 / (3.0 * sqrt(k));
+        pf /= q * q * q; /* de percentil 25 a media (ver arriba) */
+    }
     if (pf <= 1e-20)
         return;
-    *snr = 10.0 * log10(MAX(pw - pf, 1e-3 * pf) / pf);
+    *snr = 10.0 * log10(MAX(pw - pf, 1e-3 * pf) / pf * in->snr_k);
     *have_snr = true;
 }
 
@@ -662,6 +721,7 @@ static void pos_call(inst_t *in, const block_t *b, double ratio, double delay_in
         in->pw = cap ? malloc(sizeof(float) * cap) : NULL;
         in->pw_cap = in->pw ? cap : 0;
         in->pw_scale = in->d->kind == DEC_WIDE ? 1.0 / (2048.0 * 2048.0) : 1.0;
+        snr_init(in, b->fs);
     }
     if (in->pw_cap) {
         const size_t mask = in->pw_cap - 1;
