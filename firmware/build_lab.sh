@@ -4,7 +4,7 @@
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/env.sh"
-VER="0.16.101"
+VER="0.16.102"
 cd "$HERE/bladeRF/hdl/quartus"
 start=$(date +%s)
 ./build_bladerf.sh -b bladeRF-micro -r lab -s A9 -D "$@" 2>&1 | tee "$HERE/out/logs/build_lab_xA9.log"

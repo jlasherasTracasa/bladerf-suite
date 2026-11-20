@@ -1,0 +1,287 @@
+diff --git a/hdl/fpga/platforms/bladerf-micro/software/bladeRF_nios/src/fpga_version.h b/hdl/fpga/platforms/bladerf-micro/software/bladeRF_nios/src/fpga_version.h
+index a9f8b0c..f52455d 100644
+--- a/hdl/fpga/platforms/bladerf-micro/software/bladeRF_nios/src/fpga_version.h
++++ b/hdl/fpga/platforms/bladerf-micro/software/bladeRF_nios/src/fpga_version.h
+@@ -8,10 +8,10 @@
+ #define FPGA_VERSION_ID         0x7777
+ #define FPGA_VERSION_MAJOR      0
+ #define FPGA_VERSION_MINOR      16
+-/* BladeRF Lab: la imagen "lab" se distingue de la de serie por el parche (101 = lab 1.1).
++/* BladeRF Lab: la imagen "lab" se distingue de la de serie por el parche (102 = lab 1.2).
+  * build_bladerf.sh compila el software del Nios con LAB_BUILD=1 cuando rev = lab. */
+ #ifdef BLADERF_LAB_BUILD
+-#define FPGA_VERSION_PATCH      101
++#define FPGA_VERSION_PATCH      102
+ #else
+ #define FPGA_VERSION_PATCH      0
+ #endif
+diff --git a/hdl/fpga/platforms/bladerf-micro/vhdl/bladerf-lab.vhd b/hdl/fpga/platforms/bladerf-micro/vhdl/bladerf-lab.vhd
+index 2ab0d79..b68b2a0 100644
+--- a/hdl/fpga/platforms/bladerf-micro/vhdl/bladerf-lab.vhd
++++ b/hdl/fpga/platforms/bladerf-micro/vhdl/bladerf-lab.vhd
+@@ -59,6 +59,11 @@ architecture lab_bladerf of bladerf is
+     signal rx_spec_active      : std_logic;
+     signal lab_cnt_rx          : std_logic_vector(192 downto 0);
+     signal lab_cnt_sys         : std_logic_vector(192 downto 0);
++    -- F10: saturación, tramas perdidas y marca de tiempo (cruce propio; el bus de 64 bit es atómico)
++    signal rx_cnt_sat, rx_cnt_satwin, rx_cnt_sdrop : unsigned(31 downto 0);
++    signal rx_time             : unsigned(63 downto 0);
++    signal lab_cnt2_rx         : std_logic_vector(159 downto 0);
++    signal lab_cnt2_sys        : std_logic_vector(159 downto 0);
+ 
+     signal sys_clock           : std_logic;
+     signal sys_clock_out       : std_logic;
+@@ -526,7 +531,11 @@ begin
+             c_spec     => unsigned(lab_cnt_sys(127 downto 96)),
+             c_late     => unsigned(lab_cnt_sys(159 downto 128)),
+             c_words    => unsigned(lab_cnt_sys(191 downto 160)),
+-            st_active  => lab_cnt_sys(192)
++            st_active  => lab_cnt_sys(192),
++            c_sat      => unsigned(lab_cnt2_sys(31 downto 0)),
++            c_satwin   => unsigned(lab_cnt2_sys(63 downto 32)),
++            c_sdrop    => unsigned(lab_cnt2_sys(95 downto 64)),
++            c_time     => unsigned(lab_cnt2_sys(159 downto 96))
+         );
+ 
+     U_lab_cdc_cfg : entity work.lab_cdc_bus
+@@ -551,6 +560,18 @@ begin
+             dst_data => lab_cnt_sys
+         );
+ 
++    lab_cnt2_rx <= std_logic_vector(rx_time) & std_logic_vector(rx_cnt_sdrop) &
++                   std_logic_vector(rx_cnt_satwin) & std_logic_vector(rx_cnt_sat);
++
++    U_lab_cdc_cnt2 : entity work.lab_cdc_bus
++        generic map (W => 160)
++        port map (
++            src_clk  => rx_clock,  src_rst => rx_reset,
++            src_data => lab_cnt2_rx,
++            dst_clk  => sys_clock, dst_rst => sys_reset,
++            dst_data => lab_cnt2_sys
++        );
++
+     -- Lectura de config_gpio: se conserva la de serie y los bits 27:24 se fijan a 0xA
+     gpio_in_base <= pack(nios_gpio.i, '0');
+     gpio_in_lab  <= gpio_in_base(31 downto 28) & x"A" & gpio_in_base(23 downto 0);
+@@ -778,7 +799,11 @@ begin
+             c_spec_frames          => rx_cnt_spec,
+             c_spec_late            => rx_cnt_late,
+             c_spec_words           => rx_cnt_words,
+-            spec_active            => rx_spec_active
++            spec_active            => rx_spec_active,
++            c_adc_sat              => rx_cnt_sat,
++            c_adc_satwin           => rx_cnt_satwin,
++            c_spec_drop            => rx_cnt_sdrop,
++            c_time                 => rx_time
+         );
+ 
+     adc_assignment_proc : process( all )
+diff --git a/hdl/fpga/platforms/bladerf-micro/vhdl/lab/lab_regs.vhd b/hdl/fpga/platforms/bladerf-micro/vhdl/lab/lab_regs.vhd
+index 40f3568..c3e1559 100644
+--- a/hdl/fpga/platforms/bladerf-micro/vhdl/lab/lab_regs.vhd
++++ b/hdl/fpga/platforms/bladerf-micro/vhdl/lab/lab_regs.vhd
+@@ -7,7 +7,7 @@
+ --
+ -- Mapa (índice de palabra):
+ --   0  ID         RO  0x4C414231 "LAB1"
+---   1  VERSION    RO  0x00010001 (mayor.menor de la lab = 1.0, revisión de banco 1)
++--   1  VERSION    RO  0x00010002 (mayor.menor de la lab = 1.2; parche de FPGA 102)
+ --   2  FEATURES   RO  bit0 motor de espectro; [7:4]=10 (log2 Nmin); [11:8]=13 (log2 Nmax)
+ --   3  SCRATCH    RW  32 bit
+ --   4  SCRATCH_N  RO  ~SCRATCH
+@@ -21,7 +21,18 @@
+ --  12  CNT_LATE     RO  tramas descartadas por lectura tardía
+ --  13  CNT_WORDS    RO  palabras de espectro emitidas
+ --  14  STATUS       RO  bit0 motor activo (rx_mux = 3 y RX habilitado)
+---  15  CLEAR        WO  cualquier escritura pone a cero los contadores (lee el nº de borrados)
++--  15  CLEAR        WO  cualquier escritura pone a cero los contadores 8..13 y 18..20 (lee el nº de borrados)
++-- Nuevos en la versión 1.2 (F10; los anteriores no cambian de dirección):
++--  16  CAPS         RO  mapa de capacidades: bit0 espectro, bit1 saturación ADC, bit2 marca de tiempo,
++--                       bit3 tramas de espectro perdidas; bits 8..14 reservados F11..F17 (0 = ausente)
++--  17  SYNTH        RO  parámetros de síntesis: [7:0] bits del ADC (12), [15:8] log2 Nmax (13),
++--                       [23:16] log2 Nmin (10), [31:24] bits por componente de la palabra de espectro (16)
++--  18  CNT_ADC_SAT  RO  muestras con |I| o |Q| en fondo de escala (0x7FF / 0x800) desde el último CLEAR
++--  19  SAT_WIN      RO  saturadas en la última ventana completa de 65536 muestras
++--  20  CNT_SPEC_DROP RO tramas de espectro con alguna palabra perdida por FIFO llena
++--  21  TIME_LO      RO  marca de tiempo libre (muestras válidas del canal 0), parte baja;
++--                       LEERLA captura la parte alta en TIME_HI (lectura atómica de 64 bit)
++--  22  TIME_HI      RO  parte alta capturada en la última lectura de TIME_LO
+ 
+ library ieee;
+     use ieee.std_logic_1164.all;
+@@ -50,14 +61,22 @@ entity lab_regs is
+         c_spec     : in  unsigned(31 downto 0);
+         c_late     : in  unsigned(31 downto 0);
+         c_words    : in  unsigned(31 downto 0);
+-        st_active  : in  std_logic
++        st_active  : in  std_logic;
++        -- F10
++        c_sat      : in  unsigned(31 downto 0);
++        c_satwin   : in  unsigned(31 downto 0);
++        c_sdrop    : in  unsigned(31 downto 0);
++        c_time     : in  unsigned(63 downto 0)
+     );
+ end entity;
+ 
+ architecture rtl of lab_regs is
+     constant ID_VALUE      : std_logic_vector(31 downto 0) := x"4C414231";
+-    constant VERSION_VALUE : std_logic_vector(31 downto 0) := x"00010001";
++    constant VERSION_VALUE : std_logic_vector(31 downto 0) := x"00010002";
+     constant FEATURES      : std_logic_vector(31 downto 0) := x"00000DA1";
++    constant CAPS_VALUE    : std_logic_vector(31 downto 0) := x"0000000F";
++    constant SYNTH_VALUE   : std_logic_vector(31 downto 0) := x"100A0D0C";
++    signal time_hi_lat : std_logic_vector(31 downto 0) := (others => '0');
+ 
+     signal scratch   : std_logic_vector(31 downto 0) := x"00000000";
+     signal r_log2n   : unsigned(3 downto 0) := to_unsigned(12, 4);
+@@ -101,6 +120,15 @@ begin
+                     when 13 => rv := std_logic_vector(c_words);
+                     when 14 => rv := x"0000000" & "000" & st_active;
+                     when 15 => rv := x"000000" & std_logic_vector(r_clear);
++                    when 16 => rv := CAPS_VALUE;
++                    when 17 => rv := SYNTH_VALUE;
++                    when 18 => rv := std_logic_vector(c_sat);
++                    when 19 => rv := std_logic_vector(c_satwin);
++                    when 20 => rv := std_logic_vector(c_sdrop);
++                    -- lectura atómica de 64 bit: la parte alta se congela junto con la baja
++                    when 21 => rv := std_logic_vector(c_time(31 downto 0));
++                                time_hi_lat <= std_logic_vector(c_time(63 downto 32));
++                    when 22 => rv := time_hi_lat;
+                     when others => rv := x"BAD0BAD0";
+                 end case;
+                 if wb_we = '1' then
+diff --git a/hdl/fpga/platforms/bladerf-micro/vhdl/lab/rx_lab.vhd b/hdl/fpga/platforms/bladerf-micro/vhdl/lab/rx_lab.vhd
+index ef1320d..304b41c 100644
+--- a/hdl/fpga/platforms/bladerf-micro/vhdl/lab/rx_lab.vhd
++++ b/hdl/fpga/platforms/bladerf-micro/vhdl/lab/rx_lab.vhd
+@@ -113,7 +113,13 @@ entity rx_lab is
+         c_spec_frames          : out   unsigned(31 downto 0);
+         c_spec_late            : out   unsigned(31 downto 0);
+         c_spec_words           : out   unsigned(31 downto 0);
+-        spec_active            : out   std_logic
++        spec_active            : out   std_logic;
++
++        -- F10: saturación del ADC, tramas de espectro perdidas y marca de tiempo libre
++        c_adc_sat              : out   unsigned(31 downto 0);
++        c_adc_satwin           : out   unsigned(31 downto 0);
++        c_spec_drop            : out   unsigned(31 downto 0);
++        c_time                 : out   unsigned(63 downto 0)
+     );
+ end entity;
+ 
+@@ -163,6 +169,13 @@ architecture arch of rx_lab is
+     signal clear_prev    : unsigned(7 downto 0) := (others => '0');
+     signal clr_pulse     : std_logic := '0';
+     signal cs_samples, cs_ovf : unsigned(31 downto 0) := (others => '0');
++    -- F10
++    signal cs_sat, cs_satwin, cs_sdrop : unsigned(31 downto 0) := (others => '0');
++    signal win_acc, win_cnt : unsigned(15 downto 0) := (others => '0');
++    signal tm_cnt : unsigned(63 downto 0) := (others => '0');
++    signal frame_lost : std_logic := '0';
++    signal spec_frames_d, c_spec_frames_i : unsigned(31 downto 0) := (others => '0');
++    signal clear_prev2 : unsigned(7 downto 0) := (others => '0');
+ 
+ begin
+ 
+@@ -472,7 +485,7 @@ begin
+             out_word   => spec_word,
+             out_valid  => spec_valid,
+             cnt_fft_frames  => c_fft_frames,
+-            cnt_spec_frames => c_spec_frames,
++            cnt_spec_frames => c_spec_frames_i,
+             cnt_late        => c_spec_late,
+             cnt_words       => c_spec_words
+         );
+@@ -512,9 +525,92 @@ begin
+             end if;
+         end if;
+     end process;
++    c_spec_frames <= c_spec_frames_i;
+     c_samples  <= cs_samples;
+     c_fifo_ovf <= cs_ovf;
+ 
++    -- ------------------------------------------------------------------------
++    -- F10: telemetría adicional (dominio rx_clock)
++    --
++    -- * Saturación del ADC: el AD9361 entrega 12 bit en complemento a dos, de modo que
++    --   el fondo de escala son los códigos +2047 (0x7FF) y -2048 (0x800). Una muestra
++    --   cuenta como saturada si I o Q valen alguno de los dos (un solo incremento por
++    --   muestra). Cualquier señal que pase del fondo de escala se recorta contra esos
++    --   códigos, así que su frecuencia relativa mide el exceso de ganancia (el
++    --   convertidor ya no es lineal: aparecen armónicos e intermodulación).
++    --   c_adc_sat acumula desde el último CLEAR; c_adc_satwin conserva el total de la
++    --   última ventana completa de 2^16 muestras (≈ 1,1 ms a 61,44 Msps), útil para
++    --   leer "% saturado" sin restar contadores.
++    -- * Tramas de espectro perdidas: con rx_mux = 3 cada palabra que llega con la FIFO
++    --   de muestras llena se pierde (ya cuenta en c_fifo_ovf). Aquí se cuenta cada
++    --   TRAMA con al menos una palabra perdida (un aviso por trama, no por palabra).
++    --   El comienzo de trama se detecta por el cambio de c_spec_frames.
++    -- * Marca de tiempo libre: contador de 64 bit que avanza con cada muestra válida
++    --   del canal 0 del ADC (tasa de muestra), sin reinicio por CLEAR ni por rx_reset
++    --   (solo vale 0 al cargar la FPGA). 2^64 muestras a 122,88 Msps = 4760 años.
++    -- ------------------------------------------------------------------------
++    diag2_proc : process(rx_clock)
++        variable sv, lost : boolean;
++    begin
++        if rising_edge(rx_clock) then
++            -- tiempo libre
++            if adc_streams(0).data_v = '1' then
++                tm_cnt <= tm_cnt + 1;
++            end if;
++            -- comienzo de trama de espectro
++            spec_frames_d <= c_spec_frames_i;
++            if c_spec_frames_i /= spec_frames_d then
++                frame_lost <= '0';
++            end if;
++            if spec_cfg_clear /= clear_prev2 then
++                clear_prev2 <= spec_cfg_clear;
++                cs_sat      <= (others => '0');
++                cs_satwin   <= (others => '0');
++                win_acc     <= (others => '0');
++                win_cnt     <= (others => '0');
++                cs_sdrop    <= (others => '0');
++                frame_lost  <= '0';
++            else
++                if rx_enable = '1' and adc_streams(sel_ch).data_v = '1' then
++                    sv := adc_streams(sel_ch).data_i(11 downto 0) = x"7FF" or
++                          adc_streams(sel_ch).data_i(11 downto 0) = x"800" or
++                          adc_streams(sel_ch).data_q(11 downto 0) = x"7FF" or
++                          adc_streams(sel_ch).data_q(11 downto 0) = x"800";
++                    win_cnt <= win_cnt + 1;
++                    if sv then
++                        cs_sat  <= cs_sat + 1;
++                        win_acc <= win_acc + 1;
++                    end if;
++                    if win_cnt = x"FFFF" then
++                        -- ventana completa: la muestra actual ya cuenta en ella
++                        if sv then
++                            cs_satwin <= resize(win_acc, 32) + 1;
++                        else
++                            cs_satwin <= resize(win_acc, 32);
++                        end if;
++                        win_acc <= (others => '0');
++                    end if;
++                end if;
++                lost := false;
++                if spec_run = '1' and rx_enable = '1' and sample_fifo.wfull = '1' then
++                    for i in mux_streams'range loop
++                        if mux_streams(i).data_v = '1' and adc_controls(i).enable = '1' then
++                            lost := true;
++                        end if;
++                    end loop;
++                end if;
++                if lost and frame_lost = '0' then
++                    frame_lost <= '1';
++                    cs_sdrop   <= cs_sdrop + 1;
++                end if;
++            end if;
++        end if;
++    end process;
++    c_adc_sat    <= cs_sat;
++    c_adc_satwin <= cs_satwin;
++    c_spec_drop  <= cs_sdrop;
++    c_time       <= tm_cnt;
++
+ 
+     -- RX Trigger
+     rxtrig : entity work.trigger(async)

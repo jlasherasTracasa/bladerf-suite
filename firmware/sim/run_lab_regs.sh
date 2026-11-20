@@ -17,7 +17,7 @@ vcom -work nuand -2008 $LAB/lab_cdc_bus.vhd
 vcom -work nuand -2008 $LAB/lab_regs.vhd
 vcom -work nuand -2008 $HERE/tb_lab_regs.vhd
 vsim -c -t 1ps nuand.tb_lab_regs
-run 200 us
+run 400 us
 quit -f
 DO
 timeout 600 vsim -c -do run.do > "$HERE/lab_regs.log" 2>&1 < /dev/null || echo "vsim rc=$?"

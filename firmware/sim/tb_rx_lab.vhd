@@ -55,6 +55,8 @@ architecture sim of tb_rx_lab is
 
     signal c_samples, c_ovf, c_fft, c_spec, c_late, c_words : unsigned(31 downto 0);
     signal spec_active : std_logic;
+    signal c_sat, c_satwin, c_sdrop : unsigned(31 downto 0);
+    signal c_time : unsigned(63 downto 0);
     signal done : boolean := false;
     signal s_rreq_g : std_logic := '0';
     function pad_bit(p : natural) return std_logic is begin if p = 1 then return '1'; else return '0'; end if; end function;
@@ -115,7 +117,8 @@ begin
                 spec_cfg_pad => pad_s, spec_cfg_clear => (others => '0'),
                 c_samples => c_samples, c_fifo_ovf => c_ovf, c_fft_frames => c_fft,
                 c_spec_frames => c_spec, c_spec_late => c_late, c_spec_words => c_words,
-                spec_active => spec_active
+                spec_active => spec_active,
+                c_adc_sat => c_sat, c_adc_satwin => c_satwin, c_spec_drop => c_sdrop, c_time => c_time
             );
     end generate;
 
@@ -197,7 +200,11 @@ begin
                " spec=" & integer'image(to_integer(c_spec)) &
                " late=" & integer'image(to_integer(c_late)) &
                " words=" & integer'image(to_integer(c_words)) &
-               " ovf=" & integer'image(to_integer(c_ovf));
+               " ovf=" & integer'image(to_integer(c_ovf)) &
+               " sat=" & integer'image(to_integer(c_sat)) &
+               " satwin=" & integer'image(to_integer(c_satwin)) &
+               " sdrop=" & integer'image(to_integer(c_sdrop)) &
+               " time=" & integer'image(to_integer(c_time(30 downto 0)));
         done <= true;
         wait;
     end process;

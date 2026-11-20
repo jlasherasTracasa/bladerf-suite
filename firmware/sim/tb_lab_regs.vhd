@@ -34,6 +34,12 @@ architecture sim of tb_lab_regs is
     signal cnt_rx : std_logic_vector(192 downto 0);
     signal cnt_sys : std_logic_vector(192 downto 0);
     signal rx_counter : unsigned(31 downto 0) := (others => '0');
+    -- F10: contadores nuevos. El de tiempo arranca cerca de un acarreo de 32 bit para
+    -- comprobar la atomicidad de la lectura de 64 bit.
+    signal rx_time    : unsigned(63 downto 0) := x"00000000FFFFFFF0";
+    signal time_load : std_logic := '0';
+    signal rx_sat     : unsigned(31 downto 0) := x"00001234";
+    signal cnt2_rx, cnt2_sys : std_logic_vector(159 downto 0);
 
     signal fails : natural := 0;
     signal rst_pulse : std_logic := '0';
@@ -70,7 +76,9 @@ begin
             c_samples => unsigned(cnt_sys(31 downto 0)), c_ovf => unsigned(cnt_sys(63 downto 32)),
             c_fft => unsigned(cnt_sys(95 downto 64)), c_spec => unsigned(cnt_sys(127 downto 96)),
             c_late => unsigned(cnt_sys(159 downto 128)), c_words => unsigned(cnt_sys(191 downto 160)),
-            st_active => cnt_sys(192)
+            st_active => cnt_sys(192),
+            c_sat => unsigned(cnt2_sys(31 downto 0)), c_satwin => unsigned(cnt2_sys(63 downto 32)),
+            c_sdrop => unsigned(cnt2_sys(95 downto 64)), c_time => unsigned(cnt2_sys(159 downto 96))
         );
 
     -- Cruce sys -> rx (configuración)
@@ -90,8 +98,16 @@ begin
         port map (src_clk => rxclk, src_rst => rst, src_data => cnt_rx,
                   dst_clk => clk, dst_rst => rst, dst_data => cnt_sys);
     process(rxclk) begin
-        if rising_edge(rxclk) then rx_counter <= rx_counter + 1; end if;
+        if rising_edge(rxclk) then rx_counter <= rx_counter + 1; 
+            if time_load = '1' then rx_time <= x"00000000FFFFF000"; else rx_time <= rx_time + 1; end if;
+        end if;
     end process;
+
+    cnt2_rx <= std_logic_vector(rx_time) & x"0000BEEF" & x"00005A5A" & std_logic_vector(rx_sat);
+    u_cnt2 : entity work.lab_cdc_bus
+        generic map (W => 160)
+        port map (src_clk => rxclk, src_rst => rst, src_data => cnt2_rx,
+                  dst_clk => clk, dst_rst => rst, dst_data => cnt2_sys);
 
     stim : process
         procedure avwrite(idx : natural; v : std_logic_vector(31 downto 0)) is
@@ -121,7 +137,9 @@ begin
             v := av_dout;
             for i in 0 to 3 loop wait until rising_edge(clk); end loop;
         end procedure;
-        variable r : std_logic_vector(31 downto 0);
+        variable r, t_lo : std_logic_vector(31 downto 0);
+        variable t_now, t_prev : unsigned(63 downto 0);
+        variable t_start : time;
         procedure expect(name : string; got, exp : std_logic_vector(31 downto 0)) is
         begin
             if got /= exp then
@@ -134,7 +152,7 @@ begin
     begin
         wait for 300 ns;
         avread(0, r);  expect("ID", r, x"4C414231");
-        avread(1, r);  expect("VERSION", r, x"00010001");
+        avread(1, r);  expect("VERSION (lab 1.2)", r, x"00010002");
         avread(2, r);  expect("FEATURES", r, x"00000DA1");
         avwrite(3, x"A5C3F00D");
         avread(3, r);  expect("SCRATCH", r, x"A5C3F00D");
@@ -163,6 +181,48 @@ begin
         report "CNT_SAMPLES (contador de rx_clock cruzado) = " & integer'image(to_integer(unsigned(r)));
         assert unsigned(r) > 100 report "FALLO: el contador cruzado no avanza" severity error;
         avread(14, r); expect("STATUS", r, x"00000001");
+
+        -- ---- F10: capacidades y telemetría (versión 1.2) ----
+        avread(2, r);  expect("FEATURES (sin cambios)", r, x"00000DA1");
+        avread(16, r); expect("CAPS", r, x"0000000F");
+        avread(17, r); expect("SYNTH (ADC 12, log2Nmax 13, log2Nmin 10, 16 b)", r, x"100A0D0C");
+        avread(18, r); expect("CNT_ADC_SAT", r, x"00001234");
+        avread(19, r); expect("SAT_WIN", r, x"00005A5A");
+        avread(20, r); expect("CNT_SPEC_DROP", r, x"0000BEEF");
+        avread(23, r); expect("no mapeado 23", r, x"BAD0BAD0");
+
+        -- Atomicidad: leer TIME_LO y, más tarde, TIME_HI. El contador cruza 0xFFFFFFFF -> 0x1_00000000
+        -- (a 125 MHz: 256 cuentas = 2 us). Esperar a que LO esté a punto de desbordar,
+        -- dejar pasar 4 us (el acarreo ocurre) y leer HI: debe seguir siendo el de la captura de LO (0).
+        time_load <= '1'; wait for 100 ns; time_load <= '0';
+        t_start := now;
+        loop
+            avread(21, r);
+            exit when unsigned(r) > x"FFFFFF00";
+            assert now - t_start < 100 us report "FALLO: el contador de tiempo no se acerca al acarreo" severity failure;
+        end loop;
+        report "TIME_LO capturado = " & to_hstring(r);
+        assert unsigned(r) > x"FFFFFF00" report "FALLO: se perdio la ventana del acarreo (LO ya desbordado)" severity error;
+        if not (unsigned(r) > x"FFFFFF00") then fails <= fails + 1; end if;
+        wait for 4 us;
+        avread(22, r); expect("TIME_HI latcheado (antes del acarreo)", r, x"00000000");
+        avread(21, r); t_lo := r;           -- ahora LO ya desbordado (valor pequeño)
+        avread(22, r); expect("TIME_HI tras nueva captura", r, x"00000001");
+        assert unsigned(t_lo) < x"00001000" report "FALLO: LO tras el acarreo deberia ser pequeño" severity error;
+        -- Monotonía de 64 bit en 40 lecturas LO/HI consecutivas
+        t_prev := (others => '0');
+        for i in 0 to 39 loop
+            avread(21, r); t_lo := r;
+            avread(22, r);
+            t_now := unsigned(r) & unsigned(t_lo);
+            assert t_now > t_prev and (t_prev = 0 or t_now - t_prev < to_unsigned(5000, 64))
+                report "FALLO: lectura de 64 bit no atomica/monotona en la lectura " & integer'image(i) severity error;
+            if not (t_now > t_prev and (t_prev = 0 or t_now - t_prev < to_unsigned(5000, 64))) then fails <= fails + 1; end if;
+            t_prev := t_now;
+        end loop;
+        report "TIME 64 bit ultimo = " & to_hstring(std_logic_vector(t_now));
+        -- CLEAR no toca la marca de tiempo (el contador sigue creciendo, no vuelve a 0)
+        assert t_now > x"00000001000000FF" report "FALLO: marca de tiempo no avanzo" severity error;
         wait for 1 us;
         if fails = 0 then report "TB_LAB_REGS: OK"; else report "TB_LAB_REGS: FALLO" severity error; end if;
         std.env.stop;

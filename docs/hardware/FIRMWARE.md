@@ -456,7 +456,7 @@ La revisión `lab` de `bladerf-micro` es la imagen `hosted` de serie más:
 2. un **motor de espectro promediado** (ventana Blackman-Harris + FFT SDF radix-2^2 de 1024 a 8192
    puntos + |X|² + acumulación de K tramas con ciclo de trabajo del 100 %) que sustituye al flujo del ADC
    cuando `rx_mux = 3`, y entrega sus tramas por el flujo de muestras normal (SC16, sin metadatos);
-3. una versión de FPGA propia (**0.16.101**) y una marca de solo lectura en `config_gpio`
+3. una versión de FPGA propia (**0.16.102**, lab 1.2) y una marca de solo lectura en `config_gpio`
    (bits 27:24 = 0xA) para detectar la imagen de forma segura.
 
 Con `rx_mux ≠ 3` la ruta de datos es la de serie (§13.2), de modo que la imagen lab sirve como imagen normal.
@@ -467,7 +467,7 @@ Entregables:
 
 | Ruta | Contenido |
 |---|---|
-| `firmware/out/hosted-xA9-lab-0.16.101.rbf` (+ `.sha256`) | imagen compilada |
+| `firmware/out/hosted-xA9-lab-0.16.102.rbf` (+ `.sha256`) | imagen compilada |
 | `firmware/bladeRF/hdl/fpga/platforms/bladerf-micro/vhdl/lab/` | `spec_engine`, `spec_fft`, `sdf_stage`, `sdf_mult`, `spec_acc_ram`, `lab_regs`, `lab_cdc_bus`, `rx_lab`, `lab_rom_p` (generado) |
 | `.../vhdl/bladerf-lab.vhd`, `.../bladerf-lab.qip`, `.../constraints/bladerf-lab.sdc` | tope de la revisión lab (diferencias con `hosted` marcadas `-- LAB`) y restricciones multiciclo |
 | `firmware/patches/` | parches `git format-patch` del árbol HDL sobre el commit oficial 35174c3 (+ README para reconstruir) |
@@ -599,7 +599,7 @@ entrega `addr/4` como dirección de palabra al bus. **Índice de registro = `add
 | Índice | Nombre | Acc. | Descripción |
 |---|---|---|---|
 | 0 | ID | RO | `0x4C414231` ("LAB1") |
-| 1 | VERSION | RO | `0x00010001` |
+| 1 | VERSION | RO | `0x00010002` (lab 1.2; era `0x00010001` en la 0.16.101) |
 | 2 | FEATURES | RO | bit 0 motor de espectro; [7:4] = 10 (log2 Nmin); [11:8] = 13 (log2 Nmax) → `0x0DA1` |
 | 3 | SCRATCH | RW | 32 bit |
 | 4 | SCRATCH_N | RO | `~SCRATCH` |
@@ -613,9 +613,22 @@ entrega `addr/4` como dirección de palabra al bus. **Índice de registro = `add
 | 12 | CNT_LATE | RO | tramas cortadas por lectura tardía |
 | 13 | CNT_WORDS | RO | palabras de espectro emitidas |
 | 14 | STATUS | RO | bit 0: motor activo (`rx_mux = 3` y RX habilitado) |
-| 15 | CLEAR | WO | cualquier escritura pone a cero los contadores 8…13 (lee el nº de borrados) |
+| 15 | CLEAR | WO | cualquier escritura pone a cero los contadores 8…13 y 18…20 (lee el nº de borrados) |
+| 16 | CAPS | RO | **(1.2)** mapa de capacidades, `0x0000000F`: bit 0 espectro, bit 1 saturación del ADC, bit 2 marca de tiempo de 64 bit, bit 3 tramas de espectro perdidas; bits 4…7 libres; **bits 8…14 reservados para F11…F17** (0 = ausente; cada bloque nuevo fijará el suyo) |
+| 17 | SYNTH | RO | **(1.2)** parámetros de síntesis, `0x100A0D0C`: [7:0] bits del ADC = 12, [15:8] log2 N máx. = 13, [23:16] log2 N mín. = 10, [31:24] bits por componente de la palabra de espectro = 16 |
+| 18 | CNT_ADC_SAT | RO | **(1.2)** muestras del canal activo con I o Q en fondo de escala (+2047 o −2048), acumuladas desde el último CLEAR (módulo 2^32; solo con RX habilitado) |
+| 19 | SAT_WIN | RO | **(1.2)** saturadas dentro de la última ventana **completa** de 65 536 muestras (≈ 1,07 ms a 61,44 Msps): `100·SAT_WIN/65536` = % saturado |
+| 20 | CNT_SPEC_DROP | RO | **(1.2)** tramas de espectro con al menos una palabra perdida por FIFO llena (una cuenta por trama; las palabras perdidas siguen en `CNT_FIFO_OVF`) |
+| 21 | TIME_LO | RO | **(1.2)** marca de tiempo libre, 32 bit bajos. **Leerla captura la parte alta en `TIME_HI`** |
+| 22 | TIME_HI | RO | **(1.2)** 32 bit altos capturados en la última lectura de `TIME_LO` |
 
 **Los registros de configuración y SCRATCH no se reinician con `sys_reset`.** `sys_reset` es `fx3_ctl(7)`, que el FX3 pulsa al preparar/arrancar un flujo; la primera versión sí los reiniciaba y la configuración escrita antes de `bladerf_sync_config`/`enable_module` volvía a los valores por defecto (N = 4096, K = 16) (hallazgo de la prueba en placa; reproducido en `run_lab_regs.sh` con un pulso de reset y corregido: solo tienen valor inicial de carga). Aun así `lab_probe --spectrum` relee la configuración tras cada paso.
+
+**Marca de tiempo (21/22).** Cuenta cada muestra válida del canal 0 del ADC (a la tasa de muestra; en 2×2 es la misma para ambos canales), sin reinicio por `CLEAR`, `rx_reset` ni `sys_reset` (solo vale 0 al cargar la FPGA) y sin depender de `rx_enable`: sirve para medir la tasa real
+(`Δmarca/Δt` del host) y para relacionar capturas. Los 64 bit cruzan de `rx_clock` a `sys_clock` juntos en un único *handshake* (instantánea coherente) y
+`lab_regs` congela la parte alta en la lectura de `TIME_LO`; el host debe leer **siempre `TIME_LO` y después `TIME_HI`**:
+`t = (hi << 32) | lo`. Sin la captura, un acarreo entre las dos lecturas daría un valor falso de ±2^32 muestras (la prueba lo provoca a propósito).
+Los registros 18…22 no existen en la 0.16.101: allí devuelven `0xBAD0BAD0`; el cliente debe comprobar `VERSION ≥ 0x00010002` antes de leerlos (y después `CAPS` para saber qué bloques hay).
 
 Los contadores llegan con retardo de unos microsegundos (cruce de reloj). Ninguna escritura de configuración bloquea; N, K o PAD nuevos reinician el motor.
 
@@ -716,7 +729,7 @@ con las palabras del modelo, escala a dBFS frente a tonos y ruido teóricos, y r
 
 ```bash
 source firmware/env.sh
-firmware/build_lab.sh                 # ≈ 16 min; deja firmware/out/hosted-xA9-lab-0.16.101.rbf, .sha256, logs y reports_lab/
+firmware/build_lab.sh                 # ≈ 16 min; deja firmware/out/hosted-xA9-lab-0.16.102.rbf, .sha256, logs y reports_lab/
 make -C firmware/model rom            # (solo si se cambia el modelo) regenera lab_rom_p.vhd desde el modelo
 firmware/sim/run_lab_spec.sh all      # motor vs modelo, al bit (≈ 6 min)
 firmware/sim/run_lab_spec.sh ident    # identidad con rx de serie (rx_mux = 0)
@@ -726,7 +739,7 @@ gcc -std=c11 -D_GNU_SOURCE -O2 -Wall -Wextra -Isrc -Itests tests/test_fpga_lab.c
 ```
 
 Una segunda compilación completa independiente (directorio de trabajo borrado) dio el **mismo SHA-256**:
-`0cd2913cafe70d8dfd11f934afb2f27a3e92b6576140d533d43c9119cf55943c  hosted-xA9-lab-0.16.101.rbf`.
+`0cd2913cafe70d8dfd11f934afb2f27a3e92b6576140d533d43c9119cf55943c  hosted-xA9-lab-0.16.101.rbf` (imagen anterior; la 0.16.102 es `cbda7fc0…368b`).
 Para reconstruir el árbol HDL desde el repositorio oficial ver `firmware/patches/README.md`.
 
 ## 15. Procedimiento de prueba en hardware (para el orquestador)
@@ -739,12 +752,12 @@ Los agentes no ejecutan estos pasos. No se transmite nada. Cerrar antes cualquie
    mkdir -p build/f1
    gcc -std=c11 -D_GNU_SOURCE -O2 -Wall -Wextra -DFPGA_LAB_WITH_LIBBLADERF -Isrc \
        firmware/tools/lab_probe.c src/sdr/fpga_lab.c -lbladeRF -lm -o build/f1/lab_probe
-   sha256sum -c firmware/out/hosted-xA9-lab-0.16.101.rbf.sha256
+   sha256sum -c firmware/out/hosted-xA9-lab-0.16.102.rbf.sha256
    ```
 1. **Estado inicial** (imagen de serie cargada desde la flash): `bladeRF-cli -e version` debe mostrar FPGA 0.16.0. `build/f1/lab_probe` debe decir
    "no es la imagen lab" **sin** acceder a Wishbone (esto verifica la detección segura sobre la imagen de serie).
 2. **Referencia de la imagen de serie**: `build/f1/lab_probe --iq 100000000` (RMS y saturación de 1 s de RX normal en 100 MHz con 2 Msps); anotar el valor.
-3. **Cargar la lab en RAM**: `bladeRF-cli -l firmware/out/hosted-xA9-lab-0.16.101.rbf`. Esperar ≈ 2 s. `bladeRF-cli -e version` debe mostrar FPGA **0.16.101**.
+3. **Cargar la lab en RAM**: `bladeRF-cli -l firmware/out/hosted-xA9-lab-0.16.102.rbf`. Esperar ≈ 2 s. `bladeRF-cli -e version` debe mostrar FPGA **0.16.102**.
 4. **Detección y bus**: `build/f1/lab_probe` → "IMAGEN LAB", "selftest SCRATCH: OK", `VERSION lab = 0x00010001`, `FEATURES = 0x00000da1`. Si el selftest falla o el programa se
    queda esperando, desconectar el USB (§ vuelta atrás) y no continuar.
 5. **La lab funciona como la de serie (rx_mux = 0)**: `build/f1/lab_probe --iq 100000000` con la misma antena/ganancia que en el paso 2: el RMS debe ser del mismo orden y sin
@@ -838,6 +851,28 @@ Caudal de la FPGA = `fs · total / (K·N)` palabras/s, con `total` = palabras po
 | 61.44 | 8192 | 10240 | 26 | 288.5 | 250 |
 
 En la práctica, para una cascada a 30 fps basta con **K = fs/(30·N)** (p. ej. 30,72 Msps, N = 4096: K ≈ 250 → 0,18 Mpal/s). Con N = 1024 el relleno de 2048 palabras duplica el tráfico: usar `PAD = 0` o K ≥ 21 (a 30,72 Msps). El cliente debe procesar y dibujar a la tasa de pantalla, no a la de trama.
+
+### 16.6 Capacidades y telemetría (lab 1.2, FPGA 0.16.102; agente F10)
+
+Mapa en §11 (registros 16…22). Imagen `firmware/out/hosted-xA9-lab-0.16.102.rbf`,
+SHA-256 `cbda7fc04355e3edfc8cac09d7ce9b30409f1ac8b8c336e90da14a62e4cc368b`, compilada con Quartus 20.1.1 (semilla 1, 11 min 27 s). Parche: `firmware/patches/0003-*.diff`
+(`git diff`, sin commit; ver `patches/README.md`). Los registros 0…15 no cambian de dirección; `VERSION` = `0x00010002`, parche de FPGA 102.
+
+* **Saturación**: una muestra cuenta si I o Q valen +2047 o −2048 (`CNT_ADC_SAT` acumulado, `SAT_WIN` por ventana de 2^16 muestras).
+* **Tramas perdidas**: una por trama con alguna palabra que llegó con la FIFO llena (`CNT_SPEC_DROP`).
+* **Marca de 64 bit**: contador de muestras del canal 0, lectura atómica (leer `TIME_LO` y luego `TIME_HI`).
+
+Simulación (Questa FSE): `run_lab_regs.sh` (maestro Wishbone real) lee todos los registros y comprueba valores, `0xBAD0BAD0` en el 23 y la
+atomicidad (con el contador a punto de acarrear, `TIME_HI` se mantiene en 0 cuando la parte alta viva ya vale 1; monotonía de 64 bit en 40 lecturas): OK.
+`run_lab_spec.sh all` e `ident`: 0 diferencias con el modelo en C; sat = nº de muestras saturadas de las entradas (4096 y 2048 en los dos escenarios con saturación; `SAT_WIN` = 65 536 con 71 680 saturadas en 73 984 muestras);
+`gpif` con lector lento: 41 tramas, 32 perdidas (`CNT_SPEC_DROP` = 32, `CNT_FIFO_OVF` = 65 534). `run_rx_timestamp_lab.sh`: deltas idénticos a `rx.vhd`. El modelo en C no cambia (no modela los contadores).
+
+Recursos: 9 693 ALM (+175), 19 213 registros, 512 M10K, 42 DSP. Temporización (peor holgura sin JTAG, ns): lento 85 °C setup +0,333 / hold +0,224;
+lento 0 °C +0,308 / +0,076; rápido 85 °C +2,456 / +0,121; rápido 0 °C +2,637 / **+0,053**. TNS = 0. Setup ≥ +0,1 ns en los 4 modelos; el hold (>0 en los 4) queda por debajo de +0,1 ns en dos, como en la 0.16.101.
+
+**Escritura de K en caliente.** `SPEC_K` (y N y PAD) se pueden escribir con el flujo en marcha: cruzan a `rx_clock` y el motor se reinicia internamente
+(`eng_rst`) sin tocar `rx_mux`, `rx_enable` ni la FIFO USB. Coste: se pierde la trama en acumulación y se trunca la que se esté leyendo (cuenta en `CNT_LATE`); las siguientes salen
+con el K nuevo y la cabecera lo refleja (palabra 2). El host debe resincronizar por la magia de cabecera y descartar la trama cortada. Los contadores no se borran.
 
 ### 16.5 Pendiente
 
