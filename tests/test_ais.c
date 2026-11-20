@@ -211,6 +211,113 @@ static void test_sim(void)
     iqbuf_free(&iq);
 }
 
+
+/* Tasa de mensajes frente a SNR con el modulador y el canal de arriba (CFO ±¼ de canal, ±100 ppm
+ * repartidos entre los intentos, AWGN medido en 48 kHz y luego filtro de canal de 25 kHz).
+ * Se cuenta un acierto por mensaje DISTINTO de los 9 de referencia (misma carga NMEA, sin el
+ * número de secuencia) y se cuentan aparte los eventos que no coinciden con ninguno.
+ * Medido (23 intentos × 9 mensajes, `build/d9`): 50 % de mensajes a ≈ 6,6 dB antes de la
+ * corrección por fiabilidad y de la segunda pasada; ≈ 4,3 dB después (docs/protocolos/ais.md). */
+static int ev_keys(const evs_t *e, char k[][160], int max)
+{
+    int c = 0;
+    for (const char *l = e->data; l && *l && c < max;) {
+        const char *nl = strchr(l, '\n'), *q = strstr(l, "\"nmea\":\"");
+        if (q && (!nl || q < nl)) {
+            q += 8;
+            int i = 0;
+            while (q[i] && q[i] != '"' && i < 159) {
+                k[c][i] = q[i];
+                i++;
+            }
+            k[c][i] = 0;
+            char *nlp = strstr(k[c], "\\n"); /* solo la primera sentencia (la 2.ª repite el id de secuencia, que rota) */
+            if (nlp)
+                *nlp = 0;
+            char *star = strrchr(k[c], '*'); /* el checksum NMEA incluye el id de secuencia */
+            if (star)
+                *star = 0;
+            if (!strncmp(k[c], "!AIVDM,2,", 9)) {
+                char *c3 = strchr(strchr(k[c] + 9, ',') + 1, ',');
+                if (c3 && c3[-1] >= '0' && c3[-1] <= '9')
+                    c3[-1] = '#';
+            }
+            c++;
+        }
+        l = nl ? nl + 1 : NULL;
+    }
+    return c;
+}
+
+static double rate_at(const iqbuf_t *iq, double snr_db, int trials, int *extra)
+{
+    static const double cfos[] = {-6250, 0, 6250}, ppms[] = {-100, 0, 100};
+    static char ref[16][160], k[64][160];
+    int n = iq->n + 800; /* cola de ruido: el decodificador tiene ~4 ms de retardo de proceso */
+    int nref, ok = 0, tot = 0;
+    cf32 *x = calloc((size_t)n, sizeof(cf32));
+    memcpy(x, iq->s, sizeof(cf32) * (size_t)iq->n);
+    evs_t ev = {0};
+    run_narrow(&DEC_AIS, x, n, 161975000, NULL, &ev);
+    nref = ev_keys(&ev, ref, 16);
+    evs_free(&ev);
+    *extra = 0;
+    for (int t = 0; t < trials; t++) {
+        memset(x, 0, sizeof(cf32) * (size_t)n);
+        memcpy(x, iq->s, sizeof(cf32) * (size_t)iq->n);
+        uint32_t seed = 1000u + (uint32_t)t * 7919u + (uint32_t)(snr_db * 10 + 50);
+        channel(x, n, snr_db, cfos[t % 3], ppms[(t / 3) % 3], &seed, 25000.0);
+        run_narrow(&DEC_AIS, x, n, 161975000, NULL, &ev);
+        int nk = ev_keys(&ev, k, 64), hit[16] = {0};
+        for (int i = 0; i < nk; i++) {
+            int f = -1;
+            for (int j = 0; j < nref && f < 0; j++)
+                if (!strcmp(k[i], ref[j]))
+                    f = j;
+            if (f >= 0 && !hit[f]) {
+                hit[f] = 1;
+                ok++;
+            } else if (f < 0) {
+                (*extra)++;
+                if (getenv("AIS_VERB"))
+                    printf("    ajeno: %s\n", k[i]);
+            }
+        }
+        tot += nref;
+        evs_free(&ev);
+    }
+    free(x);
+    return tot ? (double)ok / tot : 0.0;
+}
+
+static void test_snr(void)
+{
+    printf("AIS: tasa de mensajes frente a SNR (decisión blanda + corrección por CRC)\n");
+    iqbuf_t iq = {0};
+    char err[200] = "";
+    CHECK_EQ(modulator_find("ais")->modulate(NULL, &iq, err, sizeof err), 0);
+    const int trials = VR_SAN ? 9 : 24;
+    int extra, extras = 0;
+    double r4 = 0, r5 = 0, r10 = 0;
+    for (double snr = 2.0; snr <= 10.0; snr += 1.0) {
+        double r = rate_at(&iq, snr, trials, &extra);
+        printf("  %4.1f dB: %5.1f %% de los mensajes, %d eventos ajenos\n", snr, 100.0 * r, extra);
+        extras += extra;
+        if (snr == 4.0)
+            r4 = r;
+        if (snr == 5.0)
+            r5 = r;
+        if (snr == 10.0)
+            r10 = r;
+    }
+    /* Sin la mejora: 4 dB ≈ 4 %, 5 dB ≈ 12 %, 10 dB ≈ 98 %. */
+    CHECK(r4 > 0.25);
+    CHECK(r5 > 0.45);
+    CHECK(r10 > 0.97);
+    CHECK(extras <= 2); /* correcciones falsas: ~0,1 % de los mensajes */
+    iqbuf_free(&iq);
+}
+
 static void test_noise(void)
 {
     printf("AIS: solo ruido\n");
@@ -229,6 +336,36 @@ static void test_noise(void)
     run_narrow(&DEC_AIS, x, n, 161975000, NULL, &ev);
     CHECK_EQ(evs_count(&ev), 0);
     evs_free(&ev);
+
+    /* 10 minutos de ruido (60 s con sanitizers) en bloques de 20 s: 0 eventos. La tasa de
+     * tramas de ruido con CRC-16 válido es ≈ 1 por hora y canal; lo que las frena son el MMSI
+     * verosímil, la longitud por tipo y, en los tipos sin campos que validar, la exigencia de
+     * una ráfaga de potencia sobre el suelo de ruido. */
+    {
+        double secs = VR_SAN ? 60.0 : 600.0;
+        long fp = 0;
+        char err2[200];
+        dec_cfg_t cfg = {.rate = 48000, .freq_hz = 161975000, .center_hz = 161975000};
+        void *st = DEC_AIS.create(&cfg, err2, sizeof err2);
+        cfir_t cf;
+        cfir_init_bandpass(&cf, 48000.0, -12500, 12500, 3000, 101);
+        evs_t evn = {0};
+        for (double t = 0; t < secs; t += 20.0) {
+            for (int i = 0; i < n; i++) {
+                x[i].re = (float)(0.1 * tu_gauss(&s));
+                x[i].im = (float)(0.1 * tu_gauss(&s));
+            }
+            cfir_process(&cf, x, n, x);
+            for (int off = 0; off < n; off += 4096)
+                DEC_AIS.process(st, x + off, n - off < 4096 ? n - off : 4096, t, tu_collect, &evn);
+        }
+        fp = evs_count(&evn);
+        printf("  %.0f s de ruido: %ld eventos\n", secs, fp);
+        CHECK_EQ(fp, 0);
+        evs_free(&evn);
+        cfir_free(&cf);
+        DEC_AIS.destroy(st);
+    }
 
     /* coste de CPU: segundos de CPU por segundo de señal */
     clock_t t0 = clock();
@@ -310,6 +447,7 @@ int main(void)
     test_real();
     test_payload();
     test_sim();
+    test_snr();
     test_noise();
     test_state();
     return TEST_SUMMARY();

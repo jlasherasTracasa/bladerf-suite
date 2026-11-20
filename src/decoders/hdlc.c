@@ -65,6 +65,17 @@ static int close_frame(hdlc_rx_t *h)
     return ret;
 }
 
+int hdlc_check_fcs(const uint8_t *bits, int n)
+{
+    if (n < 24)
+        return 0;
+    int nb = n - 16;
+    uint32_t fcs = 0;
+    for (int i = 0; i < 16; i++)
+        fcs |= (uint32_t)(bits[nb + i] & 1) << i;
+    return crc_compute_bits(x25(), bits, (size_t)nb) == fcs ? nb : 0;
+}
+
 int hdlc_rx_push_bit(hdlc_rx_t *h, int bit)
 {
     if (bit) {

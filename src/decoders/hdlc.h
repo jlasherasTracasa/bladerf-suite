@@ -43,6 +43,10 @@ void hdlc_rx_free(hdlc_rx_t *h);
 void hdlc_rx_reset(hdlc_rx_t *h);
 /* Bit ya decodificado de NRZI. Devuelve nº de bits de carga si cierra una trama válida, o 0. */
 int hdlc_rx_push_bit(hdlc_rx_t *h, int bit);
+/* Comprueba el FCS de 'n' bits ya desentramados (carga + 16 de FCS, orden de llegada).
+ * Devuelve el nº de bits de carga si es correcto, 0 si no. Lo usa la corrección por
+ * fiabilidad de AIS (prueba variantes de la misma trama sin pasar por el receptor). */
+int hdlc_check_fcs(const uint8_t *bits, int n);
 /* Nivel de línea (0/1) con decodificación NRZI integrada (HDLC: 0 = transición). */
 int hdlc_rx_push_level(hdlc_rx_t *h, int level);
 /* Empaqueta los 'nbits' bits de la carga en bytes, LSB primero (AX.25). */

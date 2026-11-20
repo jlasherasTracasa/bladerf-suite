@@ -14,19 +14,35 @@
  *   2. Filtro paso bajo FIR (corte 0,7·Rb) que elimina el ruido de FM fuera
  *      de la banda del símbolo (el ruido del discriminador crece con f).
  *   3. El desvío de portadora (CFO) aparece como una constante sumada al
- *      discriminador. Se resta su media móvil de 48 símbolos ponderada por la
- *      potencia instantánea |x|² (el HDLC con relleno de ceros y la secuencia de
+ *      discriminador. Su media móvil de 48 símbolos ponderada por la potencia
+ *      instantánea |x|² (el HDLC con relleno de ceros y la secuencia de
  *      entrenamiento están equilibrados; la ponderación evita que el ruido
- *      anterior a la ráfaga desplace la estimación).
- *   4. Recuperación de reloj por MÚLTIPLES FASES: con 5 muestras/símbolo se
+ *      anterior a la ráfaga desplace la estimación) es la estimación de CFO.
+ *   4. SEGUNDA PASADA (mejora a SNR baja): el IQ, retrasado 180 muestras para que
+ *      la estimación ya haya visto el principio de la ráfaga, se derrota con ese
+ *      CFO y se filtra a ±6 kHz ANTES de un segundo discriminador. El canal del DDC
+ *      es de 25 kHz porque el CFO puede ser de ±6,25 kHz; una vez quitado, la señal
+ *      GMSK (BT 0,4) ocupa ~±7 kHz y se descarta casi la mitad del ruido que entra
+ *      en el discriminador. Cerca del umbral de FM cada dB de ruido de entrada
+ *      cuesta mucho más a la salida ("clics"): medido ≈ +2 dB para el 50 % de mensajes.
+ *   5. Recuperación de reloj por MÚLTIPLES FASES: con 5 muestras/símbolo se
  *      muestrean los 5 desfases en paralelo, cada uno con su propio NRZI+HDLC.
  *      Gana el que tiene el ojo abierto y el CRC valida: sin lazo que enganchar
  *      en una ráfaga de 27 ms. A ±100 ppm la deriva en 1000 bits es 0,1 símbolo
  *      (< 0,2 de paso entre fases). Los duplicados (misma trama en fases
  *      vecinas) se descartan por huella.
+ *   6. DECISIÓN BLANDA + CRC (ver sft_* más abajo): de cada fase se guarda también
+ *      la fiabilidad |y − dc|; si una trama con bandera de cierre exacta falla el
+ *      CRC, se prueban las inversiones de 1 y 2 de los 16 niveles menos fiables
+ *      (decodificador de Chase de orden 2 con el CRC-16 como juez), ≈ +1 dB más.
+ *   El camino sin derrotar (pasos 1-3 + HDLC) se conserva en paralelo: con dos ráfagas
+ *   solapadas de desvío distinto la derrotación sigue a la más fuerte y pierde la otra
+ *   (grabación real tests/data/ais_la_fm48k.cs8: ahora salen las dos).
  *
- * No implementada: la mejora PLVA (Viterbi paralelo de lista) de Kanaan et al.
- * arXiv:2503.01744; en tierra las colisiones son poco frecuentes.
+ * No implementada: el PLVA (Viterbi paralelo de lista) de Kanaan et al.
+ * arXiv:2503.01744, pensado para colisiones de satélite. Aquí hace el mismo papel
+ * (lista de candidatas validadas por el CRC) la corrección por fiabilidad, que no
+ * necesita el modelo de la fase GMSK.
  *
  * Constante NO verificada contra la norma: si la secuencia de entrenamiento va
  * también codificada en NRZI (este decodificador no depende de ello: solo usa
@@ -58,7 +74,13 @@
 #define MAX_SHIPS 1024
 #define DEDUP_N 16
 #define DEDUP_SAMPLES 12000 /* 0,25 s */
-#define AIS_DELAY 12        /* retardo de fmdisc + FIR de 25 coef. (12 muestras de grupo), medido en tests/test_labels.c */
+#define S2_LAG 180        /* retardo del IQ respecto a la estimación del desvío (muestras) */
+#define S2_TAPS 41
+#define S2_CUT_HZ 6000.0
+#define BURST_DELAY 12    /* discriminador + FIR de 25 coef. (12 muestras de grupo) */
+/* Retardo total entre la señal recibida y el flujo demodulado: lag + FIR complejo + 12.
+ * Medido en tests/test_labels.c. */
+#define AIS_DELAY (S2_LAG + (S2_TAPS - 1) / 2 + BURST_DELAY)
 
 /* ======================================================================= */
 /*  Campos de bits                                                         */
@@ -167,6 +189,18 @@ static void parse_pos(const uint8_t *b, ais_msg_t *m, int s_lon, int s_lat, bool
     (void)cls_b;
 }
 
+/* Formas válidas de MMSI (ITU-R M.585 anexo 1): MID = 201..799 (código de país).
+ *   MIDxxxxxx buque · 0MIDxxxxx grupo · 00MIDxxxx estación costera · 111MIDxxx aeronave SAR ·
+ *   98MIDxxxx embarcación auxiliar · 99MIDxxxx ayuda a la navegación · 970/972/974xxxxxx SART/MOB/EPIRB.
+ * Un trama de ruido con CRC válido tiene un MMSI aleatorio de 30 bits: este filtro descarta ≈ 50 %. */
+static bool mmsi_plausible(uint32_t m)
+{
+    return (m >= 201000000u && m <= 799999999u) || (m >= 970000000u && m <= 974999999u) ||
+           (m >= 111201000u && m <= 111799999u) || (m >= 982010000u && m <= 987999999u) ||
+           (m >= 992010000u && m <= 997999999u) || (m >= 20100000u && m <= 79999999u) ||
+           (m >= 2010000u && m <= 7999999u);
+}
+
 int ais_parse(const uint8_t *b, int n, ais_msg_t *m)
 {
     memset(m, 0, sizeof *m);
@@ -178,7 +212,7 @@ int ais_parse(const uint8_t *b, int n, ais_msg_t *m)
     m->type = (int)getu(b, 0, 6);
     m->repeat = (int)getu(b, 6, 2);
     m->mmsi = getu(b, 8, 30);
-    if (m->mmsi == 0 || m->mmsi > 999999999u || m->type < 1 || m->type > 27)
+    if (!mmsi_plausible(m->mmsi) || m->type < 1 || m->type > 27)
         return -1;
     switch (m->type) {
     case 1: case 2: case 3: {
@@ -305,8 +339,18 @@ int ais_parse(const uint8_t *b, int n, ais_msg_t *m)
             return -1;
         parse_pos27(b, m);
         break;
-    default:
-        break; /* tipos 6-8, 10, 12-17, 20, 22, 23, 25, 26: solo cabecera */
+    default: {
+        /* tipos 6-8, 10, 12-17, 20, 22, 23, 25, 26: solo cabecera. Se exige al menos la longitud
+         * mínima (y exacta si es fija) de M.1371 tabla 46-..: sin esto, cualquier trama de ruido
+         * con CRC válido pasaba como "mensaje genérico". */
+        static const short min_len[28] = {0,  0,  0,  0,  0,  0,  72, 72, 56, 0,  72, 0,  72, 0,
+                                          40, 88, 96, 80, 0,  0,  72, 0,  168, 160, 0,  40, 60, 0};
+        if (n < min_len[m->type])
+            return -1;
+        if ((m->type == 10 && n != 72) || (m->type == 22 && n != 168) || (m->type == 23 && n != 160))
+            return -1;
+        break;
+    }
     }
     return 0;
 }
@@ -422,22 +466,64 @@ typedef struct {
     long at;
 } dedup_t;
 
+#define SPAN_N 6
+typedef struct {
+    int64_t a, b;
+} span_t;
+
 typedef struct {
     hdlc_rx_t hdlc;
 } phase_t;
+
+/* Historial de niveles NRZI y fiabilidades de una fase de muestreo (ver sft_*). */
+#define PW_RB 1024
+#define PW_WIN 128
+#define BURST_RATIO 2.0
+#define SFT_RB 2048 /* símbolos guardados: > trama máxima (~1250) + entrenamiento */
+#define SFT_MASK (SFT_RB - 1)
+#define SFT_NSTART 6
+#define SFT_K 16    /* nº de niveles dudosos que se prueban a invertir */
+typedef struct {
+    uint8_t lev[SFT_RB];
+    float mag[SFT_RB];
+    int64_t pos[SFT_RB];
+    long t;                     /* símbolos recibidos */
+    unsigned w;                 /* últimos 8 bits de dato (tras NRZI inverso) */
+    long start[SFT_NSTART];     /* primer bit de dato de cada trama candidata */
+    int ns;
+} sft_t;
+
+typedef struct {
+    float ring[DC_WIN], ringw[DC_WIN];
+    double sum, w;
+    int pos;
+    long cnt;
+} dcest_t;
 
 typedef struct {
     fmdisc_t disc;
     fir_f_t lpf;
     float *tmp, *tmp2;
     int tmp_cap;
-    float ring[DC_WIN], ringw[DC_WIN];
-    double ring_sum, ring_w;
-    int ring_pos;
+    dcest_t dc1, dc2;
+    float *dcs, *y1;
+    cf32 *rot, *rot2, *dl;
+    bool dl_init;
+    double rot_ph;
+    fmdisc_t disc2;
+    fir_cf_t lpf2;
+    fir_f_t lpfb;
     long n;                 /* muestras procesadas */
     long blk_n0;            /* valor de n al empezar la llamada en curso a process() */
     int64_t mk0, mk1;       /* inicio y fin de la trama en curso (muestras, índice absoluto en n) */
-    phase_t ph[SPS];
+    phase_t ph[SPS], ph1[SPS];
+    sft_t sf[SPS];
+    double pcum[PW_RB];     /* potencia acumulada por muestra (anillo), para detectar ráfaga */
+    double pfloor;          /* suelo de ruido: potencia media mínima en grupos de PW_WIN muestras */
+    bool pfloor_ok;
+    unsigned long fixed;    /* tramas recuperadas invirtiendo 1-2 niveles dudosos */
+    span_t span[SPAN_N];    /* últimas tramas emitidas (muestras de la señal recibida) */
+    int span_pos;
     dedup_t dd[DEDUP_N];
     int dd_pos;
     ship_t *ships;
@@ -690,7 +776,10 @@ void ais_unscramble_bytes(const uint8_t *in, int nbits, uint8_t *out)
     }
 }
 
-static void on_frame(ais_t *a, const uint8_t *raw, int nbits, const hdlc_rx_t *hd)
+
+static bool burst_present(const ais_t *a, int64_t pos, int delay);
+
+static void on_frame(ais_t *a, const uint8_t *raw, int nbits, int64_t last_start, int64_t last_end, int delay, int nflips)
 {
     uint8_t bits[MAX_BITS];
     if (nbits > MAX_BITS)
@@ -705,15 +794,204 @@ static void on_frame(ais_t *a, const uint8_t *raw, int nbits, const hdlc_rx_t *h
         a->bad_len++;
         return;
     }
+    /* Tipos de longitud variable o sin campos que validar (todos salvo 1-4, 9, 11, 18, 19, 24, 27):
+     * una trama de ruido con CRC válido (≈ 1 por hora y canal) los pasa fácilmente, así que se
+     * exige que haya de verdad una ráfaga de potencia en la señal recibida. */
+    static const uint64_t fixed_len = (1ull << 1) | (1ull << 2) | (1ull << 3) | (1ull << 4) | (1ull << 9) |
+                                      (1ull << 11) | (1ull << 18) | (1ull << 19) | (1ull << 24) | (1ull << 27);
+    if (!((fixed_len >> m.type) & 1) && !burst_present(a, last_end, delay))
+        return;
     /* La bandera detectada en el bit con muestra 'pos' empieza 7,5 símbolos antes (8 bits, el
      * último centrado en pos) y la de cierre acaba medio símbolo después. El retardo del
      * discriminador y del FIR de 25 coeficientes (AIS_DELAY muestras) se resta para que el
      * índice sea el de la señal recibida y no el del flujo demodulado. */
-    a->mk0 = hd->last_start - (int64_t)(7.5 * SPS) - AIS_DELAY;
-    a->mk1 = hd->last_end + SPS / 2 - AIS_DELAY;
+    if (nflips > 0) {
+        /* Trama corregida con el CRC como único juez: pide además un MMSI verosímil (la
+         * probabilidad de que un CRC-16 acierte por azar sube con cada variante probada). */
+        static const uint64_t common = (1ull << 1) | (1ull << 2) | (1ull << 3) | (1ull << 4) | (1ull << 5) |
+                                       (1ull << 18) | (1ull << 19) | (1ull << 21) | (1ull << 24) | (1ull << 27);
+        if (m.type > 27 || !((common >> m.type) & 1))
+            return;
+        if (nflips > 1) {
+            /* Con dos inversiones se probaron ~SFT_K²/2 variantes: solo se aceptan de un buque ya visto. */
+            bool known = false;
+            for (int i = 0; i < a->nships && !known; i++)
+                known = a->ships[i].mmsi == m.mmsi;
+            if (!known)
+                return;
+        }
+    }
+    a->mk0 = last_start - (int64_t)(7.5 * SPS) - delay;
+    a->mk1 = last_end + SPS / 2 - delay;
+    if (nflips > 0) {
+        /* Una ráfaga produce una sola trama: si la corrección cae sobre una ya decodificada (otra
+         * fase, o el camino sin derrotar, que llega antes) con una carga distinta, es un falso
+         * acierto del CRC y se descarta. */
+        for (int i = 0; i < SPAN_N; i++) {
+            int64_t lo = MAX(a->span[i].a, a->mk0), hi = MIN(a->span[i].b, a->mk1);
+            if (hi - lo > (a->mk1 - a->mk0) / 3)
+                return;
+        }
+        a->fixed++;
+    }
+    a->span[a->span_pos] = (span_t){a->mk0, a->mk1};
+    a->span_pos = (a->span_pos + 1) % SPAN_N;
     a->dd[a->dd_pos] = (dedup_t){h, a->n};
     a->dd_pos = (a->dd_pos + 1) % DEDUP_N;
     emit_msg(a, &m, bits, nbits, a->blk_now + (double)a->blk_i / 48000.0);
+}
+
+
+/* ======================================================================= */
+/*  Corrección por fiabilidad (decisión blanda + CRC)                      */
+/* ======================================================================= */
+/* El receptor HDLC de arriba trabaja con decisiones duras y exige banderas exactas y
+ * CRC correcto: a SNR baja una trama de 168 bits tiene de media más de un error y se
+ * pierde. Aquí se guarda, por fase de muestreo, el nivel NRZI de cada símbolo y su
+ * fiabilidad |y − dc| (distancia del discriminador al umbral). Al llegar una bandera
+ * (con hasta 1 bit erróneo) se prueba cada trama candidata:
+ *   1. tal cual (cubre banderas dañadas);
+ *   2. invirtiendo 1 o 2 de los SFT_K niveles menos fiables. Invertir un nivel NRZI
+ *      cambia DOS bits de dato consecutivos (el error de línea se duplica al
+ *      decodificar NRZI), por eso se opera sobre niveles y se rehace todo el
+ *      desentramado (la inserción de ceros puede cambiar la longitud).
+ * Es el decodificador de Chase de orden 2 con el CRC-16 como detector: gana ≈ 1 dB
+ * (sobre la segunda pasada) donde la trama tiene 1-2 errores de línea.
+ * Falsos positivos: el CRC de 16 bits deja pasar 2⁻¹⁶ de las variantes (~140 por trama) y
+ * el ruido solo da ~1 trama con CRC válido por hora y canal. Se frenan así:
+ *   (a) solo se arma una candidata si hay una ráfaga de potencia (burst_present: ≥ 2× el
+ *       suelo de ruido) y los 24 bits previos a la bandera de inicio alternan (≤ 12 fallos),
+ *       con lo que en ruido no se arma ninguna;
+ *   (b) inversiones solo con la bandera de cierre exacta;
+ *   (c) tras corregir: tipo habitual (1-5, 18, 19, 21, 24, 27), MMSI verosímil, y con 2
+ *       inversiones solo de un buque ya visto;
+ *   (d) una ráfaga da una trama: si la corregida solapa con otra ya emitida (distinta), se
+ *       descarta.
+ * Medido en tests/test_ais.c: 10 min de ruido sin eventos; ≈ 0,2 % de mensajes ajenos a 3-6 dB.
+ */
+static int sft_decode(const sft_t *q, long s, long e, long f0, long f1, uint8_t *out, int cap)
+{
+    int n = 0, ones = 0;
+    int prev = q->lev[(s - 1) & SFT_MASK];
+    for (long k = s; k <= e; k++) {
+        int l = q->lev[k & SFT_MASK] ^ (k == f0 || k == f1);
+        int d = l == prev;
+        prev = l;
+        if (d) {
+            if (++ones >= 6 || n >= cap)
+                return 0;           /* bandera o aborto dentro de la trama */
+            out[n++] = 1;
+        } else if (ones == 5) {
+            ones = 0;               /* cero insertado */
+        } else {
+            ones = 0;
+            if (n >= cap)
+                return 0;
+            out[n++] = 0;
+        }
+    }
+    return hdlc_check_fcs(out, n);
+}
+
+static void sft_try(ais_t *a, const sft_t *q, long s, long t, bool exact)
+{
+    uint8_t out[MAX_BITS + 64];
+    long e = t - 8;
+    int nb = sft_decode(q, s, e, -1, -1, out, (int)sizeof out);
+    if (nb > 0) {
+        on_frame(a, out, nb, q->pos[(s - 1) & SFT_MASK], q->pos[t & SFT_MASK], AIS_DELAY, 0);
+        return;
+    }
+    if (!exact)
+        return;                 /* solo se prueban inversiones con la bandera de cierre exacta */
+    /* los K niveles menos fiables del interior de la trama */
+    long idx[SFT_K];
+    float mg[SFT_K];
+    int nk = 0;
+    for (long k = s; k <= e; k++) {
+        float m = q->mag[k & SFT_MASK];
+        if (nk == SFT_K && m >= mg[nk - 1])
+            continue;
+        int j = nk < SFT_K ? nk++ : nk - 1;
+        for (; j > 0 && mg[j - 1] > m; j--) {
+            mg[j] = mg[j - 1];
+            idx[j] = idx[j - 1];
+        }
+        mg[j] = m;
+        idx[j] = k;
+    }
+    for (int i = 0; i < nk; i++) {
+        for (int j = i; j < nk; j++) {
+            nb = sft_decode(q, s, e, idx[i], j == i ? -1 : idx[j], out, (int)sizeof out);
+            if (nb > 0) {
+                on_frame(a, out, nb, q->pos[(s - 1) & SFT_MASK], q->pos[t & SFT_MASK], AIS_DELAY, j == i ? 1 : 2);
+                return;
+            }
+        }
+    }
+}
+
+/* Entrenamiento: los 24 bits de dato previos a la bandera de inicio alternan (…0101). */
+static bool sft_training(const sft_t *q, long t)
+{
+    int bad = 0;
+    for (int j = 0; j < 24; j++) {
+        long k = t - 8 - j;
+        int d = q->lev[k & SFT_MASK] == q->lev[(k - 1) & SFT_MASK];
+        bad += d != ((j & 1) == 0);
+    }
+    return bad <= 12;
+}
+
+/* ¿Hay una ráfaga en la ventana de PW_WIN muestras que termina en 'pos'? Potencia media
+ * ≥ 2× (3 dB) el suelo de ruido. En ruido solo la media de 128 muestras fluctúa ~12 %, así
+ * que no se arma ninguna candidata; con señal de SNR ≥ 2 dB la subida es ≥ 4 dB. Es lo que
+ * mantiene en cero los falsos positivos de la corrección. */
+static bool burst_present(const ais_t *a, int64_t pos, int delay)
+{
+    pos -= delay; /* pcum está en la escala de tiempo de la señal recibida */
+    if (!a->pfloor_ok || pos < PW_WIN)
+        return false;
+    double m = (a->pcum[pos & (PW_RB - 1)] - a->pcum[(pos - PW_WIN) & (PW_RB - 1)]) / PW_WIN;
+    return m >= BURST_RATIO * a->pfloor;
+}
+
+static void sft_flag(ais_t *a, sft_t *q, long t, bool exact)
+{
+    int keep = 0;
+    for (int i = 0; i < q->ns; i++) {
+        long s = q->start[i];
+        if (t - s > 1300)
+            continue;                       /* caducada */
+        long nraw = t - 7 - s;
+        if (nraw >= 112 && nraw <= 1250) {
+            long before = (long)a->total;
+            sft_try(a, q, s, t, exact);
+            if ((long)a->total != before)
+                continue;                   /* ya decodificada: no se rearma */
+        }
+        q->start[keep++] = s;
+    }
+    q->ns = keep;
+    if (t >= 40 && burst_present(a, q->pos[t & SFT_MASK], AIS_DELAY) && sft_training(q, t)) {
+        if (q->ns == SFT_NSTART) {
+            memmove(q->start, q->start + 1, sizeof(long) * (SFT_NSTART - 1));
+            q->ns--;
+        }
+        q->start[q->ns++] = t + 1;
+    }
+}
+
+static void sft_push(ais_t *a, sft_t *q, int lev, float mag, int64_t pos)
+{
+    long t = q->t++;
+    q->lev[t & SFT_MASK] = (uint8_t)lev;
+    q->mag[t & SFT_MASK] = mag;
+    q->pos[t & SFT_MASK] = pos;
+    int d = t > 0 && lev == q->lev[(t - 1) & SFT_MASK];
+    q->w = ((q->w << 1) | (unsigned)d) & 0xFFu;
+    if (t >= 40 && __builtin_popcount(q->w ^ 0x7Eu) <= 1)
+        sft_flag(a, q, t, q->w == 0x7Eu);
 }
 
 /* ======================================================================= */
@@ -731,8 +1009,15 @@ static void *ais_create(const dec_cfg_t *cfg, char *err, size_t errlen)
     fir_design_lowpass(h, 25, 6500.0 / 48000.0, 5.0);
     if (fir_f_init(&a->lpf, h, 25, 1) < 0)
         goto fail;
+    float h2[S2_TAPS];
+    fir_design_lowpass(h2, S2_TAPS, S2_CUT_HZ / 48000.0, 5.0);
+    fmdisc_init(&a->disc2, 48000.0, 2400.0);
+    if (fir_cf_init(&a->lpf2, h2, S2_TAPS, 1) < 0)
+        goto fail;
+    if (fir_f_init(&a->lpfb, h, 25, 1) < 0)
+        goto fail;
     for (int p = 0; p < SPS; p++)
-        if (hdlc_rx_init(&a->ph[p].hdlc, MAX_BITS) < 0)
+        if (hdlc_rx_init(&a->ph[p].hdlc, MAX_BITS) < 0 || hdlc_rx_init(&a->ph1[p].hdlc, MAX_BITS) < 0)
             goto fail;
     a->ships = calloc(MAX_SHIPS, sizeof(ship_t));
     a->bitbuf = malloc(MAX_BITS);
@@ -759,10 +1044,17 @@ static void ais_destroy(void *st)
     if (!a)
         return;
     for (int p = 0; p < SPS; p++)
-        hdlc_rx_free(&a->ph[p].hdlc);
+        hdlc_rx_free(&a->ph[p].hdlc), hdlc_rx_free(&a->ph1[p].hdlc);
     fir_f_free(&a->lpf);
     free(a->tmp);
     free(a->tmp2);
+    free(a->dcs);
+    free(a->y1);
+    free(a->rot);
+    free(a->rot2);
+    free(a->dl);
+    fir_cf_free(&a->lpf2);
+    fir_f_free(&a->lpfb);
     free(a->ships);
     free(a->bitbuf);
     sb_free(&a->ev);
@@ -778,6 +1070,30 @@ static void ais_set_location(void *st, bool valid, double lat, double lon)
     a->lon = lon;
 }
 
+
+/* Media ponderada por la potencia instantánea |x|²: el ruido previo a la ráfaga (potencia
+ * baja) apenas contamina la estimación del desvío. */
+static float dcest_push(dcest_t *d, float y, float pw)
+{
+    float yc = CLAMP(y, -4.0f, 4.0f);
+    d->sum += (double)yc * pw - d->ring[d->pos];
+    d->w += pw - d->ringw[d->pos];
+    d->ring[d->pos] = yc * pw;
+    d->ringw[d->pos] = pw;
+    if (++d->pos == DC_WIN)
+        d->pos = 0;
+    if (++d->cnt % (1L << 22) == 0) { /* limita la deriva de las sumas móviles */
+        double sy = 0, sw = 0;
+        for (int k = 0; k < DC_WIN; k++) {
+            sy += d->ring[k];
+            sw += d->ringw[k];
+        }
+        d->sum = sy;
+        d->w = sw;
+    }
+    return d->w > 1e-12 ? (float)(d->sum / d->w) : 0.0f;
+}
+
 static void ais_process(void *st, const cf32 *iq, int n, double now, dec_emit_fn emit, void *ctx)
 {
     ais_t *a = st;
@@ -785,43 +1101,87 @@ static void ais_process(void *st, const cf32 *iq, int n, double now, dec_emit_fn
         a->tmp_cap = n + 4096;
         a->tmp = realloc(a->tmp, sizeof(float) * (size_t)a->tmp_cap);
         a->tmp2 = realloc(a->tmp2, sizeof(float) * (size_t)a->tmp_cap + 64);
+        a->dcs = realloc(a->dcs, sizeof(float) * (size_t)a->tmp_cap);
+        a->y1 = realloc(a->y1, sizeof(float) * (size_t)a->tmp_cap);
+        a->rot = realloc(a->rot, sizeof(cf32) * (size_t)a->tmp_cap);
+        a->rot2 = realloc(a->rot2, sizeof(cf32) * (size_t)a->tmp_cap);
+        a->dl = realloc(a->dl, sizeof(cf32) * ((size_t)a->tmp_cap + S2_LAG));
+        if (!a->tmp || !a->tmp2 || !a->dcs || !a->y1 || !a->rot || !a->rot2 || !a->dl) {
+            a->tmp_cap = 0; /* sin memoria: este bloque se descarta */
+            return;
+        }
+        if (!a->dl_init) {
+            memset(a->dl, 0, sizeof(cf32) * S2_LAG);
+            a->dl_init = true;
+        }
     }
     a->emit = emit;
     a->emit_ctx = ctx;
     a->blk_now = now;
     a->blk_n0 = a->n;
+
+    /* Pasada 1: discriminador + paso bajo → desvío de portadora (dcs[i]) en cada muestra. */
     fmdisc_process(&a->disc, iq, n, a->tmp);
-    int m = fir_f_process(&a->lpf, a->tmp, n, a->tmp2);
+    int m = fir_f_process(&a->lpf, a->tmp, n, a->y1);
     for (int i = 0; i < m; i++) {
-        float y = a->tmp2[i];
-        /* Media ponderada por la potencia instantánea |x|²: el ruido previo a la
-         * ráfaga (potencia baja) apenas contamina la estimación del desvío. */
         float pw = iq[i].re * iq[i].re + iq[i].im * iq[i].im;
-        float yc = CLAMP(y, -4.0f, 4.0f);
-        a->ring_sum += (double)yc * pw - a->ring[a->ring_pos];
-        a->ring_w += pw - a->ringw[a->ring_pos];
-        a->ring[a->ring_pos] = yc * pw;
-        a->ringw[a->ring_pos] = pw;
-        if (++a->ring_pos == DC_WIN)
-            a->ring_pos = 0;
-        float dc = a->ring_w > 1e-12 ? (float)(a->ring_sum / a->ring_w) : 0.0f;
+        a->dcs[i] = dcest_push(&a->dc1, a->y1[i], pw);
+    }
+
+    /* Pasada 2: el IQ, retrasado S2_LAG muestras para que la estimación ya haya visto el
+     * principio de la ráfaga, se derrota con el desvío estimado y se filtra a la banda de la
+     * señal antes del segundo discriminador. */
+    memcpy(a->dl + S2_LAG, iq, sizeof(cf32) * (size_t)m);
+    for (int i = 0; i < m; i++) {
+        const cf32 *xi = &a->dl[i];
+        a->rot_ph -= (double)a->dcs[i] * (M_PI * 2400.0 / 24000.0); /* 2π·dc·2400/fs */
+        if (a->rot_ph < -M_PI)
+            a->rot_ph += 2.0 * M_PI;
+        float c = cosf((float)a->rot_ph), s = sinf((float)a->rot_ph);
+        a->rot[i] = (cf32){xi->re * c - xi->im * s, xi->re * s + xi->im * c};
+    }
+    memmove(a->dl, a->dl + m, sizeof(cf32) * S2_LAG);
+    fir_cf_process(&a->lpf2, a->rot, m, a->rot2);
+    fmdisc_process(&a->disc2, a->rot2, m, a->tmp);
+    m = fir_f_process(&a->lpfb, a->tmp, m, a->tmp2);
+    const float *y = a->tmp2;
+
+    for (int i = 0; i < m; i++) {
+        /* Potencia de la señal ya derrotada y filtrada: pondera el residuo de continua y
+         * alimenta el detector de ráfagas. */
+        float pw = a->rot2[i].re * a->rot2[i].re + a->rot2[i].im * a->rot2[i].im;
+        float dc = dcest_push(&a->dc2, y[i], pw);
+        long c = a->n;
+        double cs = (c ? a->pcum[(c - 1) & (PW_RB - 1)] : 0.0) + (double)iq[i].re * iq[i].re + (double)iq[i].im * iq[i].im;
+        a->pcum[c & (PW_RB - 1)] = cs;
+        if (c % PW_WIN == PW_WIN - 1 && c >= PW_WIN) {
+            double mm = (cs - a->pcum[(c - PW_WIN) & (PW_RB - 1)]) / PW_WIN;
+            if (!a->pfloor_ok || mm < a->pfloor) {
+                a->pfloor = mm;
+                a->pfloor_ok = true;
+            } else {
+                a->pfloor += (mm - a->pfloor) * (1.0 / 400.0); /* ≈ 1 s: sube despacio */
+            }
+        }
         hdlc_rx_t *h = &a->ph[a->n % SPS].hdlc;
         h->pos = a->n;
         a->n++;
         a->blk_i = i;
-        int nb = hdlc_rx_push_level(h, y > dc);
+        sft_push(a, &a->sf[(a->n - 1) % SPS], y[i] > dc, fabsf(y[i] - dc), a->n - 1);
+        int nb = hdlc_rx_push_level(h, y[i] > dc);
         if (nb > 0) {
             memcpy(a->bitbuf, h->bits, (size_t)nb);
-            on_frame(a, a->bitbuf, nb, h);
+            on_frame(a, a->bitbuf, nb, h->last_start, h->last_end, AIS_DELAY, 0);
         }
-        if (a->n % (1L << 22) == 0) { /* limita la deriva de las sumas móviles */
-            double sy = 0, sw = 0;
-            for (int k = 0; k < DC_WIN; k++) {
-                sy += a->ring[k];
-                sw += a->ringw[k];
-            }
-            a->ring_sum = sy;
-            a->ring_w = sw;
+        /* Camino 1 (sin derrotar): es el de siempre. Se conserva porque con dos ráfagas
+         * solapadas de desvíos distintos la derrotación sigue a la más fuerte y pierde la otra. */
+        float y1 = a->y1[i];
+        hdlc_rx_t *h1 = &a->ph1[(a->n - 1) % SPS].hdlc;
+        h1->pos = a->n - 1;
+        nb = hdlc_rx_push_level(h1, y1 > a->dcs[i]);
+        if (nb > 0) {
+            memcpy(a->bitbuf, h1->bits, (size_t)nb);
+            on_frame(a, a->bitbuf, nb, h1->last_start, h1->last_end, BURST_DELAY, 0);
         }
     }
 }
