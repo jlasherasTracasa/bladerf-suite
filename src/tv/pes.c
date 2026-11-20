@@ -126,8 +126,11 @@ void pes_feed(pes_asm_t *p, const ts_pkt_t *k)
         p->buf = nb;
         p->cap = nc;
     }
-    memcpy(p->buf + p->len, k->payload, k->plen);
-    p->len += k->plen;
+    /* Q3 (fuzz): un inicio de PES con plen == 0 (campo de adaptación que ocupa todo el
+     * paquete) llegaba aquí con p->buf == NULL y memcpy(NULL, …, 0) es indefinido. */
+    if (k->plen > 0)
+        memcpy(p->buf + p->len, k->payload, (size_t)k->plen);
+    p->len += (size_t)k->plen;
     /* PES con longitud declarada: se cierra en cuanto está completo (audio) */
     if (p->len >= 6) {
         size_t pl = (p->buf[4] << 8) | p->buf[5];

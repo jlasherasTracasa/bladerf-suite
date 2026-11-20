@@ -7,6 +7,7 @@
 
 #include <libbladeRF.h>
 #include <errno.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -278,11 +279,13 @@ static int read_sigmf_meta(const char *meta_path, file_fmt_t *fmt, uint32_t *rat
     char dt[32] = "";
     json_str(buf, t, json_obj_get(buf, t, g, "core:datatype"), dt, sizeof dt);
     double v;
-    if (json_num(buf, t, json_obj_get(buf, t, g, "core:sample_rate"), &v))
+    /* Q3 (fuzz): un meta corrupto puede traer tasa negativa, NaN o 1e300; convertirlos a
+     * entero sin acotar es comportamiento indefinido. Solo se acepta lo representable. */
+    if (json_num(buf, t, json_obj_get(buf, t, g, "core:sample_rate"), &v) && v >= 1 && v <= 4294967295.0)
         *rate = (uint32_t)v;
     int caps = json_obj_get(buf, t, 0, "captures");
     int c0 = json_arr_get(t, caps, 0);
-    if (json_num(buf, t, json_obj_get(buf, t, c0, "core:frequency"), &v))
+    if (json_num(buf, t, json_obj_get(buf, t, c0, "core:frequency"), &v) && fabs(v) <= 1e13)
         *freq = (int64_t)v;
     /* Nuestra app guarda la escala nativa Q11 en un campo propio */
     double scale = 0;
@@ -542,16 +545,23 @@ static int file_read(source_t *s, int16_t *iq, unsigned n)
         s->raw = realloc(s->raw, need);
         s->raw_cap = need;
     }
-    size_t got = 0;
-    int empty_passes = 0; /* vueltas seguidas sin leer nada: fichero vacío */
+    size_t got = 0, pass_start = 0;
+    int empty_passes = 0; /* vueltas seguidas sin muestras completas: fichero vacío o < 1 muestra */
     while (got < need) {
         size_t r = fread(s->raw + got, 1, need - got, s->fp);
         got += r;
         if (got < need) {
-            empty_passes = r ? 0 : empty_passes + 1;
-            if (feof(s->fp) && empty_passes < 2) {
-                rewind(s->fp); /* reproducción en bucle (aunque el bloque dé varias vueltas al fichero) */
-                continue;
+            if (feof(s->fp)) {
+                /* Q3 (fuzz): un fichero truncado puede acabar a mitad de una muestra; al
+                 * volver al principio esos bytes sueltos desplazarían I/Q para siempre
+                 * (I↔Q intercambiados). Se descarta la muestra incompleta del final. */
+                got -= got % bps;
+                empty_passes = got > pass_start ? 0 : empty_passes + 1;
+                if (empty_passes < 2) {
+                    pass_start = got;
+                    rewind(s->fp); /* reproducción en bucle (aunque el bloque dé varias vueltas al fichero) */
+                    continue;
+                }
             }
             SETERR(s, "fichero vacío o ilegible");
             return -1;

@@ -398,6 +398,10 @@ static sf_rx_t *sf_new(int sf)
 /* ---- búfer ---- */
 static void buf_append(sf_rx_t *s, const cf32 *x, int n)
 {
+    /* Q3 (fuzz): con un bloque vacío (o que el diezmador deja en 0 muestras) s->buf aún
+     * es NULL y memcpy(NULL, x, 0) es comportamiento indefinido. */
+    if (n <= 0)
+        return;
     if (s->len + n > s->cap) {
         int64_t nc = (s->len + n) * 2 + 4096;
         cf32 *nb = realloc(s->buf, sizeof(cf32) * (size_t)nc);

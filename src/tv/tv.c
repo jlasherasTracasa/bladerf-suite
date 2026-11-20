@@ -948,6 +948,13 @@ int tv_cmd_scan(tv_t *t, int64_t start_hz, int64_t stop_hz, char *err, size_t er
         start_hz = tv_channel_freq(21);
     if (stop_hz <= 0 || stop_hz < start_hz)
         stop_hz = tv_channel_freq(48);
+    /* Q3 (fuzz): el rango viene del WebSocket sin acotar. Con stop = 9e18 el bucle de
+     * scan_main contaba ~10^12 canales y desbordaba el 'int n' (comportamiento
+     * indefinido, y un hilo ocupado durante horas). El hardware llega a 6 GHz. */
+    if (start_hz > 6000000000LL)
+        start_hz = 6000000000LL;
+    if (stop_hz > 6000000000LL)
+        stop_hz = 6000000000LL;
     pthread_mutex_lock(&t->mu);
     if (t->file_mode || t->scanning) {
         pthread_mutex_unlock(&t->mu);
