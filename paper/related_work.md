@@ -299,3 +299,146 @@ resumen o texto.
   shielding» (texto vía alphaXiv).
 - CorteXforge [joly2026]: 61,4 % → 23,2 % y «all acquisitions were performed within the
   same SLICES-RI/CorteXlab environment» (texto vía alphaXiv).
+
+## 9. Tesis revisada: sesgo de selección y calibración por inyección
+
+Fecha: 2026-11-20 (agente P1b). Tesis evaluada (PLAN.md §5.1): verdad de terreno en
+tres niveles (positivo verificado por CRC / energía detectada sin decodificar =
+«desconocido» / vacío), calibrada inyectando señales de moduladores propios sobre
+capturas reales para medir la probabilidad de etiquetado frente a SNR e interferencia, y
+esa probabilidad usada como propensión (PU o ponderación inversa) para entrenar
+detectores.
+
+**Rigor.** Cada fila se apoya en un resumen o texto que abrí (URL abierta). Lo que
+afirmo sobre un trabajo es lo que decía ese resumen o texto; «n/d» = lo abierto no lo
+dice. Las 26 entradas nuevas están en `referencias.bib` (clave entre corchetes).
+**Limitación**: WebSearch + WebFetch, sin IEEE Xplore ni ScienceDirect. La ausencia de
+resultados **no prueba** que no exista el trabajo; la conclusión «no encontré PU o
+propensión aplicados a etiquetas de RF» es de las búsquedas hechas (PU + RF/espectro,
+ruido de etiquetas + modulación, anotaciones parciales + espectrograma, inyección +
+datos reales), que devolvieron solo patentes y trabajos de otro tipo.
+
+### 9.1 Tabla (33 trabajos: 26 nuevos y 7 ya citados arriba)
+
+| # | Referencia [clave] | Año | URL abierta | Qué hacen | Relación con la tesis |
+|---|---|---|---|---|---|
+| 1 | Elkan y Noto, PU learning [elkan2008] | 2008 | https://cseweb.ucsd.edu/~elkan/posonly.pdf (texto abierto con pdftotext) | Con positivos «seleccionados completamente al azar» (SCAR, la probabilidad de etiqueta es constante en x), un clasificador positivo-vs-no-etiquetado da probabilidades que difieren solo en un factor constante de las verdaderas | Origen del método. Su supuesto SCAR es justo lo que la tesis rechaza: la prob. de etiquetar depende de la SNR |
+| 2 | Bekker y Davis, survey PU [bekker2020survey] | 2020 | https://arxiv.org/abs/1811.04820 | Revisión del campo, siete preguntas de investigación | Marco general; cita para PU |
+| 3 | Bekker et al., más allá de SCAR [bekker2019sar] | 2019 | https://arxiv.org/abs/1809.03207 | PU con sesgo de selección: los positivos etiquetados son más fáciles de etiquetar; método basado en riesgo que modela el mecanismo de etiquetado | **Cercano en método** (propensión de etiquetado en PU); la tesis aporta la propensión *medida* por inyección en vez de supuesta o estimada |
+| 4 | Kiryo et al., nnPU [kiryo2017] | 2017 | https://arxiv.org/abs/1703.00593 | Estimador de riesgo no negativo para PU con modelos profundos | Función de pérdida candidata para la contribución 3 |
+| 5 | Shajarisales et al., proceso de anotación [shajarisales2020] | 2020 | https://arxiv.org/abs/2003.01067 | PU sin SCAR: modelos flexibles del proceso de anotación, identificables; publica un conjunto real | Propensión dependiente de x aprendida; contraste con propensión calibrada |
+| 6 | Schnabel et al., Recommendations as Treatments [schnabel2016] | 2016 | https://arxiv.org/abs/1602.05352 | Corrige sesgo de selección con ideas de inferencia causal; estimadores sin sesgo | Origen de la ponderación inversa por propensión; transferencia a RF no hecha |
+| 7 | Schultheis y Babbar, pérdidas sin sesgo con etiquetas ausentes [schultheis2021] | 2021 | https://arxiv.org/abs/2109.11282 | Pérdidas insesgadas con etiquetas ausentes a tasa conocida; la corrección desplaza el compromiso sesgo-varianza y puede exigir más regularización | Aviso para el revisor: la ponderación inversa puede no ganar por la varianza |
+| 8 | Niitani et al., anotaciones dispersas [niitani2019] | 2019 | https://arxiv.org/abs/1811.10862 | Detección con Open Images escasamente anotado; muestreo «part-aware» | Origen en visión (detección con anotaciones incompletas) |
+| 9 | Wu et al., Soft Sampling [wu2018softsampling] | 2018 | https://arxiv.org/abs/1806.06986 | Objetos sin etiqueta cuentan como fondo y engañan; reduce el peso del gradiente de regiones que solapan positivos | Origen en visión; es el análogo informal de «no etiquetado ≠ fondo» |
+| 10 | Zhang et al., Background Recalibration Loss [zhang2020brl] | 2020 | https://arxiv.org/abs/2002.05274 | Pérdida que recalibra el fondo en detectores de una etapa con anotaciones ausentes | Origen en visión |
+| 11 | Wang et al., Co-mining [wang2020comining] | 2020 | https://arxiv.org/abs/2012.01950 | Dos ramas generan seudoetiquetas una para otra para minar instancias sin etiquetar | Origen en visión; alternativa a la propensión |
+| 12 | Chadwick y Newman, detectores con ruido [chadwick2019] | 2019 | https://arxiv.org/abs/1905.07202 | Efecto de tipos de ruido de etiquetas; adapta co-teaching a detección; etiquetas automáticas | Etiquetas automáticas con errores en detección |
+| 13 | Bendale y Boult, OpenMax [bendale2015openmax] | 2015 | https://arxiv.org/abs/1511.06233 | Capa que estima la prob. de «clase desconocida» | Origen de conjunto abierto; es sobre clases, no sobre regiones sin decodificar |
+| 14 | Fredieu et al., conjunto abierto, bosques de aislamiento [fredieu2021open] | 2021 | https://arxiv.org/abs/2110.00252 | MLP de 7 formas de onda + un bosque de aislamiento por clase para rechazar desconocidas (~98 %) | Clase «desconocida» en RF, pero clasificación de señal aislada y sintética (n/d real) |
+| 15 | Fredieu et al., watchdog [fredieu2021watchdog] | 2021 | https://arxiv.org/abs/2108.07339 | Autocodificador que añade categoría «desconocida» a 4 formas de onda | Ídem; no es banda ancha ni etiquetado de capturas |
+| 16 | Shebert et al., conjunto abierto híbrido [shebert2023] | 2023 | https://arxiv.org/abs/2302.03749 | Híbrido DL + clasificadores expertos; casi 100 % de detección de desconocidas | Vigilancia de espectro con «desconocido»; el desconocido aquí es de clase, no de «sin decodificar» |
+| 17 | Choza et al., Breakthrough Listen, 97 galaxias [choza2023] | 2023 | https://arxiv.org/abs/2312.03943 | Evalúan la sensibilidad del pipeline con inyección y recuperación de señales | **Inyección y recuperación en radio**; método ya hecho, para límites de sensibilidad |
+| 18 | Margot et al., 11 680 estrellas [margot2023] | 2023 | https://arxiv.org/abs/2308.02712 | Inyectan señales sintéticas: pipeline UCLA recupera 94,0 % (98,7 % sin zonas de RFI denso); el otro pipeline ~6 % | **Más cercano en inyección**: eficiencia del pipeline en función de procesado y RFI, usada en límites superiores |
+| 19 | Margot, diez años de UCLA SETI [margot2026] | 2026 | https://arxiv.org/abs/2605.05408 | Eficiencia demostrada del pipeline 94–99 % para deriva ±9 Hz/s (el resumen no cita «inyección») | Confirma que la eficiencia entra en el cálculo de prevalencia |
+| 20 | Luo et al., simulador de radiotelescopio [luo2022] | 2022 | https://arxiv.org/abs/2205.03046 | Simula púlsares, FRB, RFI; «las señales simuladas pueden inyectarse en datos reales» | Inyección sobre fondo real como herramienta; para datos de entrenamiento y prueba de algoritmos |
+| 21 | Mesarcik et al., RFI sin verlo [mesarcik2022] | 2022 | https://arxiv.org/abs/2207.00351 | Autocodificadores entrenados solo con señal limpia; usa marcas clásicas existentes como etiquetas débiles | Etiquetas débiles gratis, sin análisis de sesgo (n/d en el resumen) |
+| 22 | Sharma et al., RFI débilmente supervisado [sharma2023rfi] | 2023 | https://par.nsf.gov/servlets/purl/10544540 (texto abierto con pdftotext) | Etiquetas humanas en 10 canales de 20 MHz; el resto, no etiquetado; seudoetiquetas con alta confianza | Seudoetiquetado por umbral de confianza; **no** analiza el sesgo (no aparece en el resumen) |
+| 23 | Hao et al., destilación de ruido de etiquetas AMR [hao2024noise] | 2024 | https://arxiv.org/abs/2408.05151 | Maestro-alumno que corrige etiquetas no fiables, RadioML | Ruido de etiquetas en RF (etiqueta *equivocada*, no *ausente*) |
+| 24 | O'Shea et al., semisupervisado [oshea2016semi] | 2016 | https://arxiv.org/abs/1611.00303 | Hay datos de radio sin etiquetar y pocas etiquetas; aprendizaje semisupervisado para reconocer emisores | Semisupervisado en RF; sin modelo del proceso de etiquetado |
+| 25 | Trotter et al., satélites semisupervisado [trotter2026] | 2026 | https://arxiv.org/abs/2606.20976 | Datos RF «dispersamente etiquetados»; NMFk + expertos interpretan clústeres | Idem; las etiquetas salen de expertos, no de decodificación |
+| 26 | Clark et al., aumento de datos RFML [clark2020aug] | 2020 | https://arxiv.org/abs/2010.00178 | Compara datos sintéticos, capturados y aumentados; los capturados del caso de uso rinden más | Justifica evaluar sobre captura real |
+| 27 | Tu et al. [tu2022] | 2022 | ver §1 #8 | Etiqueta por decodificación y CRC (ADS-B) | Mecanismo base; no mide lo no etiquetado |
+| 28 | Nguyen et al., WRIST/SPREAD [nguyen2021wrist] | 2021 | ver §1 #7 | Etiquetas por modelo iterativo + corrección manual | Alternativa cara |
+| 29 | Uvaydov et al. [uvaydov2024] | 2024 | https://arxiv.org/abs/2402.03465 | Generan conjuntos de banda ancha cosiendo señales reales: etiquetado completo por construcción | Evita el problema; la tesis lo afronta en captura OTA |
+| 30 | Fonseca et al. [fonseca2020] | 2020 | ver §1 #12 | Admite que en transmisiones comerciales no se conoce la verdad de terreno | Motivación |
+| 31 | West et al. [west2021wbsig] | 2021 | https://arxiv.org/abs/2110.00518 | Conjunto de banda ancha (detección + localización TF + clasificación); el resumen no dice cómo se etiquetan | Referencia de métricas P/R en RF |
+| 32 | Boegner et al., WBSig53 [boegner2022wbsig53] | 2022 | ver §1 #5 | Sintético, cajas TF | Fondo sintético completamente etiquetado |
+| 33 | Chang et al., CSRD2025 [chang2025csrd] | 2025 | https://arxiv.org/abs/2508.19552 | Sintético; conversión IQ a espectrogramas COCO | Idem |
+
+### 9.2 Los cinco más cercanos
+
+**(a) Margot et al. 2023 [margot2023] (con Choza 2023 [choza2023]).** Inyectan señales
+sintéticas y miden la fracción recuperada por el pipeline (94,0 % frente a ~6 % según el
+procesado), y esa eficiencia entra en el límite superior de prevalencia. Es la misma
+idea que la calibración de la contribución 2. Diferencia: su objetivo es una cota
+astronómica, no corregir un conjunto de entrenamiento; una sola familia de señal de
+banda estrecha, no 21 protocolos con modulador y decodificador emparejados; y la
+eficiencia no se usa como propensión por muestra.
+
+**(b) Bekker et al. 2019 [bekker2019sar].** PU con sesgo de selección: modela el
+mecanismo de etiquetado (positivos «más fáciles de etiquetar»). Es el marco estadístico
+de la contribución 3. Diferencia: la propensión se supone o se estima del propio
+conjunto; aquí se mide con verdad conocida por inyección. No es RF.
+
+**(c) Niitani et al. 2019 [niitani2019] y Wu et al. 2018 [wu2018softsampling]** (visión).
+Objetos sin etiquetar cuentan como fondo y degradan al detector; se reduce el peso de
+esas regiones. Es el mismo problema que «no etiquetado ≠ vacío». Diferencia: sus
+correcciones son heurísticas (solape, jerarquía de partes), sin probabilidad de etiquetado
+calibrada; datos naturales, no RF.
+
+**(d) Sharma et al. 2023 [sharma2023rfi].** RF real con una parte pequeña etiquetada y
+seudoetiquetas por confianza. Muestra que el problema existe en RF. Diferencia: la
+confianza del modelo decide qué se etiqueta (sesgo no analizado), y no hay propensión
+calibrada ni nivel «desconocido».
+
+**(e) Fredieu et al. 2021 [fredieu2021open] y Shebert et al. 2023 [shebert2023].** Clase
+«desconocida» en RF (aislamiento, autocodificador, híbrido). Diferencia: «desconocido»
+es una clase de señal no vista que se rechaza en clasificación, no una región con
+energía que el etiquetador no pudo decodificar; no etiquetan capturas ni calibran
+cobertura.
+
+### 9.3 Veredicto por contribución
+
+1. **Tres niveles de etiqueta: novedosa en conjuntos de datos de RF, con cautela.** No
+   hallé un conjunto de RF que distinga «energía sin decodificar» de «vacío»; los de
+   banda ancha revisados (§1, West, WBSig53, Uvaydov) etiquetan por construcción sintética
+   o cosida o con corrección manual. Pero la idea de una clase desconocida existe en
+   conjunto abierto (#14–16) y el concepto es modesto por sí solo; su valor depende de
+   que se use (contribución 3). Búsqueda no exhaustiva (sin IEEE Xplore).
+2. **Calibración por inyección: incremental.** La técnica está ya hecha en radioastronomía y
+   SETI (#17–20) para medir eficiencia de pipeline. No hallé transferencia a comunicaciones
+   ni a etiquetado de conjuntos, ni en física de partículas (no lo busqué: sin
+   evidencia). Lo propio es usar moduladores emparejados de 21 protocolos y devolver la
+   eficiencia como metadato por etiqueta; eso es transferencia más escala, no invento
+   metodológico.
+3. **Aprendizaje con propensión: incremental en método, novedosa en aplicación.** PU
+   con selección sesgada (#1–3, 5), ponderación inversa (#6, 7) y detección con
+   anotaciones incompletas (#8–11) ya existen. No hallé su aplicación a etiquetas de RF ni
+   una propensión medida por inyección. El aporte es la combinación y su validación; el
+   riesgo es que un revisor lo vea como «PU conocido sobre un conjunto nuevo»: solo se
+   sostiene con ganancia empírica clara.
+
+### 9.4 Qué pediría un revisor para la contribución 3
+
+Experimentos: (i) **detector base** entrenado tratando no etiquetado como fondo, frente a
+PU sin propensión (nnPU [kiryo2017], SCAR [elkan2008]), propensión estimada
+(Bekker 2019 [bekker2019sar]), propensión calibrada por inyección (propuesta), propensión
+verdadera (cota superior, posible porque la inyección conoce la verdad), y los métodos
+de visión ([wu2018softsampling], [zhang2020brl], [wang2020comining]). (ii) **Barrido**
+de SNR, de interferencia y de la fracción etiquetada, para ver dónde ayuda y dónde la
+varianza de la ponderación la anula ([schultheis2021]). (iii) **Transferencia a otro
+receptor** y otra ubicación. (iv) **Ablaciones**: sin nivel «desconocido», con curva de
+calibración de otro receptor, con calibración desajustada. (v) Evaluar con **verdad
+independiente**: inyección en un conjunto reservado y un subconjunto etiquetado a mano
+con otro receptor; no evaluar con las mismas etiquetas del etiquetador (circularidad).
+
+Métricas: mAP y mAR (y AP50) con IC por remuestreo; recall por SNR (curva de detección);
+calibración de la probabilidad de etiquetado (ECE o Brier sobre la inyección); AUPRC
+(importante con clases desbalanceadas); tasa de falso positivo por hora de espectro vacío;
+ganancia frente a la base con significación (varias semillas); coste en CPU.
+
+### 9.5 Verificado y sin verificar
+
+**Abiertas y usadas: 26 nuevas** (más 7 ya verificadas en §1).
+
+**Sin verificar (no usadas en ninguna conclusión):**
+- Ma et al. 2023 (búsqueda SETI con aprendizaje automático): solo citada por Margot 2023.
+- Sharma y Krunz 2024 (GAN para RFI débilmente supervisado): solo fragmento de buscador.
+- «Label smoothing con etiquetas de máxima verosimilitud», arXiv 2211.00748, y
+  «dual-student AMR semisupervisado» (PMC12349406): solo fragmentos.
+- «Few-shot learning for signal detection in wideband spectrograms» (ScienceDirect
+  S1051200425002039): solo fragmento.
+- rfsynth (UCSD, wcsng.ucsd.edu/files/rfsynth.pdf): generador de IQ multi-señal; solo fragmento.
+- Scheirer et al. 2013 (conjunto abierto): no buscado.
+- Física de partículas (eficiencia de detección) y LIGO (campañas de inyección): no busqué.

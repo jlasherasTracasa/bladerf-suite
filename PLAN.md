@@ -203,6 +203,14 @@ Contribuciones que el artículo debe sostener con medidas:
    entrenar un detector, y demostrar que mejora frente a tratar lo no
    etiquetado como fondo, evaluado sobre verdad de terreno inyectada y sobre
    otro receptor.
+
+**Veredicto P1b (2026-11-20, `paper/related_work.md` §9):** (1) novedosa con
+cautela: no hay conjunto de RF con «energía sin decodificar» como nivel propio;
+(2) incremental: la inyección y recuperación ya existe en SETI (Margot 2023,
+Choza 2023), lo nuevo es llevarla a comunicaciones con 21 moduladores
+emparejados; (3) PU con propensión es un método conocido (Bekker 2019) y nuevo
+en RF, así que el artículo **necesita una ganancia empírica clara** frente al
+entrenamiento ingenuo. Pendiente: búsqueda en IEEE Xplore y verificar 7 citas.
 4. **Sistema y datos abiertos**: binario único reproducible sobre un SDR de
    menos de 1000 USD y conjunto de datos con DOI, con las tres clases de
    etiqueta y las curvas de calibración.
