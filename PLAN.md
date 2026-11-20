@@ -202,7 +202,9 @@ P1 debe leerlos y ampliar): WBSig53 y Sig53 (sintéticos), WRIST/SPREAD
 (5 tecnologías, etiquetado iterativo con modelo), Tu et al. 2022 (solo ADS-B,
 etiquetado por decodificación), RFMLS (WiFi y ADS-B), CorteXforge 2026 (bancos
 de pruebas controlados), SigChord/Sums (inspección de cabeceras multibanda).
-**La novedad no está confirmada**: si P1 encuentra un trabajo que ya hace
+**Veredicto de P1 (2026-11-20): incremental.** Etiquetar por decodificación con CRC ya está publicado para un solo protocolo (Tu et al. 2022, ADS-B) y como supervisión en un OFDM de laboratorio (Luostari et al. 2026). Lo nuevo es la combinación: muchos protocolos coexistiendo en banda ancha real, etiquetas tiempo-frecuencia con precisión y cobertura medidas, y la brecha sintético→real. El artículo debe matizar que la verdad de terreno real «no se puede» obtener (Fonseca 2020, Uvaydov 2024) citando a Tu, y tratar de frente el **sesgo de selección**: solo se etiqueta lo decodificable, y lo no decodificado no es un negativo. Revista con mejor encaje según lo verificado: IEEE OJ-COMS (cuartil pendiente de confirmar en JCR). Detalle en `paper/related_work.md`.
+
+**La novedad no está confirmada del todo**: si P1 encuentra un trabajo que ya hace
 etiquetado por decodificación multiprotocolo en banda ancha, se replantea.
 
 Alternativa de reserva (menos novedosa): artículo de sistema sobre la
