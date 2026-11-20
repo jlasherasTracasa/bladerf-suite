@@ -1,0 +1,17 @@
+{
+  "global": {
+    "core:datatype": "ci8",
+    "core:sample_rate": 48000,
+    "core:version": "1.0.0",
+    "core:author": "Signal Identification Wiki (sigidwiki.com), CC BY-SA 3.0",
+    "core:description": "ACARS Nueva Zelanda (ZK-OKM, NZ0006), audio AM de 'ACARS sound' remodulado en AM m=0,7, recorte de 2-3,2 s",
+    "core:license": "CC-BY-SA-3.0 (sigidwiki)"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 131515000
+    }
+  ],
+  "annotations": []
+}

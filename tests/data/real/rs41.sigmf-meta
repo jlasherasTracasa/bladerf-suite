@@ -1,0 +1,17 @@
+{
+  "global": {
+    "core:datatype": "ci8",
+    "core:sample_rate": 48000,
+    "core:version": "1.0.0",
+    "core:author": "rs1729/RS (github.com/rs1729/RS), audio FM demodulado de una sonda real, solo datos",
+    "core:description": "RS41 K1930308 (2014-07-17), 1,9 s de audio demodulado remodulado en FM +-2,4 kHz",
+    "core:license": "sin licencia explicita: datos de prueba locales de una grabacion publica; se conserva solo el recorte minimo"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 402990000
+    }
+  ],
+  "annotations": []
+}

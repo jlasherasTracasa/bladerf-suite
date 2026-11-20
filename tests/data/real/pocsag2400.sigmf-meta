@@ -1,0 +1,17 @@
+{
+  "global": {
+    "core:datatype": "ci8",
+    "core:sample_rate": 48000,
+    "core:version": "1.0.0",
+    "core:author": "multimon-ng test/samples (EliasOenal/multimon-ng), GPL-2.0, solo datos",
+    "core:description": "POCSAG 2400 bps (POCSAG_sample_-_2400_bps.flac) remodulado en FM +-4,5 kHz",
+    "core:license": "GPL-2.0 (solo datos de prueba)"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 466065000
+    }
+  ],
+  "annotations": []
+}

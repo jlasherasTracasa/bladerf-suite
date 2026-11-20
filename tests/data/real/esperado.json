@@ -1,0 +1,310 @@
+{
+  "version": 1,
+  "nota": "unicos = nº de mensajes distintos (clave jq) en la reproduccion; se exige >= unicos*0.95. eventos = recuento bruto de la referencia, informativo (depende de las vueltas del bucle).",
+  "casos": {
+    "ais": {
+      "fixture": "ais",
+      "decoder": "ais",
+      "freq": 161975000,
+      "duracion": 6,
+      "filtro": ".",
+      "clave": "\"\\(.msg.msg_type)/\\(.msg.mmsi)/\\(.msg.lat)\"",
+      "campos": [
+        "\"mmsi\":367003560",
+        "\"lat\":33.767095"
+      ],
+      "unicos": 1,
+      "eventos": 4
+    },
+    "acars": {
+      "fixture": "acars",
+      "decoder": "acars",
+      "freq": 131525000,
+      "duracion": 6,
+      "filtro": ".",
+      "clave": "\"\\(.msg.reg)/\\(.msg.label)/\\(.msg.block)/\\(.msg.text)\"",
+      "campos": [
+        "\"reg\":\"ZK-OKM\"",
+        "\"flight\":\"NZ0006\"",
+        "\"reg\":\"ZK-SJC\""
+      ],
+      "unicos": 2,
+      "eventos": 9
+    },
+    "aprs": {
+      "fixture": "aprs",
+      "decoder": "aprs",
+      "freq": 144800000,
+      "duracion": 10,
+      "filtro": ".",
+      "clave": "\"\\(.msg.src)/\\(.msg.dst)\"",
+      "campos": [
+        "\"src\":\"ZL1AB\"",
+        "\"dst\":\"FBB\""
+      ],
+      "unicos": 1,
+      "eventos": 2
+    },
+    "flex": {
+      "fixture": "flex",
+      "decoder": "flex",
+      "freq": 466075000,
+      "duracion": 6,
+      "filtro": ".",
+      "clave": "\"\\(.msg.capcode)/\\(.msg.msg)\"",
+      "campos": [
+        "\"capcode\":1123201",
+        "B2 Eindhoven Rit: 105012"
+      ],
+      "unicos": 1,
+      "eventos": 1
+    },
+    "pocsag512": {
+      "fixture": "pocsag512",
+      "decoder": "pocsag",
+      "freq": 466075000,
+      "duracion": 6,
+      "filtro": ".",
+      "clave": "\"\\(.msg.ric)/\\(.msg.baud)/\\(.msg.text)\"",
+      "campos": [
+        "\"ric\":273040",
+        "\"baud\":512"
+      ],
+      "unicos": 1,
+      "eventos": 2
+    },
+    "pocsag1200": {
+      "fixture": "pocsag1200",
+      "decoder": "pocsag",
+      "freq": 466075000,
+      "duracion": 6,
+      "filtro": ".",
+      "clave": "\"\\(.msg.ric)/\\(.msg.baud)/\\(.msg.text)\"",
+      "campos": [
+        "\"ric\":273040",
+        "\"baud\":1200"
+      ],
+      "unicos": 1,
+      "eventos": 1
+    },
+    "pocsag2400": {
+      "fixture": "pocsag2400",
+      "decoder": "pocsag",
+      "freq": 466075000,
+      "duracion": 6,
+      "filtro": ".",
+      "clave": "\"\\(.msg.ric)/\\(.msg.baud)/\\(.msg.text)\"",
+      "campos": [
+        "\"ric\":1022869",
+        "\"baud\":2400"
+      ],
+      "unicos": 1,
+      "eventos": 3
+    },
+    "rs41": {
+      "fixture": "rs41",
+      "decoder": "rs41",
+      "freq": 403000000,
+      "duracion": 6,
+      "filtro": ".",
+      "clave": "\"\\(.msg.serial)/\\(.msg.text)\"",
+      "campos": [
+        "\"serial\":\"K1930308\"",
+        "\"gps_week\":1801"
+      ],
+      "unicos": 2,
+      "eventos": 6
+    },
+    "gsm": {
+      "fixture": "gsm",
+      "decoder": "gsm",
+      "freq": 947000000,
+      "duracion": 6,
+      "filtro": ".",
+      "clave": "\"\\(.msg.bsic)\"",
+      "campos": [
+        "\"bsic\":23",
+        "\"ncc\":2",
+        "\"bcc\":7"
+      ],
+      "unicos": 1,
+      "eventos": 1
+    },
+    "lte": {
+      "fixture": "lte",
+      "decoder": "lte",
+      "freq": 800000000,
+      "duracion": 6,
+      "filtro": ".",
+      "clave": "\"\\(.msg.pci)\"",
+      "campos": [
+        "\"pci\":65",
+        "\"mib\":true",
+        "\"bw_rb\":6"
+      ],
+      "unicos": 1,
+      "eventos": 1
+    },
+    "wifi": {
+      "fixture": "wifi",
+      "decoder": "wifi",
+      "freq": 2437000000,
+      "duracion": 6,
+      "filtro": ".",
+      "clave": "\"\\(.msg.bssid)\"",
+      "campos": [
+        "\"ssid\":\"UPC8443073.2,4G\"",
+        "\"bssid\":\"34:2C:C4:18:95:3B\"",
+        "\"channel\":1"
+      ],
+      "unicos": 1,
+      "eventos": 1
+    },
+    "lora": {
+      "fixture": "lora",
+      "decoder": "lora",
+      "freq": 868100000,
+      "duracion": 6,
+      "filtro": ".",
+      "clave": "\"\\(.msg.payload)\"",
+      "campos": [
+        "\"crc_ok\":true",
+        "\"payload\":\"486F6C61206465736465206C6F7261747820313233"
+      ],
+      "unicos": 1,
+      "eventos": 99
+    },
+    "ism_acurite592txr": {
+      "fixture": "ism_acurite592txr",
+      "decoder": "ism",
+      "freq": 433920000,
+      "duracion": 6,
+      "filtro": "select(.msg.model != null)",
+      "clave": "\"\\(.msg.model)/\\(.msg.id)/\\(.msg.temperature_c)\"",
+      "campos": [
+        "\"model\":\"Acurite-592TXR\"",
+        "\"id\":12053",
+        "\"temperature_c\":26.7"
+      ],
+      "unicos": 1,
+      "eventos": 6
+    },
+    "ism_nexus": {
+      "fixture": "ism_nexus",
+      "decoder": "ism",
+      "freq": 433920000,
+      "duracion": 6,
+      "filtro": "select(.msg.model != null)",
+      "clave": "\"\\(.msg.model)/\\(.msg.id)/\\(.msg.temperature_c)\"",
+      "campos": [
+        "\"model\":\"Nexus-TH\"",
+        "\"id\":181",
+        "\"temperature_c\":19.0"
+      ],
+      "unicos": 1,
+      "eventos": 6
+    },
+    "ism_f007th": {
+      "fixture": "ism_f007th",
+      "decoder": "ism",
+      "freq": 433920000,
+      "duracion": 6,
+      "filtro": "select(.msg.model != null)",
+      "clave": "\"\\(.msg.model)/\\(.msg.id)/\\(.msg.temperature_c)\"",
+      "campos": [
+        "\"model\":\"Ambient-F007TH\"",
+        "\"id\":169",
+        "\"temperature_c\":-20.3"
+      ],
+      "unicos": 1,
+      "eventos": 6
+    },
+    "ism_wh1080": {
+      "fixture": "ism_wh1080",
+      "decoder": "ism",
+      "freq": 433920000,
+      "duracion": 6,
+      "filtro": "select(.msg.model != null)",
+      "clave": "\"\\(.msg.model)/\\(.msg.id)/\\(.msg.temperature_c)\"",
+      "campos": [
+        "\"model\":\"FineOffset-WH1080\"",
+        "\"id\":5",
+        "\"temperature_c\":7.5"
+      ],
+      "unicos": 1,
+      "eventos": 6
+    },
+    "ism_oregon_thn132n": {
+      "fixture": "ism_oregon_thn132n",
+      "decoder": "ism",
+      "freq": 433920000,
+      "duracion": 6,
+      "filtro": "select(.msg.model != null)",
+      "clave": "\"\\(.msg.model)/\\(.msg.id)/\\(.msg.temperature_c)\"",
+      "campos": [
+        "\"model\":\"Oregon-THN132N\"",
+        "\"id\":231",
+        "\"temperature_c\":18.0"
+      ],
+      "unicos": 1,
+      "eventos": 6
+    },
+    "ism_oregon_thgr122n": {
+      "fixture": "ism_oregon_thgr122n",
+      "decoder": "ism",
+      "freq": 433920000,
+      "duracion": 6,
+      "filtro": "select(.msg.model != null)",
+      "clave": "\"\\(.msg.model)/\\(.msg.id)/\\(.msg.temperature_c)\"",
+      "campos": [
+        "\"model\":\"Oregon-THGR122N\"",
+        "\"id\":187",
+        "\"humidity\":39"
+      ],
+      "unicos": 1,
+      "eventos": 6
+    },
+    "ism_tx141bv2": {
+      "fixture": "ism_tx141bv2",
+      "decoder": "ism",
+      "freq": 433920000,
+      "duracion": 6,
+      "filtro": "select(.msg.model != null)",
+      "clave": "\"\\(.msg.model)/\\(.msg.id)/\\(.msg.temperature_c)\"",
+      "campos": [
+        "\"model\":\"LaCrosse-TX141B\"",
+        "\"id\":117",
+        "\"temperature_c\":20.1"
+      ],
+      "unicos": 1,
+      "eventos": 6
+    },
+    "ism_tx141bv3": {
+      "fixture": "ism_tx141bv3",
+      "decoder": "ism",
+      "freq": 433920000,
+      "duracion": 6,
+      "filtro": "select(.msg.model != null)",
+      "clave": "\"\\(.msg.model)/\\(.msg.id)/\\(.msg.temperature_c)\"",
+      "campos": [
+        "\"model\":\"LaCrosse-TX141B\"",
+        "\"id\":33",
+        "\"temperature_c\":20.3"
+      ],
+      "unicos": 1,
+      "eventos": 23
+    }
+  },
+  "sin_grabacion_real": {
+    "adsb": "solo sintetica (la antena no recibe 1090 MHz)",
+    "dsc": "solo sintetica (sin grabacion publica)",
+    "dab": "IQ real no conservada en disco; solo bits blandos del FIC (tests/data/dab_real_fic_soft.bin, test_dab.c)",
+    "rds": "la captura real de Radio Pamplona no se conservo; solo sintetica",
+    "vdl2": "grabacion real de sigidwiki no conservada y el decodificador da 0 tramas con ella",
+    "dmr": "sin grabacion con rafagas validas (0 rafagas)",
+    "nr": "sin celda en la grabacion de sigidwiki; solo sintetica",
+    "meshtastic": "solo sintetica",
+    "dvbt": "captura propia c32_frag.cs8 (4,6 MB) no emite eventos (SNR -9 dB); solo sintetica",
+    "tdt": "idem dvbt"
+  }
+}

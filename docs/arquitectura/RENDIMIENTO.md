@@ -154,6 +154,68 @@ uno de los dos factores.
 ## 7. Barrido a modo lento (no medido)
 No se midió la latencia de retuneo frente al tiempo de asentamiento: `src/sdr/sweep.c` no es de P1 y no quedó tiempo. Propuesta: medir en `sweep.c` el intervalo entre `source_retune_at` y la marca de tiempo real del primer bloque tras el salto, y fijar el adelanto de programación a (p95 de esa latencia + asentamiento) en vez de un valor fijo.
 
+## 8. Presupuesto de CPU por decodificador
+
+Fecha: 2026-11-20. Medida con `tests/bench_decoders.sh` (tarea Q4). Presupuesto de `AGENTS.md` §4.1:
+≤ 30 % de un núcleo a la tasa del decodificador.
+
+**Método.** Cada decodificador recibe la señal de ejemplo de su modulador (`modulate(NULL)`), repetida
+hasta 10 s con ruido gaussiano a 10 dB de SNR. Los NARROW se alimentan a `rate`; los WIDE, en Q11 crudo
+a `wide_rate` (o `wide_min_rate`). Se cronometra solo `run_narrow()`/`run_wide()` (create, process en
+bloques y destroy) con `CLOCK_THREAD_CPUTIME_ID`; la generación de la señal y del ruido queda fuera.
+Coste = s de CPU del hilo / s de señal. Compilado con `-O2 -march=native`, sin GPU (stubs), en un equipo
+de 20 núcleos (no se controló la carga de fondo). Se hicieron dos pasadas completas; la tabla muestra la
+segunda, con compilación limpia. Entre pasadas las cifras difieren como mucho 0,3 puntos (`nr`, `wifi`).
+
+**Resultado.** Ningún decodificador supera el 30 %. Los más caros son los WIDE (`wifi` 9,0 %, `nr` 8,7 %,
+`dab` 5,3 %) y `gsm` (2,6 %); el resto está por debajo del 2 %.
+
+| id | tipo | tasa (Hz) | coste (% de un núcleo) | eventos | estado |
+|---|---|---:|---:|---:|---|
+| adsb | wide | 2 000 000 | 1,14 | 1 | OK |
+| rds | narrow | 250 000 | 1,18 | 0 | OK (ver nota 1) |
+| dab | wide | 2 048 000 | 5,27 | 4 | OK |
+| ais | narrow | 48 000 | 0,18 | 104 | OK |
+| dsc | narrow | 48 000 | 0,43 | 11 | OK |
+| aprs | narrow | 48 000 | 0,54 | 17 | OK |
+| pocsag | narrow | 48 000 | 0,44 | 12 | OK |
+| flex | narrow | 48 000 | 0,29 | 12 | OK |
+| dmr | narrow | 48 000 | 0,38 | 30 | OK |
+| acars | narrow | 48 000 | 0,20 | 18 | OK |
+| vdl2 | narrow | 105 000 | 0,94 | 119 | OK |
+| ism | narrow | 250 000 | 0,10 | 23 | OK |
+| rs41 | narrow | 48 000 | 0,26 | 10 | OK |
+| lora | narrow | 500 000 | 1,90 | 82 | OK |
+| meshtastic | narrow | 500 000 | 0,94 | 13 | OK |
+| lte | narrow | 1 920 000 | 1,13 | 1 | OK (ver nota 2) |
+| nr | wide | 15 360 000 | 8,74 | 0 | OK (ver nota 2) |
+| gsm | narrow | 1 083 333 | 2,65 | 2 | OK |
+| wifi | wide | 20 000 000 | 8,95 | 2 | OK |
+| dvbt | narrow | 9 142 857 | 2,55 | 0 | OK (ver nota 3) |
+| tdt | narrow | 9 142 857 | sin medir | — | sin medir: no tiene modulador propio (ver nota 3) |
+
+Notas:
+
+1. `rds` no emite eventos a 10 dB: `tests/test_rds.c` indica que esa SNR queda por debajo del umbral de la
+   FM en 250 kHz. El coste es el de un decodificador que busca sin enganchar; con señal fuerte puede subir.
+2. `lte` y `nr` se miden con sus opciones por defecto (`period` automático: 1 s en LTE, proporcional a las
+   posiciones GSCN en NR). Con `{"period":0}`, que usan los tests para forzar búsqueda continua, el coste
+   sería mayor y no está medido aquí. `nr` solo emite 0 eventos a 10 dB; su cifra refleja la búsqueda, no un
+   mensaje completo.
+3. `dvbt` no emitió eventos y no se verificó que enganche a 10 dB, así que su cifra puede quedarse corta
+   respecto a la recepción completa (Viterbi y RS con enganche). `tdt` no tiene modulador: su receptor es el
+   de `dvbt` (`src/decoders/tdt.c` llama a `dvbt_rx_process`), y el demux TS y el audio MP2 no entran en
+   esta medida.
+
+Repetir la medida:
+
+```
+tests/bench_decoders.sh          # todos (≈ 45 s)
+tests/bench_decoders.sh ais      # uno solo
+```
+
+Sale con código 1 si algún decodificador supera el 30 %. Compila en `build/q4/`.
+
 ## Figuras
 
 Las barras usan solo las cifras de las tablas de este documento.

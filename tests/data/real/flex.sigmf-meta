@@ -1,0 +1,17 @@
+{
+  "global": {
+    "core:datatype": "ci8",
+    "core:sample_rate": 48000,
+    "core:version": "1.0.0",
+    "core:author": "multimon-ng test/samples (EliasOenal/multimon-ng), GPL-2.0, solo datos",
+    "core:description": "FLEX 1600 2FSK P2000 (FLEX_1600_2fsk_P2000_proef_alarm.flac) remodulado en FM",
+    "core:license": "GPL-2.0 (solo datos de prueba)"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 466065000
+    }
+  ],
+  "annotations": []
+}

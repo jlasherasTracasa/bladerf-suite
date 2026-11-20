@@ -1,0 +1,17 @@
+{
+  "global": {
+    "core:datatype": "cu8",
+    "core:sample_rate": 250000,
+    "core:version": "1.0.0",
+    "core:author": "rtl_433_tests (merbanan/rtl_433_tests), GPL-2.0, solo datos",
+    "core:description": "ISM 433,92 MHz, tx141bv2, IQ cu8 a 250 kS/s tal cual",
+    "core:license": "GPL-2.0 (solo datos de prueba)"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 433920000
+    }
+  ],
+  "annotations": []
+}

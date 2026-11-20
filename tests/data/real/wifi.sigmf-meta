@@ -1,0 +1,17 @@
+{
+  "global": {
+    "core:datatype": "ci8",
+    "core:sample_rate": 20000000,
+    "core:version": "1.0.0",
+    "core:author": "Signal Identification Wiki (sigidwiki.com), CC BY-SA 3.0",
+    "core:description": "Wi-Fi 2,4 GHz canal 1, baliza DSSS 1 Mb/s (SSID UPC8443073.2,4G), 3,8 ms de 'Wi-Fi.zip' a 20 MS/s",
+    "core:license": "CC-BY-SA-3.0 (sigidwiki)"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 2437000000
+    }
+  ],
+  "annotations": []
+}
