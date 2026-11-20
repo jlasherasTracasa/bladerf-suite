@@ -1169,8 +1169,12 @@ suites.fugas = async (ctx) => {
   const mt1 = (await pg.send('Performance.getMetrics')).metrics, mainPct = 100 * (mg(mt1, 'TaskDuration') - mg(mt0, 'TaskDuration')) / ((Date.now() - tr0) / 1000);
   const ri = await pg.ev('JSON.stringify(__app.specRenderInfo())'); console.log(`  [fugas] ${fps.toFixed(1)} imágenes/s · hilo principal ${mainPct.toFixed(0)} % · render ${ri}`);
   // La medida absoluta se hace en la pestaña Receptor (espectro + cascada, lo que W12 optimiza); la ventana larga recorre además el mapa y las
-  // listas con 140 objetos, que cuestan lo mismo en cualquier renderizador: ahí solo se exige el suelo histórico de 12 FPS.
-  check(`FPS de la ventana larga ≥ 12 (${secs} s, 80 aviones y 60 barcos, recorriendo pestañas)`, fps >= 12, fps.toFixed(1));
+  // listas con 140 objetos, que cuestan lo mismo en cualquier renderizador. Mismo criterio que la fluidez de arriba: entorno sano → suelo
+  // absoluto de 12 FPS; entorno saturado → ≥ 90 % de los FPS del modo original medido en esta ejecución (sin medir nada más).
+  const longOk = envOk ? fps >= 12 : fps >= 0.9 * bestFps(leg);
+  const longCrit = envOk ? `criterio absoluto ≥ 12 FPS, entorno sano (lienzo trivial ${baseFps.toFixed(0)} FPS)`
+    : `criterio relativo ≥ 90 % del original (${(0.9 * bestFps(leg)).toFixed(1)} de ${bestFps(leg).toFixed(1)} FPS), entorno saturado (lienzo trivial ${baseFps.toFixed(0)} FPS)`;
+  check(`FPS de la ventana larga (${secs} s, 80 aviones y 60 barcos, recorriendo pestañas): ${longCrit}`, longOk, fps.toFixed(1) + ' FPS');
   if (envOk) {
     check('espectro y cascada ≥ 30 FPS en Chromium con GL por software (pestaña Receptor)', bestFps(neu) >= 30, bestFps(neu).toFixed(1));
     check('hilo principal < 25 % de un núcleo (pestaña Receptor)', bestMain(neu) < 25, bestMain(neu).toFixed(0) + ' %');
