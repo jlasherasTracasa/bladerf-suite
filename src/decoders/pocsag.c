@@ -31,6 +31,28 @@
  * norma: M.584 deja el significado de los 2 bits al operador.)
  *
  * Un mensaje con una palabra no corregible a mitad se descarta entero.
+ *
+ * Reloj de símbolo (P3c). El lazo de Gardner de pocsag_fsk.h recortaba a 0 la
+ * fase t cuando una corrección de RETRASO la dejaba negativa (t1 −= 1 tras
+ * ≥ 1): el retraso se perdía, el lazo solo sabía adelantar y, si el punto de
+ * muestreo arrancaba por detrás del pico del filtro adaptado, se quedaba
+ * donde empezó (muestreando a 0,2–0,5 bit del pico con la preámbulo, y
+ * perdiendo un bit dentro de la palabra de sincronía). El 5–10 % de las fases
+ * iniciales fallaba, de forma determinista: el «techo» del ≈ 94 %.
+ *
+ * Falsos positivos (P3c). BCH(31,21)+paridad tiene distancia 6: corregir 2
+ * errores deja en el radio de corrección el ≈ 48 % de las palabras de 32 bits
+ * AL AZAR (2^21 palabras de código × (1+31+465) vecinos / 2^31). Una palabra
+ * aislada "válida" no prueba nada; solo el lote entero lo hace. Por eso:
+ *   - 0x00000000 y 0xFFFFFFFF (portadora sin modular, o un receptor de otra
+ *     velocidad viendo un tramo constante) son palabras de código válidas del
+ *     BCH pero no son palabras POCSAG: se tratan como no válidas;
+ *   - cada lote recibe un coste Σ (errores corregidos; 3 si no es válida) y se
+ *     descarta entero si supera BATCH_MAX_COST. Basura da ≈ 2,4 por palabra
+ *     (≈ 38 por lote); una señal con BER de 1 % da ≈ 5;
+ *   - un mensaje solo se emite si sus correcciones suman ≤ 2 + palabras/2 y su
+ *     dirección lleva ≤ 1 error; un tono (dirección sin palabras de mensaje)
+ *     exige dirección sin errores.
  */
 #include "decoder.h"
 #include "pocsag.h"
@@ -49,6 +71,10 @@
 #define MAX_RECENT 32
 #define RECENT_TTL 600.0
 #define TEXT_MAX 700
+#define BATCH_MAX_COST 20
+#define MSG_MAX_FIX_BASE 2      /* correcciones permitidas a un mensaje, más… */
+#define MSG_MAX_FIX_WORDS_DIV 2 /* …1 por cada 2 palabras de mensaje */
+#define ADDR_MAX_FIX 1          /* errores corregidos tolerados en la dirección */
 
 static const double BAUDS[NCH] = {512, 1200, 2400};
 
@@ -57,8 +83,9 @@ typedef enum { ST_SEARCH = 0, ST_BATCH, ST_NEXT_SYNC } pstate_t;
 typedef struct {
     bool active;
     uint32_t ric;
-    int func, nwords, corrected;
+    int func, nwords, corrected, addr_fix;
     int nbits;
+    int64_t smp0, smp1; /* índice absoluto de muestra: inicio de la dirección / fin de la última palabra */
     uint8_t bits[MAX_MSG_BITS];
 } pending_t;
 
@@ -71,6 +98,8 @@ typedef struct {
     uint32_t word;
     int wbits, widx;
     uint32_t words[16];
+    int64_t batch_end; /* muestra en que acabó el lote en curso */
+    int64_t tx_start;  /* inicio estimado de la transmisión (preámbulo); −1 si ya se usó */
     pending_t pend;
 } chain_t;
 
@@ -87,8 +116,9 @@ typedef struct {
     chain_t c[NCH];
     bch_t bch;
     double rate, now, t_block;
-    long samples;
-    unsigned long n_msgs, n_bad_words, n_dropped, n_batches;
+    int64_t samples; /* muestras recibidas antes de la llamada en curso */
+    int64_t cur;     /* índice absoluto de la muestra en proceso */
+    unsigned long n_msgs, n_bad_words, n_dropped, n_batches, n_bad_batches, n_rejected;
     int last_baud;
     recent_t rec[MAX_RECENT];
     int nrec;
@@ -105,6 +135,8 @@ typedef struct {
 /* Corrige una palabra de 32 bits. Devuelve nº de errores o −1. */
 static int word_fix(const bch_t *b, uint32_t w, uint32_t *out)
 {
+    if (w == 0u || w == 0xFFFFFFFFu) /* palabras de código del BCH, pero no de POCSAG */
+        return -1;
     uint32_t c31 = w >> 1;
     int par = (int)(w & 1);
     int r = bch_decode_u32(b, &c31, 31);
@@ -197,6 +229,11 @@ static void flush_pending(pocsag_t *d, chain_t *c, int baud)
     if (!p->active)
         return;
     p->active = false;
+    if (p->addr_fix > ADDR_MAX_FIX || (p->nwords == 0 && p->addr_fix > 0) /* un tono no tiene más evidencia que su dirección */ ||
+        p->corrected > MSG_MAX_FIX_BASE + p->nwords / MSG_MAX_FIX_WORDS_DIV) {
+        d->n_rejected++; /* demasiadas correcciones: probable falsa alarma */
+        return;
+    }
     char msg[TEXT_MAX];
     const char *kind = render(p, msg, sizeof msg);
     d->n_msgs++;
@@ -216,11 +253,17 @@ static void flush_pending(pocsag_t *d, chain_t *c, int baud)
         snprintf(line, sizeof line, "POCSAG %d RIC %u F%d %s: %s", baud, p->ric, p->func, kind, msg);
     sb_json_str(s, line);
     sb_puts(s, "}");
-    d->emit(d->emit_ctx, s->data, s->len);
+    /* Marca de posición (decoder.h): inicio de la dirección y fin de la última palabra,
+     * relativos a la primera muestra de esta llamada a process(). */
+    dec_emit_span(d->emit, d->emit_ctx, p->smp0 - d->samples, p->smp1 - d->samples, s->data, s->len);
 }
 
 static void handle_word(pocsag_t *d, chain_t *c, int pos, uint32_t raw, int baud)
 {
+    /* la palabra pos acaba (15 − pos) palabras antes del fin del lote */
+    double wlen = 32.0 * d->rate / (double)baud;
+    int64_t w_end = c->batch_end - (int64_t)((15 - pos) * wlen);
+    int64_t w_start = w_end - (int64_t)wlen;
     uint32_t w;
     int e = word_fix(&d->bch, raw, &w);
     pending_t *p = &c->pend;
@@ -244,6 +287,13 @@ static void handle_word(pocsag_t *d, chain_t *c, int pos, uint32_t raw, int baud
         p->nwords = 0;
         p->nbits = 0;
         p->corrected = e;
+        p->addr_fix = e;
+        /* El primer mensaje de una transmisión arranca en el preámbulo (la señal está en el aire
+         * desde entonces, y el suelo de ruido que mide el host debe salir de ANTES de ella); los
+         * siguientes, en su propia dirección. */
+        p->smp0 = c->tx_start >= 0 ? c->tx_start : w_start;
+        c->tx_start = -1;
+        p->smp1 = w_end;
     } else if (p->active) {
         uint32_t data = (w >> 11) & 0xFFFFFu;
         if (p->nbits + 20 > MAX_MSG_BITS) {
@@ -255,7 +305,20 @@ static void handle_word(pocsag_t *d, chain_t *c, int pos, uint32_t raw, int baud
             p->bits[p->nbits++] = (uint8_t)((data >> i) & 1);
         p->nwords++;
         p->corrected += e;
+        p->smp1 = w_end;
     }
+}
+
+/* Coste de un lote: errores corregidos por palabra, 3 por palabra no válida. */
+static int batch_cost(const pocsag_t *d, const uint32_t *w16)
+{
+    int cost = 0;
+    for (int i = 0; i < 16; i++) {
+        uint32_t w;
+        int e = word_fix(&d->bch, w16[i], &w);
+        cost += e < 0 ? 3 : e;
+    }
+    return cost;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -274,6 +337,7 @@ static void chain_bit(pocsag_t *d, int ci, int bit)
             int e0 = bits_popcount32(c->sr ^ POCSAG_SYNC), e1 = bits_popcount32(c->sr ^ ~POCSAG_SYNC);
             if (e0 <= 2 || e1 <= 2) {
                 c->inv = e1 < e0;
+                c->tx_start = MAX(0, d->cur - (int64_t)((32 + POCSAG_PREAMBLE_BITS) * d->rate / baud));
                 c->st = ST_BATCH;
                 c->wbits = c->widx = 0;
                 c->word = 0;
@@ -288,8 +352,16 @@ static void chain_bit(pocsag_t *d, int ci, int bit)
             c->word = 0;
             if (c->widx == 16) {
                 d->n_batches++;
-                for (int i = 0; i < 16; i++)
-                    handle_word(d, c, i, c->words[i], baud);
+                c->batch_end = d->cur;
+                if (batch_cost(d, c->words) > BATCH_MAX_COST) {
+                    d->n_bad_batches++;
+                    if (c->pend.active) {
+                        c->pend.active = false;
+                        d->n_dropped++;
+                    }
+                } else
+                    for (int i = 0; i < 16; i++)
+                        handle_word(d, c, i, c->words[i], baud);
                 c->st = ST_NEXT_SYNC;
                 c->nsr = 0;
             }
@@ -366,19 +438,21 @@ static void pocsag_process(void *st, const cf32 *iq, int n, double now, dec_emit
     fskfe_process(&d->fe, iq, n, d->fm);
     for (int k = 0; k < n; k++) {
         d->now = now + (double)k / d->rate;
+        d->cur = d->samples + k;
         for (int i = 0; i < NCH; i++) {
             float y;
             if (fskch_push(&d->c[i].ch, d->fm[k], &y))
                 chain_bit(d, i, y > 0 ? 1 : 0);
         }
     }
+    d->samples += n;
 }
 
 static void pocsag_state(void *st, sb_t *sb, double now)
 {
     pocsag_t *d = st;
-    sb_printf(sb, "{\"msgs\":%lu,\"batches\":%lu,\"bad_words\":%lu,\"dropped\":%lu,\"baud\":%d,\"pages\":[", d->n_msgs,
-              d->n_batches, d->n_bad_words, d->n_dropped, d->last_baud);
+    sb_printf(sb, "{\"msgs\":%lu,\"batches\":%lu,\"bad_words\":%lu,\"bad_batches\":%lu,\"rejected\":%lu,\"dropped\":%lu,\"baud\":%d,\"pages\":[", d->n_msgs,
+              d->n_batches, d->n_bad_words, d->n_bad_batches, d->n_rejected, d->n_dropped, d->last_baud);
     /* caducidad: se olvidan las entradas con más de RECENT_TTL s */
     int w = 0;
     for (int i = 0; i < d->nrec; i++)

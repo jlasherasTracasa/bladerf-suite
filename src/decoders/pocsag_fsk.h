@@ -204,9 +204,11 @@ static inline int fskch_push(fskch_t *c, float x, float *y)
         }
         c->y_prev = yk;
         c->have_mid = false;
+        /* t1 puede quedar negativo (retraso pedido por el lazo): el siguiente símbolo
+         * llegará |t1| símbolos más tarde. Recortarlo a 0 anulaba TODAS las
+         * correcciones de retraso (zona muerta: el lazo no convergía si el punto de
+         * muestreo arrancaba por detrás del pico; ver docs/protocolos/pocsag.md). */
         t1 -= 1.0;
-        if (t1 < 0)
-            t1 = 0;
         *y = (yk - c->ctr) / c->amp;
         got = 1;
     }

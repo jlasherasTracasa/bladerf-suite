@@ -107,6 +107,28 @@ Palabra: BCH con ≤ 2 correcciones; la paridad par se comprueba después de cor
 error más; con 2 correcciones + paridad mala la palabra se descarta). Un hueco (palabra no corregible) en
 mitad de un mensaje lo descarta entero y se cuenta en `dropped` (no se emite nada con integridad dudosa).
 
+### Defectos corregidos en P3c (piloto de inyección, 2026-11-20)
+
+El piloto (`paper/exp/piloto/`) inyectó copias únicas del modulador y destapó dos defectos:
+
+1. **Techo del ≈ 94 % de recuperación, determinista** (a 25 dB y en ruido blanco). Causa: `fskch_push` en
+   `pocsag_fsk.h` hacía `if (t1 < 0) t1 = 0` tras `t1 -= 1.0`. Una corrección de RETRASO de Gardner que dejaba la fase
+   negativa se perdía, de modo que el lazo solo sabía adelantar. Si el punto de muestreo arrancaba por detrás del pico
+   del filtro adaptado (la mitad de las fases iniciales), el lazo no se movía y muestreaba a 0,2–0,5 bit del pico con
+   la preámbulo; luego perdía un bit dentro de la palabra de sincronía (> 2 errores) y la copia se perdía. Como el lazo
+   conserva su fase entre transmisiones, las mismas copias fallaban en cada ejecución. Con un cuadrado ideal a
+   `sps` 20 o 40 el lazo no convergía en 5 de cada 10 desfases; ahora converge en todos (amplitud 0,987). El arreglo
+   (dejar `t` negativo) beneficia también a FLEX y DMR, que comparten el receptor (sus tests siguen en verde).
+2. **Mensajes erróneos aceptados por el BCH** (114 en blanco, 245 en fondo real, solo con copias presentes).
+   Causa: BCH(31,21) con 2 correcciones acepta ≈ 48 % de las palabras de 32 bits al azar; basura tras una falsa
+   sincronía (o el receptor de otra velocidad viendo la señal) producía «direcciones» y «tonos» y textos con
+   2–5 bits «corregidos». Además 0x00000000 y 0xFFFFFFFF son palabras de código válidas. Ahora: (a) esas dos
+   palabras son no válidas; (b) un lote cuyo coste Σ(errores corregidos; 3 por palabra inválida) supera 20 se descarta
+   entero (basura ≈ 38, señal con BER del 1 % ≈ 5); (c) un mensaje se emite solo si sus correcciones suman
+   ≤ 2 + (nº de palabras de mensaje)/2 y su dirección lleva ≤ 1 error; un tono (sin palabras de mensaje) exige
+   dirección sin errores. `state_json` añade `bad_batches` y `rejected`.
+   Coste: ≈ 1 dB de sensibilidad a 2400 Bd (de 0 a 2 dB de SNR), a cambio de 0 erróneos hasta −2 dB.
+
 ## Eventos
 
 ```json
@@ -120,7 +142,7 @@ convención habitual, no de la norma (M.584 deja el significado de los 2 bits al
 ## state_json
 
 ```json
-{"msgs":N,"batches":N,"bad_words":N,"dropped":N,"baud":1200,
+{"msgs":N,"batches":N,"bad_words":N,"bad_batches":N,"rejected":N,"dropped":N,"baud":1200,
  "pages":[{"ric","func","kind","baud","count","seen":s,"msg"}]}
 ```
 `pages` = últimos 32 mensajes distintos (los repetidos incrementan `count`), caducan a los 600 s.
@@ -137,6 +159,8 @@ Sin parámetros: un alfanumérico, un numérico y un tono. `air_ok = false`.
   (2400 Bd, CFO negativo): ruido, no fallo lógico.
 * Constantes publicadas: las palabras de sincronía y de reposo de M.584 son palabras BCH(31,21)+paridad
   válidas con el BCH de `fec.c` (comprobado en el test). No hay vectores IQ/audio públicos con licencia clara.
+* Ráfagas (test [5]): 120 copias a 512 Bd y 200 a 1200 y 2400 Bd, cada una con RIC y texto únicos, a 15 dB, con 11
+  fases de arranque distintas: ≥ 99,5 % recuperadas y 0 eventos erróneos (antes: 1200 Bd 147/200 y 33 erróneos).
 * Coste de CPU ≈ 0,005 s por s de señal.
 
 ## Limitaciones

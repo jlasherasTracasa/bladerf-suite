@@ -7,8 +7,8 @@
  *   del canal (así pasa por el DDC real) y se alimenta con dec_host_feed_at() en bloques que no están
  *   alineados con la ráfaga. El evento debe traer "sample" a ±1 símbolo de la posición verdadera
  *   (inicio de la bandera de apertura en AIS/APRS, inicio del preámbulo en ADS-B y LoRa), con
- *   "sample_src":"mark", "snr_db" cerca de la SNR de canal inyectada y "rssi_dbfs". POCSAG (que aún no
- *   marca posición) debe dar el valor por omisión: "sample_src":"block".
+ *   "sample_src":"mark", "snr_db" cerca de la SNR de canal inyectada y "rssi_dbfs". POCSAG marca el inicio
+ *   del preámbulo de la transmisión (a ±1 bit a 1200 Bd).
  * Parte 2 (binario, solo si existe ../bladerf-lab): genera un fichero con una ráfaga AIS y una portadora
  *   continua sin decodificador, y lanza `bladerf-lab --replay f --labels l.sigmf-meta`. Comprueba que
  *   sale con código 0 sin pérdidas (ningún "gap"), que el fichero de etiquetas tiene la clase
@@ -217,19 +217,13 @@ static void test_positions(void)
                    .snr_db = 12, .lead_s = 0.4, .truth_off = 0.02};
     check_case("LoRa: sample del evento (inicio del preámbulo)", &lora, 2e6 * 1.024e-3, "\"sample_src\":\"mark\"");
 
-    /* POCSAG: por omisión (inicio del bloque en que se emitió): "sample_src":"block" */
-    printf("POCSAG: valor por omisión (inicio de bloque)\n");
+    /* POCSAG (P3c, dec_emit_span): el primer mensaje de una transmisión se marca desde el preámbulo, que
+     * empieza tras los 0,05 s de portadora del modulador. Hace falta ≥ 1 s de ruido delante para que el
+     * host estime el suelo (tramos de len/8 previos a la ventana, la ventana dura ~1 s). */
     case_t poc = {.proto = "pocsag", .params = NULL, .rate = 1e6, .center = 466000000LL + 200000LL,
-                  .freq = 466000000LL, .snr_db = 20, .lead_s = 0.2, .truth_off = 0};
-    int64_t tr;
-    int nt;
-    CHECK(run_case(&poc, &tr, &nt));
-    double smp = 0;
-    CHECK(ev_num("\"type\":\"dec\"", "sample", &smp));
-    pthread_mutex_lock(&lock);
-    CHECK(ev_has(&g_ev, "\"sample_src\":\"block\""));
-    pthread_mutex_unlock(&lock);
-    CHECK(smp >= 0 && smp <= (double)nt);
+                  .freq = 466000000LL, .snr_db = 20, .lead_s = 1.5, .truth_off = 0.05};
+    check_case("POCSAG: sample del evento (inicio de la transmisión, el preámbulo)", &poc, 1e6 / 1200.0,
+               "\"sample_src\":\"mark\"");
 }
 
 /* ---- Parte 2: el binario con --replay-fast y --labels ---------------------------------------- */
@@ -373,7 +367,7 @@ static void test_binary(const char *argv0)
                 cnt = strtod(p + strlen("\"core:sample_count\": "), NULL);
             printf("  unknown: %.0f–%.0f Hz, muestras %.0f..%.0f\n", flo, fhi, s0, s0 + cnt);
             if (flo <= 162100000.0 && fhi >= 162100000.0 && s0 > 0.4e6 && s0 < 1.8e6 && s0 + cnt > 2.4e6 &&
-                s0 + cnt < 3.8e6)
+                s0 + cnt < 4.2e6) /* el fin de la región oscila (3,6–4,0 M) con el reparto de bloques del detector */
                 on_cw++;
             else if (fhi < 162000000.0)
                 ghost++;
