@@ -48,13 +48,12 @@ Cada sección la escribe el agente de su grupo. Relee el fichero antes de editar
 | aprs | sigidwiki "AFSK1200 Sound" (BBS FBB ZL1AB) | no probado | tramas AX.25 idénticas a multimon-ng y Dire Wolf | nada (las tramas no son APRS de posición: ese análisis sigue sin contrastar) |
 | rds | `redsea` sobre la salida de `--gen rds`; RDS real captado por el orquestador (Radio Pamplona, 100,4 MHz: PI E239, PS "SER") | — | PI/grupos/PTY/AF/DI idénticos | nada |
 | adsb | `dump1090-fa` sobre la salida de `--gen adsb` (remuestreada a 2,4 MS/s); sin señal real (la antena actual no recibe 1090 MHz) | — | decodifica las mismas 4 tramas DF17 (KLM1023, posiciones, velocidad) | nada. **Sin validar con tráfico real** |
-| vdl2 | sigidwiki "VDL-M2 IQ" (50 ráfagas, 11 tramas decodificables con `dumpvdl2`); ETSI EN 301 841-1 §5.4 | 0 tramas | **sigue en 0** por la calidad de la grabación (ISI sistemática, BER ~10 %). Confirmados: UW, D8PSK, 10 500 Bd, estructura de la cabecera (reservado + 17 + 5), e I/Q intercambiados en el WAV | **aleatorizador** (x¹⁵+x¹⁴+1, solo datos, primeros bits 010011100011111; antes estado 0x6959 y realimentación equivocada). La longitud ya no depende solo de la cabecera |
+| vdl2 | sigidwiki "VDL-M2 IQ" (50 ráfagas, 11 tramas decodificables con `dumpvdl2`); ETSI EN 301 841-1 §5.4 | 0 tramas | D1 (2026-11-20): **38/41 tramas de dumpvdl2 (93 %)** en los 46,9 s y 16/17 en el recorte de `tests/data/real/vdl2`; dumpvdl2 2.6.0 decodifica la salida de `--gen vdl2` | no era ISI: aleatorizador sobre cabecera y datos (estado 0x6959), matriz H de la cabecera, octetos RS LSB primero, entrelazado separado de datos y paridad, dirección AVLC invertida en 28 bits, ACARS sobre AVLC con `FF FF 01`, búsqueda de UW solo por fase; RRC adaptada sobraba (la grabación ya viene conformada) |
 | dsc | ninguna grabación; norma ITU-R M.493-15 (itu.int) | — | tests con la Tabla A1-1 y un acuse de socorro; sigue **sin validar con aire** | bits de comprobación MSB primero (el modulador los enviaba LSB primero); especificador de formato duplicado y EOS ×3 que faltaban; telemandos 109/110/112/113/115 mal rotulados; acuse/retransmisión de socorro llevan un solo telemando |
 
 ### Pendiente del grupo A
 
-* VDL2: cabecera, aleatorizador y orden RS (ver `docs/protocolos/vdl2.md`); necesita la norma o una
-  traza de referencia. La salida de `--gen vdl2` no la decodifica `dumpvdl2`.
+* VDL2: resuelto (D1); quedan 3 de 41 tramas de dumpvdl2 sin sacar.
 * FLEX: 3200/2 sin grabación real (la paridad de fases A/C es un supuesto); 3200/4 sin referencia externa.
 * DSC y ADS-B: sin grabación real.
 * AIS: tipos 5/18/19/21/24 y PLVA sin contrastar con tráfico real.

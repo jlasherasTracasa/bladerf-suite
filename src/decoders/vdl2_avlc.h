@@ -5,11 +5,12 @@
  *   dirección destino (4 octetos) | dirección origen (4) | control (1) |
  *   información (0..n) | FCS (2, CRC-16/X-25, byte bajo primero)
  *
- * Dirección: 4 octetos con el bit 0 de cada uno como extensión (0 = sigue otro,
- * 1 = último) y 7 bits útiles → 28 bits: val = Σ (oct[i] >> 1) << 7i.
- *   bits 0..2   tipo de dirección (1 aeronave, 4 estación de tierra, 7 difusión…)
- *   bit 3       indicador (en la dirección ORIGEN: C/R, 0 = orden, 1 = respuesta)
- *   bits 4..27  dirección ICAO de 24 bits
+ * Dirección: 4 octetos con el bit 0 de cada uno como extensión (0 = sigue otro, 1 = último del
+ * campo de direcciones, es decir, solo en el octeto 8 de la trama) y 7 bits útiles; en el orden de línea (octetos LSB primero) los 28 bits son:
+ *   1 bit de estado, 3 bits de tipo, 24 bits de dirección ICAO (los dos últimos, MSB primero).
+ *   tipo: 1 aeronave, 4 y 5 estación de tierra, 7 todas las estaciones
+ *   estado en la dirección ORIGEN: C/R (0 = orden, 1 = respuesta); en la de DESTINO: A/G del
+ *   emisor (0 = en vuelo, 1 = en tierra)
  * Control, como HDLC con módulo 8 (bit 0 es el menos significativo):
  *   I:  N(R) bits 7..5 | P bit 4 | N(S) bits 3..1 | 0
  *   S:  N(R) 7..5 | P/F 4 | tipo bits 3..2 (RR 0, RNR 1, REJ 2, SREJ 3) | 01
@@ -40,6 +41,8 @@ typedef struct {
 
 /* Devuelve 0 o −1 si la trama es demasiado corta o las extensiones no cuadran. */
 int avlc_parse(const uint8_t *f, int n, avlc_t *a);
+/* Escribe 4 octetos con el bit de extensión a 0. En la trama real solo el último octeto de la dirección
+ * ORIGEN lleva el bit 0 a 1 (quien construye la trama debe poner f[7] |= 1). */
 void avlc_addr_put(uint8_t *o, uint32_t icao, int type, int flag);
 const char *avlc_type_name(int type);
 

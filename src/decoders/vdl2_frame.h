@@ -8,18 +8,18 @@
  *
  *   Palabra única (UW): 000 010 011 110 000 001 101 110 001 100 011 111 101 111 100 010
  *   (16 tripletes de bits, cada uno es el INCREMENTO de fase de un símbolo).
- *   Cabecera: 3 bits reservados (000) + longitud de 17 bits (LSB primero; nº de
- *   bits del flujo AVLC, sin la paridad RS ni el relleno) + 5 bits de paridad de
- *   un código (25,20) de un solo error. Aquí se usa g(x) = x^5 + x^2 + 1 (ver .md).
- *   Datos: AVLC (bits) → octetos (MSB primero) → bloques RS(255,249) de 249 bytes
- *   (el último más corto, con 0/2/4/6 bytes de paridad según su longitud) →
- *   entrelazado por columnas → bits (MSB primero) → aleatorizador x^15+x^14+1.
+ *   Cabecera: 3 bits reservados (000) + longitud de 17 bits (LSB primero; nº de bits del flujo
+ *   HDLC, con flags y relleno, sin la paridad RS ni el relleno final) + 5 bits de comprobación de un
+ *   código lineal (25,20) (matriz en vdl2_frame.c).
+ *   Datos: HDLC (bits, octetos LSB primero) → bloques RS(255,249) de 249 octetos (el último más corto,
+ *   con 0/2/4/6 octetos de paridad según su longitud) → todos los datos entrelazados por columnas y
+ *   después toda la paridad entrelazada → bits (octetos LSB primero). Cabecera y datos se aleatorizan
+ *   JUNTOS con un único registro (x^15+x+1, estado inicial 0x6959).
  *   Los bits se agrupan de 3 en 3 (flujo continuo desde la UW) y se codifican
  *   diferencialmente: incremento de fase = k·π/4 con k = Gray→binario del triplete.
  *
- * Los tamaños de bloque y el orden de entrelazado salen de la descripción
- * publicada del modem (Kim et al., J. KICS 34(11), 2009) y NO se han podido
- * contrastar con una captura real: ver docs/protocolos/vdl2.md.
+ * Contrastado con 17 tramas reales de la grabación de sigidwiki «VDL-M2 IQ» y con dumpvdl2 (que decodifica
+ * la salida del modulador): ver docs/protocolos/vdl2.md.
  */
 #ifndef BLADERF_LAB_VDL2_FRAME_H
 #define BLADERF_LAB_VDL2_FRAME_H
@@ -54,6 +54,10 @@ void vdl2_fec_encode(const uint8_t *data, int data_bytes, uint8_t *out);
 /* Desentrelaza y corrige. data: data_bytes. Devuelve nº total de símbolos RS
  * corregidos o −1 si algún bloque no se pudo corregir. */
 int vdl2_fec_decode(const uint8_t *enc, int data_bytes, uint8_t *data);
+/* Igual, con 'eflag' (un octeto por octeto codificado, o NULL): los marcados se tratan como borrados
+ * además de la paridad no enviada (hasta 6 por bloque). Cada borrado cuesta 1 de los 6 símbolos de paridad
+ * en lugar de 2, así que sirve para octetos poco fiables del demodulador. */
+int vdl2_fec_decode_era(const uint8_t *enc, int data_bytes, uint8_t *data, const uint8_t *eflag);
 
 /* HDLC (bit a bit, LSB primero dentro de cada octeto, con relleno de ceros):
  * flag + frame(n bytes, ya con FCS) + flag. bits: un bit por byte; devuelve nº. */

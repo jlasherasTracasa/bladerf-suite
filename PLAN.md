@@ -100,7 +100,7 @@ de `dec_host_auto_sync`, sin informe de carrera); se revisa en N2.
 
 | ID | Tarea | Modelo | Terminado cuando |
 |---|---|---|---|
-| D1 | VDL2: ecualizador adaptativo (la grabación real tiene mucha interferencia entre símbolos) y validación contra `dumpvdl2` | **Sonnet** | ≥ 90 % de las tramas que saca la referencia |
+| D1✔ | (Hecho 2026-11-20: 38/41 tramas de dumpvdl2; el fallo era de tramado, no ISI) VDL2: ecualizador adaptativo (la grabación real tiene mucha interferencia entre símbolos) y validación contra `dumpvdl2` | **Sonnet** | ≥ 90 % de las tramas que saca la referencia |
 | D2 | DMR: columnas de Hamming y matriz QR de la norma ETSI, validación con grabación pública | **Sonnet** | Origen y destino coinciden con la referencia |
 | D3✔ | FLEX 3200/6400 hecho (2026-11-20): 6400/4 real 24/24 = multimon-ng; 3200/4 real 15 mensajes sin referencia; 3200/2 solo sintético | **Sonnet** | Igual que `multimon-ng` en grabación real |
 | D4 | WiFi OFDM 6–54 Mb/s en el aire y 5 GHz (necesita USB 3) | **Sonnet** | SSID reales en canal 6 y en un canal de 5 GHz |

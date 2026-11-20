@@ -5,8 +5,8 @@
  * aeronave a una estación de tierra) y la envuelve como la capa física de
  * Doc 9776 (resumen en decoders/vdl2_frame.h):
  *
- *   AVLC → HDLC (flags, relleno de ceros, FCS CRC-16/X-25) → octetos →
- *   RS(255,249) entrelazado → aleatorizador → bits
+ *   AVLC → HDLC (flags, relleno de ceros, FCS CRC-16/X-25) → octetos (LSB primero) →
+ *   RS(255,249) entrelazado → [cabecera + datos] aleatorizados juntos → bits
  *   flujo = UW(48) | cabecera(25) | datos, agrupado en tripletes
  *   cada triplete → incremento de fase k·π/4 (Gray → binario) → símbolo D8PSK
  *   conformación con raíz de coseno alzado, α = 0,6, 10 muestras/símbolo.
@@ -45,7 +45,7 @@ static int append_burst(iqbuf_t *o, const uint8_t *avlc, int navlc, const float 
     uint8_t *data = calloc((size_t)D, 1);
     for (int i = 0; i < nbits; i++)
         if (hb[i])
-            data[i >> 3] |= (uint8_t)(0x80 >> (i & 7)); /* octetos MSB primero */
+            data[i >> 3] |= (uint8_t)(1u << (i & 7)); /* octetos LSB primero (orden de línea) */
     int E = vdl2_encoded_bytes(D);
     uint8_t *enc = malloc((size_t)E);
     vdl2_fec_encode(data, D, enc);
@@ -56,8 +56,8 @@ static int append_burst(iqbuf_t *o, const uint8_t *avlc, int navlc, const float 
     vdl2_hdr_encode((uint32_t)nbits, bits + 48);
     uint8_t *db = bits + 48 + VDL2_HDR_BITS;
     for (int i = 0; i < 8 * E; i++)
-        db[i] = (uint8_t)((enc[i >> 3] >> (7 - (i & 7))) & 1);
-    vdl2_scramble(db, 8 * E);
+        db[i] = (uint8_t)((enc[i >> 3] >> (i & 7)) & 1);
+    vdl2_scramble(bits + 48, VDL2_HDR_BITS + 8 * E); /* cabecera y datos en un solo flujo */
 
     int tot_syms = 4 + nsym + 8;
     cf32 *sy = malloc(sizeof(cf32) * (size_t)tot_syms);
@@ -155,8 +155,9 @@ static int vdl2_modulate(const char *params, iqbuf_t *out, char *err, size_t err
 
     uint8_t f[460];
     int n = 0;
-    avlc_addr_put(f, dst, 4, 0);
+    avlc_addr_put(f, dst, 5, 0); /* tipo 5 = estación de tierra, como en la grabación real */
     avlc_addr_put(f + 4, src, 1, 0);
+    f[7] |= 1;                    /* extensión: último octeto del campo de direcciones */
     n = 8;
     uint8_t c;
     if (!strcmp(ftype, "I"))
@@ -182,13 +183,15 @@ static int vdl2_modulate(const char *params, iqbuf_t *out, char *err, size_t err
         memcpy(f + n, rawinfo, (size_t)nraw);
         n += nraw;
     } else if (acars && (c & 1) == 0) {
-        /* ACARS sobre AVLC: 0x01 + bloque (7 bits) + BCS + DEL */
+        /* ACARS sobre AVLC: FF FF 01 + bloque (7 bits) + BCS + DEL */
         uint8_t blk[300];
         int nb = acars_blk_build(&b, blk, sizeof blk);
         if (nb < 0) {
             snprintf(err, errlen, "bloque ACARS demasiado largo");
             return -1;
         }
+        f[n++] = 0xFF; /* cabecera de ACARS sobre AVLC: FF FF 01 */
+        f[n++] = 0xFF;
         f[n++] = ACARS_SOH;
         memcpy(f + n, blk, (size_t)nb);
         uint16_t bcs = acars_bcs(blk, nb);

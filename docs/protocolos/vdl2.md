@@ -114,59 +114,72 @@ filtro de coseno alzado α = 0,6 (RRC en cada extremo) y acceso CSMA. Una ráfag
 
 | campo | contenido | origen de la constante |
 |---|---|---|
-| rampa | 3-5 símbolos nulos | Kim et al. (KICS 2009), arXiv:2005.11456 |
-| palabra única | 16 símbolos: `000 010 011 110 000 001 101 110 001 100 011 111 101 111 100 010` | arXiv:2005.11456 |
-| cabecera | 3 bits reservados (0) + longitud 17 bits LSB primero (bits del flujo AVLC, sin paridad RS ni relleno) + 5 bits de paridad | misma fuente; el polinomio **no** está publicado en lo que pude consultar |
-| datos | AVLC → RS(255,249) → entrelazado → aleatorizador | Kim et al. (reparto y entrelazado); aleatorizador de memoria |
+| rampa | 3-5 símbolos nulos | Kim et al. (KICS 2009), arXiv:2005.11456; ETSI EN 301 841-1 §5.4 |
+| palabra única (UW) | 16 símbolos: `000 010 011 110 000 001 101 110 001 100 011 111 101 111 100 010` | arXiv:2005.11456; **contrastada con la grabación real** |
+| cabecera | 3 bits reservados (0) + longitud de 17 bits LSB primero (bits del flujo HDLC, con flags y relleno, sin paridad RS) + 5 bits de comprobación | estructura: ETSI EN 301 841-1 §5.4; matriz H: ver abajo |
+| datos | HDLC → octetos (LSB primero) → RS(255,249) → entrelazado → todo (cabecera + datos) aleatorizado | **contrastado con la grabación real y con dumpvdl2** |
 
 Codificación diferencial: el triplete (Gray) se convierte a binario y es el incremento de fase en
 pasos de π/4 (000→0, 001→1, 011→2, 010→3, 110→4, 111→5, 101→6, 100→7; Tabla 5 de Kim et al.).
 Los bits forman un flujo continuo desde la UW (48 bits UW + 25 cabecera = 73 bits: los datos
 empiezan a mitad de un símbolo).
 
-RS: GF(2⁸) con 0x187, fcr 120, 6 raíces (preset `rs_init_vdl2` de `dsp/fec`, procedente de dumpvdl2).
-Bloques de 249 bytes de datos; el último, más corto, lleva 0/2/4/6 bytes de paridad según tenga
-≤2 / 3-30 / 31-67 / ≥68 bytes (Kim et al., Tabla 3). Se codifica como bloque de 255 con ceros
-virtuales entre datos y paridad; el receptor reconstruye los ceros y marca como **borrados** la paridad
-no enviada. Entrelazado: se escriben los bloques por filas y se leen por columnas (byte p de cada
-bloque, p = 0…254), saltando los bytes que no existen.
+**Cabecera (25,20).** Matriz de comprobación `H = [P | I5]` (filas en hex sobre la palabra de 25 bits con el
+primer bit recibido en la posición 24): `001FFF0, 07E1FE8, 18E61E4, 1B6A662, 0D3CAA1`. El código corrige 1 bit y
+algunos pares de bits; los 3 bits reservados se fuerzan a 0 antes de calcular el síndrome. La norma pública
+(EN 301 841-1 V1.1.1) da la estructura pero no la matriz; esta se obtuvo del comportamiento de `dumpvdl2` y se
+comprobó con la grabación real: en las ráfagas buenas el síndrome sale 0 (si fuera otra, saldría 0 en 1 de cada 32).
 
-HDLC/AVLC: el flujo de bits (octetos MSB primero tras el RS) contiene flags 0x7E, relleno de ceros tras
-cinco unos, tramas con bytes LSB primero y FCS CRC-16/X-25 (byte bajo primero). Trama AVLC:
-destino(4) origen(4) control(1) información FCS(2). Dirección: 4 octetos × 7 bits (bit 0 = extensión),
-28 bits = ICAO(24) | indicador(1) | tipo(3). Tipos usados: 1 aeronave, 4 estación de tierra,
-6 tierra (cualquiera), 7 difusión. Control como HDLC módulo 8 (I, RR/RNR/REJ/SREJ, UI/XID/TEST/SABM/DISC/UA/DM/FRMR).
-ACARS sobre AVLC: información que empieza por SOH (0x01) + bloque ACARS (se enmascara el bit 7).
+**Aleatorizador.** Aditivo de 15 bits, estado inicial `0x6959`, realimentación `b = s[0] ^ s[14]`
+(x¹⁵+x+1 en forma de Fibonacci), salida = bit realimentado. **Actúa desde el primer bit de la cabecera**
+(no solo sobre los datos) y sigue sin reiniciarse. (Una versión anterior de este documento lo ponía solo sobre
+los datos y con x¹⁵+x¹⁴+1: salió de medir con ráfagas ruidosas y era un artefacto; la comprobación definitiva
+es que con este esquema las tramas pasan el FCS.)
 
-**Constantes NO contrastadas con la norma** (actualización V1 abajo: la UW y el D8PSK sí se contrastaron con una captura real) (el test solo comprueba que
-modulador y decodificador son coherentes entre sí): polinomio y orden de la paridad (25,20)
-(x⁵+x²+1, primer bit = grado más alto; el decodificador sigue adelante aunque el síndrome falle y
-confía en RS/FCS), aleatorizador (x¹⁵+x¹⁴+1, estado inicial 0x6959, salida = bit realimentado, reinicio
-al primer bit de datos), qué bytes de paridad se omiten en el último bloque (se asume que se envían
-los primeros), tipos de dirección y significado del bit 3, SOH inicial en AOA y presencia de BCS.
-Si alguna fuera distinta, el efecto sería **no decodificar tráfico real** (sin falsos positivos: todo
-se valida con RS y FCS). Con una captura real se contrastaría en minutos.
+**RS y entrelazado.** GF(2⁸) con 0x187, fcr 120, 6 raíces (`rs_init_vdl2`). Bloques de 249 octetos de datos; el
+último, más corto, lleva 0/2/4/6 octetos de paridad según tenga <3 / 3-30 / 31-67 / ≥68 octetos (Kim et al.,
+Tabla 3); los octetos de paridad no enviados son **borrados**. **Los octetos de cada bloque se leen LSB primero**
+del flujo (el primer bit recibido es el bit 0 del octeto). Orden de transmisión: primero TODOS los octetos de
+datos entrelazados por columnas (octeto c de cada bloque, c = 0…248, saltando los bloques que ya no lo tienen) y
+después TODA la paridad entrelazada igual (6 columnas); no se mezclan datos y paridad por posición.
+Con un solo bloque el entrelazado es la identidad.
+
+**HDLC/AVLC.** El flujo contiene flags 0x7E, relleno de ceros tras cinco unos, tramas con octetos LSB primero y
+FCS CRC-16/X-25 (byte bajo primero). Trama AVLC: destino(4) origen(4) control(1) información FCS(2).
+**Dirección** (contrastada con 17 tramas reales): 4 octetos de 7 bits útiles; el bit 0 de cada octeto es la
+extensión (0 = sigue otro, **1 solo en el último octeto del campo de direcciones**, o sea, el 8.º de la trama).
+Los 28 bits en orden de línea son: 1 bit de estado, 3 de tipo y 24 de ICAO (los dos últimos MSB primero); en
+práctica hay que juntar los 7 bits de cada octeto y **invertir los 28 bits**. Estado: en el origen es C/R (0 orden,
+1 respuesta); en el destino es A/G del emisor (0 en vuelo). Tipos: 1 aeronave, 4 y 5 estación de tierra, 7 todas
+las estaciones (la grabación real usa 5 para tierra). Control como HDLC módulo 8 (I, RR/RNR/REJ/SREJ,
+UI/XID/TEST/SABM/DISC/UA/DM/FRMR). **ACARS sobre AVLC**: la información empieza por `FF FF 01` y sigue el bloque
+ACARS (modo, matrícula…) con paridad impar en el bit 7; acaba en ETX/ETB + BCS + DEL.
 
 ## Cadena DSP (105 kHz = 10 muestras/símbolo)
 
 Ver la cabecera de `vdl2.c`. Resumen: detector de energía por bloques de 256 muestras con suelo de
 ruido adaptativo (coste nulo en reposo) → ráfaga completa en memoria → CFO grueso por centroide
-espectral (necesario: ±6,25 kHz ≈ 0,6 veces la tasa de símbolo) → RRC adaptado → correlación diferencial
-con la UW (módulo independiente de CFO y fase; fija el tiempo) → CFO fino con la fase de esa
-correlación (±5,25 kHz sin ambigüedad) → lazo de Gardner con Farrow cúbico (absorbe ±100 ppm) →
-decisión diferencial con seguimiento de fase → cabecera → RS → HDLC → AVLC.
+espectral → **búsqueda de la UW por fase** (fasores unitarios, sin ponderar por la amplitud) sobre la señal con
+paso bajo de 16 kHz → CFO fino (±5,25 kHz sin ambigüedad) → **hipótesis de filtro de entrada**, en orden: RRC
+adaptado (señal directa de antena) y paso bajo de 10, 9, 12 y 8 kHz (señal ya conformada con un Nyquist) →
+lazo de Gardner de ganancia baja → decisión diferencial con seguimiento de fase y residuo por símbolo →
+aleatorizador → cabecera → RS → HDLC → AVLC. Si la lectura directa no pasa RS + FCS: decodificación tipo Chase
+sobre los símbolos menos fiables (hasta 2¹⁰ combinaciones, tope de 2000 pruebas por ráfaga) y RS con borrados
+en los octetos menos fiables. Una ráfaga puede tener hasta 3 UW (varias tramas seguidas). Solo se emiten tramas con
+FCS correcto y tipos de dirección verosímiles (filtro de falsos positivos para Chase). Coste: ≈ 0,02 s de CPU por
+s de señal con tráfico denso (≈ 2 % de un núcleo con la grabación real).
 
 ## Eventos
 
 ```json
 {"proto":"vdl2","src":"4840D6","src_type":"aircraft","dst":"2B4F10","dst_type":"ground","cr":0,
- "ftype":"I","ctrl":0,"poll":0,"ns":0,"nr":0,"len":58,"info":"01 32…",
+ "ftype":"I","ctrl":0,"poll":0,"ns":0,"nr":0,"len":58,"info":"FFFF01 32…",
  "acars":{"mode":"2","reg":"EC-MXY","label":"H1","block":"3","msgno":"M12A","flight":"IB3456","body":"…"},
  "cfo_hz":2501,"rs_fixed":0,"level_db":-14.0,
  "text":"4840D6(aircraft) > 2B4F10(ground) I ns=0 nr=0 | ACARS EC-MXY IB3456 H1: …"}
 ```
 Solo se emiten tramas con FCS correcto. `info` = primeros 64 bytes en hexadecimal. `acars` aparece si
-la información empieza por SOH y se interpreta como bloque ACARS.
+la información empieza por `FF FF 01` (o por `01` solo) y se interpreta como bloque ACARS.
 
 ## state_json
 
@@ -175,72 +188,72 @@ la información empieza por SOH y se interpreta como bloque ACARS.
 
 ## Pruebas (`make test T=vdl2`)
 
-Autoconsistencia de cabecera (corrección de 1 bit en todas las posiciones), aleatorizador, RS entrelazado
+Autoconsistencia de cabecera (corrección de 1 bit en las 22 posiciones útiles), aleatorizador, RS entrelazado
 (bloque corto, 249, 2-3 bloques, ráfagas de 6 bytes repartidas por el entrelazado), HDLC con relleno y
-FCS, direcciones; modulador → AWGN 10 dB, CFO ±6,25 kHz, ±100 ppm → eventos; tipos UI/RR/XID/I; trama
-de 350 bytes (2 bloques RS); ruido solo y tono continuo → 0 eventos; coste con tráfico denso.
-Medido: 40/40 ráfagas a 10 dB con CFO ±6,25 kHz y ±100 ppm (39/40 a 8 dB); coste ≈ 0,01 s de CPU por s de señal.
+FCS, direcciones; **tramas reales** (direcciones, FCS y bloque ACARS de la grabación de sigidwiki, ver más abajo);
+modulador → AWGN 10 dB, CFO ±6,25 kHz, ±100 ppm → eventos; señal ya conformada con un Nyquist (RRC emisor +
+RRC); tipos UI/RR/XID/I; trama de 350 bytes (2 bloques RS); ruido solo y tono continuo → 0 eventos; coste con
+tráfico denso. Caso real de `tests/realtest.sh` (`tests/data/real/vdl2`): 16 mensajes distintos de la
+grabación real, con matrículas y vuelos de ACARS.
 
 ## Referencias
 
-* ICAO Annex 10 Vol. III Part I §6 y Doc 9776; ETSI EN 301 841-1; ARINC 631/620 (no consultadas, de pago).
-* Kim et al., "VDL Mode-2 D8PSK 모뎀 설계 및 개발", J. KICS 34(11), 2009 (UW, tablas RS, entrelazado, mapa diferencial).
+* ICAO Annex 10 Vol. III Part I §6 y Doc 9776; ETSI EN 301 841-1; ARINC 631/620 (no consultadas, de pago salvo
+  la EN 301 841-1 V1.1.1, pública).
+* Kim et al., "VDL Mode-2 D8PSK 모뎀 설계 및 개발", J. KICS 34(11), 2009 (UW, tablas RS, mapa diferencial).
 * arXiv:2005.11456, "Advanced Physical-Layer Technologies in VHF Data Link Communications" (formato de ráfaga).
+* [dumpvdl2](https://github.com/szpajder/dumpvdl2) 2.6.0 (GPL-3.0, solo como referencia externa y generador de
+  datos de comparación; no se enlaza ni se copia código): orden de bits, aleatorizador, cabecera, entrelazado.
 * Wavecom, "VDL-M2 Aeronautical Data Link" (visión general).
 
 ## Limitaciones
 
-Sin vectores reales (ver arriba); una ráfaga por vez (solapes de dos estaciones en el mismo canal no se separan);
-ráfaga máx. ~20 s de memoria; no se interpretan XID (parámetros), ISO 8208/X.25 ni CLNP/ATN: se da la
-información en hexadecimal; no hay reensamblado de mensajes ACARS multibloque.
+Una ráfaga por vez (hasta 3 UW seguidas; solapes de dos estaciones en el mismo canal no se separan); ráfaga máx.
+~20 s de memoria; no se interpretan XID (parámetros), ISO 8208/X.25 ni CLNP/ATN: se da la información en
+hexadecimal; no hay reensamblado de mensajes ACARS multibloque. En la grabación completa (47 s) dumpvdl2 decodifica
+41 tramas y este decodificador 38 de ellas (93 %) más 4 que dumpvdl2 no saca; las 3 que faltan son largas
+(94, 130 y 257 octetos).
 
-## Validación con señales reales (V1, 2026-11-15) — resultado parcial
+## Validación con señales reales (V1, 2026-11-15; D1, 2026-11-20)
 
-Fuente: "VDL-M2 IQ" de la Signal Identification Wiki (IQ estéreo a 48 kHz, 46,9 s, canal en banda
-base, ~50 ráfagas de ~24 ms a 21 dB sobre el suelo). **Hallazgos con evidencia:**
+Fuente: «VDL-M2 IQ» de la Signal Identification Wiki (IQ estéreo a 48 kHz, 46,9 s, ~50 ráfagas; CC BY-SA 3.0;
+`https://www.sigidwiki.com/images/d/df/VDL-M2_IQ.zip`). El WAV trae **I y Q intercambiados** (IQ = derecho +
+j·izquierdo). Se remuestrea a 105 kS/s (35/16) con `scipy.signal.resample_poly`.
 
-* El WAV trae **I/Q intercambiados** (espectro invertido): tanto `dumpvdl2` 2.6.0 como este
-  decodificador solo funcionan con `Q + jI`. Con eso `dumpvdl2` decodifica 11 tramas AVLC reales
-  (aeronaves 47806D/4BAA41, ACARS LN-RPA SK0690 y TC-JRA TK1952, "Media Advisory"); sin
-  intercambiar no decodifica ninguna. (Todos los demás pasos de `dumpvdl2` exigen S16 a
-  105 kS/s por canal: hay que escalar ×3-×14 y sobremuestrear.)
-* **Constantes confirmadas:** velocidad de símbolo 10 500 Bd (línea cíclica a 10 494 Hz), RRC con
-  α = 0,6, D8PSK, y la **palabra única**: la correlación diferencial con la UW de este
-  decodificador da 0,98-0,99 en las ráfagas reales (los 8 incrementos de fase y el mapeo Gray
-  quedan verificados). Los 3 bits reservados de la cabecera son 000 en 29 de 61 ráfagas (frente
-  a 7,6 esperadas al azar), así que el reparto de símbolos tras la UW es correcto.
-* **No resuelto:** los 22 bits siguientes (longitud de 17 bits + 5 de paridad) **no cumplen el
-  código (25,20) con x⁵+x²+1 ni con ninguna permutación de los 3 bits del símbolo, ni con un
-  aleatorizador aditivo x¹⁵+x¹⁴+1 / x¹⁵+x+1 de cualquier fase** (búsqueda exhaustiva sobre 61
-  ráfagas), de modo que la cabecera, el polinomio del código o el aleatorizador son otros. El
-  decodificador encuentra 61 ráfagas y 0 tramas sobre esta grabación. Pendiente: contrastar con
-  la norma (ETSI EN 301 841-1 §5.4) o con una traza de la referencia.
-* La salida de `--gen vdl2` tampoco la decodifica `dumpvdl2` (0 tramas, con y sin ruido, escala
-  ×1-×14): coherente con la cabecera/aleatorizador erróneos.
+**Resultado (D1):** de las tramas que decodifica `dumpvdl2` 2.6.0 sobre la misma señal, este decodificador saca
+11 de 11 (versión remuestreada con otro filtro, la de V1), 38 de 41 (93 %) en los 46,9 s completos y 16 de 17
+(94 %) en el recorte 28,5-37,0 s que es el caso real de `tests/realtest.sh`. Antes (V1) eran 0.
 
-### Segunda pasada (V1, 2026-11-16)
+**Qué estaba mal** (cada punto se verificó contra la salida de dumpvdl2 trama a trama; V1 había concluido «ISI
+sistemática, BER ~10 %», que era un diagnóstico equivocado):
+1. **Aleatorizador y cabecera**: el aleatorizador cubre cabecera y datos, con otro estado inicial; la matriz de la
+   cabecera es otra. Con eso la cabecera da síndrome 0 en las ráfagas buenas.
+2. **Orden de bits y entrelazado**: los octetos RS se leen LSB primero; los datos y la paridad no se mezclan en el
+   entrelazado.
+3. **Direcciones AVLC**: orden de línea (estado, tipo, ICAO MSB primero → inversión de 28 bits), extensión solo en el
+   último octeto, tipo 5 para tierra; **ACARS sobre AVLC empieza por `FF FF 01`**.
+4. **Búsqueda de la UW**: la métrica ponderada por la amplitud daba ≈ 1 en 1-2 productos de una rampa de subida o
+   de bajada y desplazaba la UW verdadera 14 símbolos; ahora es de fase pura (como dumpvdl2). Además la puerta de
+   amplitud usa el suelo de ruido (no la potencia media de la ráfaga) y la caída de potencia por AGC o fading
+   ya no corta la demodulación (la cabecera da la longitud).
+5. **Filtro de entrada**: la grabación ya viene conformada con un Nyquist (la respuesta al impulso estimada con
+   símbolos conocidos es casi sin interferencia entre símbolos en las muestras: |p(±1)| ≈ 0,06·|p(0)|), de modo
+   que el RRC adaptado del decodificador aplica el filtro dos veces: BER ~4 % frente a ~0,5 % con un paso bajo
+   suave de 8-10 kHz (el de dumpvdl2 es un Chebyshev de 2 polos de 8 kHz). Se añaden las hipótesis de paso bajo;
+   la RRC sigue siendo la primera (señal directa de antena).
+6. **Chase y borrados**: en las ráfagas con 1-3 símbolos dudosos más de los que corrige el RS (6 octetos de
+   paridad, 3 errores) recuperan varias tramas cortas más.
 
-* **ETSI EN 301 841-1 V1.1.1 §5.4** (pdf público de etsi.org) confirma la estructura del
-  entrenamiento: rampa de 5 símbolos, palabra única de 16 símbolos, **1 símbolo reservado**, longitud
-  de 17 bits (LSB primero; cuenta los bits que siguen a la cabecera sin el FEC) y 5 bits de FEC de
-  cabecera: la cabecera de 25 bits es la implementada. Esa edición **no** da el polinomio del FEC de
-  cabecera ni el aleatorizador (están en el Anexo 10 vol. III de la OACI, no libre).
-* **Aleatorizador, corregido con la grabación:** con 8 ráfagas cuyo primer octeto de datos es la
-  bandera 0x7E y la dirección empieza por 0x14 (trama a la estación 10981A, cuya dirección es
-  conocida por `dumpvdl2`), la secuencia de clave medida cumple g[n] = g[n−1] ⊕ g[n−15] (polinomio
-  x¹⁵+x¹⁴+1, 23 de 25 comprobaciones; las dos discrepancias vienen de bits de dato no conocidos), con
-  los 15 primeros bits **010011100011111**; la cabecera NO se aleatoriza y los datos empiezan en el
-  bit 25. El código anterior (estado inicial 0x6959, realimentación x¹⁵+x+1 en la práctica) no
-  coincidía. Corregido en `vdl2_frame.c` (el modulador usa la misma función).
-* **Longitud:** el decodificador ya no depende solo de la cabecera de 25 bits: prueba su longitud si
-  es verosímil y, si no, todas las longitudes D tales que datos + paridad RS caben en los bits
-  recibidos (±3 octetos por la rampa de bajada).
-* **Por qué sigue sin sacar tramas de esa grabación:** los incrementos de fase de la UW tienen un
-  error **sistemático** (media de ±0,5 de incremento por posición, desviación 0,2, el mismo patrón
-  en las 50 ráfagas) que no depende del filtro (RRC con β = 0,35-0,8 o caja) ni del instante de
-  muestreo: es interferencia entre símbolos del propio WAV (diezmado a 48 kHz con un filtro de
-  paso bajo que recorta el espectro de 16,8 kHz). Eso da una tasa de error de bit de ~10 %, más
-  de lo que corrigen los 2 octetos de paridad RS de las tramas cortas; `dumpvdl2` solo logra 11 de
-  ~50 ráfagas. Con ese BER tampoco se puede decir si el código de la cabecera es el correcto (solo
-  2 de 29 cabeceras pasan la paridad, justo lo que se espera con ese BER). Hace falta un
-  ecualizador entrenado con la UW, o una grabación de mejor calidad.
+**Ecualizador adaptativo (evaluado, no incluido).** Se probó fuera de línea (Python, 4 ráfagas con símbolos
+verdaderos): ecualizador T/2 de 2×(1-3) coeficientes entrenado con la UW y con decisión dirigida (mínimos cuadrados
+por bloques con regularización, referencia de decisiones PSK absolutas con PLL). Con la UW de 16 símbolos como
+único entrenamiento sobrajustaba (más errores que la señal sin ecualizar con ≥ 6 coeficientes) y, tras la elección
+del filtro de entrada, no quedaba interferencia entre símbolos que corregir: con el paso bajo de 8-10 kHz los
+errores de decisión (≈ 0,5 %) están dominados por el ruido, no por la ISI (ni siquiera un ecualizador entrenado
+con todos los símbolos verdaderos mejoró el recuento: 12 errores de símbolo sin él frente a 11 con él, en 4 ráfagas). La mejora práctica vino de elegir el filtro de entrada
+(hipótesis, validadas por RS + FCS), de la búsqueda de UW y de Chase/borrados, sin coste apreciable de CPU.
+
+**Interoperabilidad:** `bladerf-lab --gen vdl2 …` genera una señal que `dumpvdl2` 2.6.0 decodifica correctamente
+(AVLC I, ACARS EC-MXY IB3456, etiqueta H1, mensaje completo), con y sin ruido añadido; antes daba 0 tramas.
+Compruébese con `dumpvdl2 --iq-file x.sigmf-data --sample-format S16_LE --oversample 1 --centerfreq <Hz> <Hz>`
+(la señal generada ya está en ci16 con escala 2048, y el nivel por encima de ≈ 1000 que exige dumpvdl2).

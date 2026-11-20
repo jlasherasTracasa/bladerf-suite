@@ -1,7 +1,7 @@
 # mkfixtures.py — regenera tests/data/real/*.sigmf-{meta,data} a partir de los
 # vectores reales ya versionados en tests/data/ (recortes de grabaciones públicas), salvo
-# flex3200 y flex6400, que salen de los MP3 originales de sigidwiki (se descargan a build/fuentes_real
-# y se verifica su sha256; ffmpeg solo se usa para decodificar el MP3).
+# flex3200, flex6400 y vdl2, que salen de originales de sigidwiki (MP3 y ZIP de IQ; se descargan a
+# build/fuentes_real y se verifica su sha256; ffmpeg solo se usa para decodificar el MP3).
 # Uso: python3 -I tests/data/real/mkfixtures.py   (desde la raíz del repositorio)
 # Requiere numpy, scipy y ffmpeg (solo para regenerar; el test no los necesita).
 import hashlib, json, os, subprocess, urllib.request, numpy as np
@@ -46,6 +46,8 @@ FUENTES = {
                       "a49941e22179cdf2caf2e73e596b8d786d3ff0e3250822465a8239f736f9706f"),
     "FLEX_6400bps.mp3": ("https://www.sigidwiki.com/images/0/00/FLEX_6400bps.mp3",
                          "4fedc3352ffcbac0c14dcf28c2ee433b74338c1a0c5972d87ff1baabbc27c843"),
+    "VDL-M2_IQ.zip": ("https://www.sigidwiki.com/images/d/df/VDL-M2_IQ.zip",
+                      "c81f78a3b59101eaab0e33739c5b8ea58b9c1b30de688b91b527f85c7399c022"),
 }
 
 def fuente(nombre):
@@ -120,3 +122,22 @@ for n, f in [("acurite592txr", "ism_acurite592txr_rtl433"), ("nexus", "ism_nexus
 a = np.fromfile(f"{D}/lora_loratx_sf7_cr5_bw125.cs16", "<i2").astype(np.float32) / 32768
 save("lora", a[0::2] + 1j * a[1::2], "ci16_le", 500000, 868100000, "dxlaprs-lora loratx (transmisor independiente), generada localmente",
      "LoRa SF7 CR4/5 BW125, red 0x34, carga 'Hola desde loratx 123'")
+
+# VDL2: «VDL-M2 IQ» de sigidwiki (CC BY-SA 3.0): WAV estéreo de 16 bits a 48 kS/s con I y Q INTERCAMBIADOS
+# (IQ = canal derecho + j·izquierdo). Se recortan 28,5-37,0 s (17 tramas AVLC que decodifica dumpvdl2,
+# de aeronaves 47806D y 4BAA41), se remuestrean a 105 kS/s (35/16, la tasa del decodificador) y se
+# desplazan +20 kHz para que el canal no caiga en 0 Hz (el motor quita la continua); el centro SigMF
+# se baja otro tanto, así que el canal sigue en 136,975 MHz. ci16 (el original ya es de 16 bits).
+import io, zipfile, wave
+with zipfile.ZipFile(fuente("VDL-M2_IQ.zip")) as z:
+    w = wave.open(io.BytesIO(z.read("VDL2 IQ.wav")))
+    assert w.getnchannels() == 2 and w.getsampwidth() == 2 and w.getframerate() == 48000
+    a = np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(np.float64) / 32768.0
+iq48 = a[1::2] + 1j * a[0::2]                       # I/Q intercambiados
+iq48 = iq48[int(28.5 * 48000):int(37.0 * 48000)]
+iq = resample_poly(iq48, 35, 16)
+iq = iq / np.max(np.abs(iq)) * 0.8
+save("vdl2", iq.astype(np.complex64), "ci16_le", 105000, 136975000, SIGID,
+     "VDL Modo 2 real (aeronaves 47806D y 4BAA41, estaciones 10981A y 234837), 28,5-37,0 s de 'VDL-M2 IQ' (sigidwiki, "
+     "WAV de 48 kS/s con I/Q intercambiados) remuestreado a 105 kS/s; dumpvdl2 2.6.0 decodifica 17 tramas AVLC del recorte",
+     shift_hz=20000)

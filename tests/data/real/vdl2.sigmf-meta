@@ -1,0 +1,17 @@
+{
+  "global": {
+    "core:datatype": "ci16_le",
+    "core:sample_rate": 105000,
+    "core:version": "1.0.0",
+    "core:author": "Signal Identification Wiki (sigidwiki.com), CC BY-SA 3.0",
+    "core:description": "VDL Modo 2 real (aeronaves 47806D y 4BAA41, estaciones 10981A y 234837), 28,5-37,0 s de 'VDL-M2 IQ' (sigidwiki, WAV de 48 kS/s con I/Q intercambiados) remuestreado a 105 kS/s; dumpvdl2 2.6.0 decodifica 17 tramas AVLC del recorte",
+    "core:license": "CC-BY-SA-3.0 (sigidwiki)"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 136955000
+    }
+  ],
+  "annotations": []
+}

@@ -3,11 +3,11 @@
  * modulador → canal (AWGN 10 dB, CFO ±¼ de 25 kHz = ±6,25 kHz, ±100 ppm) →
  * decodificador a 105 kHz, solo ruido y coste de CPU.
  *
- * Vectores reales: no hay ninguna captura IQ de VDL2 con licencia que permita
- * incluirla y los ejemplos de la norma (ICAO Doc 9776, ARINC 631) son de pago;
- * por tanto la capa física y el tramado se prueban solo de forma autoconsistente
- * (modulador y decodificador comparten las mismas constantes, ver vdl2_frame.h).
- * Lo que sí es independiente: el preset RS (verificado en test_fec) y el CRC-16/X-25.
+ * Vectores reales: tramas AVLC (direcciones, FCS, bloque ACARS) de la grabación pública «VDL-M2 IQ» de
+ * sigidwiki tal como las decodifica dumpvdl2; la grabación completa se reproduce en tests/realtest.sh
+ * (caso vdl2, tests/data/real/). La capa física y el tramado, en cambio, se prueban con el modulador
+ * propio (comparten constantes, ver vdl2_frame.h); su correspondencia con la señal real la da el caso real
+ * y la interoperabilidad con dumpvdl2 (que decodifica la salida de --gen vdl2).
  */
 #include "test_util.h"
 
@@ -15,6 +15,7 @@
 #include "decoders/vdl2_frame.h"
 #include "tx/mod.h"
 
+#include "dsp/pulse.h"
 #include "vec_real.h"
 #include <time.h>
 
@@ -43,7 +44,8 @@ static void test_primitives(void)
             uint8_t g[25];
             memcpy(g, h, 25);
             g[i] ^= 1;
-            CHECK_EQ(vdl2_hdr_decode(g, &len), 1);
+            /* los 3 reservados se fuerzan a 0 al decodificar: un error ahí no se nota (0) */
+            CHECK_EQ(vdl2_hdr_decode(g, &len), i < 3 ? 0 : 1);
             CHECK_EQ(len, l);
         }
     }
@@ -112,6 +114,7 @@ static void test_primitives(void)
     uint8_t fr[12];
     avlc_addr_put(fr, 0x4840D6, 1, 0);
     avlc_addr_put(fr + 4, 0x2B4F10, 4, 1);
+    fr[7] |= 1;
     fr[8] = 0x03;
     avlc_t av;
     CHECK_EQ(avlc_parse(fr, 9, &av), 0);
@@ -120,6 +123,65 @@ static void test_primitives(void)
     CHECK_EQ(av.src.type, 4);
     CHECK_EQ(av.src.flag, 1);
     CHECK(strcmp(av.ftype, "UI") == 0);
+}
+
+/* Tramas REALES de la grabación pública de sigidwiki «VDL-M2 IQ» (CC BY-SA 3.0), tal como las imprime
+ * dumpvdl2 2.6.0 con --raw-frames (ver docs/protocolos/vdl2.md y tests/data/real/mkfixtures.py). Es lo único
+ * independiente del código: direcciones, FCS y bloque ACARS de tráfico de verdad. */
+static void test_real_frames(void)
+{
+    printf("VDL2: tramas reales (dumpvdl2 sobre la grabación de sigidwiki)\n");
+    /* 47806D → 10981A, RR respuesta (P/F = 1) */
+    static const uint8_t rr[] = {0x14, 0x42, 0x0c, 0x58, 0x52, 0x78, 0x00, 0xb7, 0x91, 0xba, 0xe1};
+    avlc_t a;
+    CHECK_EQ(avlc_parse(rr, 11 - 2, &a), 0);
+    CHECK_EQ(a.dst.icao, 0x10981A);
+    CHECK_EQ(a.dst.type, 5);
+    CHECK_EQ(a.dst.flag, 0);
+    CHECK_EQ(a.src.icao, 0x47806D);
+    CHECK_EQ(a.src.type, 1);
+    CHECK_EQ(a.src.flag, 1); /* respuesta */
+    CHECK(strcmp(a.ftype, "RR") == 0);
+    CHECK_EQ(a.poll, 1);
+    CHECK_EQ(a.nr, 4);
+    uint8_t o[8];
+    avlc_addr_put(o, 0x10981A, 5, 0);
+    avlc_addr_put(o + 4, 0x47806D, 1, 1);
+    o[7] |= 1;
+    CHECK(memcmp(o, rr, 8) == 0); /* codificación idéntica a la real */
+    uint8_t cp[16];
+    memcpy(cp, rr, 9);
+    CHECK_EQ(vdl2_add_fcs(cp, 9), 11);
+    CHECK(memcmp(cp, rr, 11) == 0); /* el FCS real */
+
+    /* 4BAA41 → 234837, trama I con un bloque ACARS (TC-JRA, TK1952, etiqueta Q0) */
+    static const uint8_t ia[] = {0x94, 0xb0, 0x08, 0xec, 0x50, 0x74, 0x2a, 0x83, 0x00, 0xff, 0xff, 0x01, 0x32, 0xae, 0x54,
+                                 0x43, 0xad, 0x4a, 0x52, 0xc1, 0x15, 0x51, 0xb0, 0xb9, 0x02, 0xd3, 0x32, 0x37, 0xc1, 0x54,
+                                 0xcb, 0x31, 0xb9, 0xb5, 0x32, 0x83, 0xb9, 0xbc, 0x7f, 0x5b, 0xf1};
+    uint8_t big[64];
+    memcpy(big, ia, sizeof ia);
+    CHECK_EQ(vdl2_add_fcs(big, (int)sizeof ia - 2), (int)sizeof ia);
+    CHECK(memcmp(big, ia, sizeof ia) == 0);
+    CHECK_EQ(avlc_parse(ia, (int)sizeof ia - 2, &a), 0);
+    CHECK_EQ(a.src.icao, 0x4BAA41);
+    CHECK_EQ(a.dst.icao, 0x234837);
+    CHECK_EQ(a.src.flag, 0); /* orden */
+    CHECK(strcmp(a.ftype, "I") == 0);
+    CHECK_EQ(a.info_len, 30);
+    CHECK(a.info[0] == 0xFF && a.info[1] == 0xFF && a.info[2] == 0x01);
+    /* y por el camino completo HDLC → RS entrelazado → aleatorizador → HDLC */
+    uint8_t hb[800];
+    int nb = vdl2_hdlc_encode(ia, (int)sizeof ia, hb, sizeof hb);
+    int D = (nb + 7) / 8;
+    uint8_t *dat = calloc((size_t)D, 1), *enc = malloc((size_t)vdl2_encoded_bytes(D)), *back = malloc((size_t)D + 255);
+    for (int i = 0; i < nb; i++)
+        dat[i >> 3] |= (uint8_t)(hb[i] << (i & 7));
+    vdl2_fec_encode(dat, D, enc);
+    CHECK_EQ(vdl2_fec_decode(enc, D, back), 0);
+    CHECK(memcmp(dat, back, (size_t)D) == 0);
+    free(dat);
+    free(enc);
+    free(back);
 }
 
 static void run_case(const char *name, const iqbuf_t *src, double cfo, double ppm, double snr, uint32_t seed,
@@ -143,6 +205,7 @@ static void run_case(const char *name, const iqbuf_t *src, double cfo, double pp
 int main(void)
 {
     test_primitives();
+    test_real_frames();
 
     char err[200] = "";
     iqbuf_t iq = {0};
@@ -157,6 +220,35 @@ int main(void)
     run_case("10 dB, +6,25 kHz, -100 ppm", &iq, 6250, -100, 10, 5, 2, NULL);
     run_case("10 dB, -6,25 kHz, +100 ppm", &iq, -6250, 100, 10, 6, 2, NULL);
     run_case("10 dB, +1,3 kHz", &iq, 1300, 0, 10, 7, 2, NULL);
+
+    /* Señal ya conformada con un Nyquist (como la grabación real de sigidwiki, donde el receptor ya aplicó
+     * su RRC): el emisor RRC + otro RRC = coseno alzado. Un segundo RRC en el decodificador metería
+     * interferencia entre símbolos; las hipótesis de paso bajo la resuelven. */
+    {
+        float h[81];
+        int nh = pulse_rrc(h, 0.6, 10, 8, PULSE_NORM_ENERGY);
+        cf32 *x = calloc((size_t)iq.n, sizeof(cf32));
+        for (int i = 0; i < iq.n; i++) {
+            float r = 0, q = 0;
+            for (int k = 0; k < nh; k++) {
+                int j = i - nh / 2 + k;
+                if (j >= 0 && j < iq.n) {
+                    r += h[k] * iq.s[j].re;
+                    q += h[k] * iq.s[j].im;
+                }
+            }
+            x[i] = (cf32){r, q};
+        }
+        uint32_t seed = 77;
+        chan_cfo(x, iq.n, iq.rate, -2000);
+        chan_awgn(x, iq.n, 14, &seed);
+        evs_t ev = {0};
+        run_narrow(&DEC_VDL2, x, iq.n, 136975000, NULL, &ev);
+        printf("  %-32s eventos=%d\n", "señal ya conformada (RC), 14 dB", evs_count(&ev));
+        CHECK_EQ(evs_count(&ev), 2);
+        evs_free(&ev);
+        free(x);
+    }
 
     /* Campos */
     {

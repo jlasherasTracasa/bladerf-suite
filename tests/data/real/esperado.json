@@ -324,6 +324,26 @@
       ],
       "unicos": 15,
       "eventos": 15
+    },
+    "vdl2": {
+      "fixture": "vdl2",
+      "decoder": "vdl2",
+      "freq": 136975000,
+      "duracion": 9,
+      "filtro": ".",
+      "clave": "\"\\(.msg.src)/\\(.msg.dst)/\\(.msg.ctrl)/\\(.msg.info)\"",
+      "campos": [
+        "\"src\":\"47806D\"",
+        "\"dst\":\"10981A\"",
+        "\"src\":\"4BAA41\"",
+        "\"dst\":\"234837\"",
+        "\"reg\":\"TC-JRA\"",
+        "\"flight\":\"TK1952\"",
+        "\"label\":\"Q0\""
+      ],
+      "unicos": 16,
+      "eventos": 18,
+      "referencia_externa": "dumpvdl2 2.6.0 sobre el mismo recorte: 17 tramas (16 distintas); el decodificador saca 16 de las 17 (falta una de 130 octetos) mas 1 que dumpvdl2 no saca"
     }
   },
   "sin_grabacion_real": {
@@ -331,7 +351,6 @@
     "dsc": "solo sintetica (sin grabacion publica)",
     "dab": "IQ real no conservada en disco; solo bits blandos del FIC (tests/data/dab_real_fic_soft.bin, test_dab.c)",
     "rds": "la captura real de Radio Pamplona no se conservo; solo sintetica",
-    "vdl2": "grabacion real de sigidwiki no conservada y el decodificador da 0 tramas con ella",
     "dmr": "sin grabacion con rafagas validas (0 rafagas)",
     "nr": "sin celda en la grabacion de sigidwiki; solo sintetica",
     "meshtastic": "solo sintetica",
