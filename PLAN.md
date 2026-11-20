@@ -165,3 +165,93 @@ prueba en placa la hace Opus en RAM.
 | Protocolos nuevos sin grabaciones públicas | No se dan por validados: quedan como «sintético» en la matriz |
 | Carreras difíciles de reproducir | Q2 (TSan) antes de tocar más el host |
 | Deriva entre código, documentación y curso | Tareas Haiku de cierre en cada fase (D12, W6, F9, Z1) |
+
+---
+
+## 5. Fase P — Artículo para una revista Q1
+
+Objetivo: un artículo publicable en una revista del primer cuartil (JCR). Corre
+en paralelo a las fases 2–5 y reutiliza su trabajo.
+
+### 5.1 Qué se publica (propuesta tras una primera búsqueda bibliográfica)
+
+**Tesis: etiquetado automático de espectro real verificado por decodificación.**
+Los conjuntos de datos con los que se entrenan los detectores y clasificadores
+de señales son casi todos sintéticos (RadioML, Sig53, WBSig53, CSRD2025) y la
+literatura reconoce que con capturas reales «no se puede determinar la verdad
+de terreno». Este proyecto puede darla: 21 decodificadores propios que solo
+emiten un evento cuando el CRC o el FEC cuadran, sobre una captura de banda
+ancha. Cada evento es una etiqueta exacta (protocolo, instante, frecuencia,
+ancho, SNR) sin anotación humana.
+
+Contribuciones que el artículo debe sostener con medidas:
+
+1. **Método**: etiquetas tiempo-frecuencia derivadas de decodificaciones
+   verificadas, con su precisión y su cobertura medidas (señales inyectadas de
+   posición conocida y contraste con decodificadores de referencia).
+2. **Sistema abierto y reproducible**: un único binario sin dependencias de
+   DSP, con DDC por lotes en GPU y motor de espectro en la FPGA, sobre un SDR
+   de menos de 1000 USD.
+3. **Conjunto de datos**: capturas reales de varias bandas con etiquetas
+   verificadas, publicado con DOI.
+4. **Evaluación**: detectores entrenados con datos sintéticos frente a datos
+   reales etiquetados así; cuantificar la diferencia.
+
+Trabajos cercanos que hay que diferenciar (encontrados en la primera búsqueda;
+P1 debe leerlos y ampliar): WBSig53 y Sig53 (sintéticos), WRIST/SPREAD
+(5 tecnologías, etiquetado iterativo con modelo), Tu et al. 2022 (solo ADS-B,
+etiquetado por decodificación), RFMLS (WiFi y ADS-B), CorteXforge 2026 (bancos
+de pruebas controlados), SigChord/Sums (inspección de cabeceras multibanda).
+**La novedad no está confirmada**: si P1 encuentra un trabajo que ya hace
+etiquetado por decodificación multiprotocolo en banda ancha, se replantea.
+
+Alternativa de reserva (menos novedosa): artículo de sistema sobre la
+arquitectura FPGA + GPU para decodificación multiprotocolo simultánea.
+
+### 5.2 Revistas candidatas
+
+| Revista | Encaje | Cuartil |
+|---|---|---|
+| IEEE Transactions on Instrumentation and Measurement | Sistema de medida + método de etiquetado | Q1 según la fuente consultada (FI 5,9) |
+| IEEE Open Journal of the Communications Society | Datos y aprendizaje para comunicaciones | Probable Q1, sin confirmar |
+| Scientific Data | Si el peso está en el conjunto de datos | Sin confirmar |
+| Computer Networks | Monitorización de espectro | Sin confirmar |
+
+IEEE Access queda descartada: es Q2. **El cuartil de cada candidata se
+comprueba en el JCR vigente antes de elegir** (P0); las cifras de arriba vienen
+de páginas de terceros.
+
+### 5.3 Límites éticos y legales (condicionan el diseño)
+
+- Solo metadatos de difusión. No se publica contenido de mensajes privados:
+  los textos de buscapersonas (POCSAG, FLEX) y de ACARS se excluyen o se
+  sustituyen; de ellos solo queda la etiqueta de protocolo y su posición.
+- Identificadores: BSSID y SSID de WiFi son datos personales (RGPD) y se
+  anonimizan con una función resumen con sal; MMSI e ICAO son públicos, pero
+  se decide en P0 si también se seudonimizan.
+- Las muestras IQ de bandas con contenido privado no se publican en bruto si
+  permiten recuperar ese contenido: se publica el espectrograma o se excluye
+  la banda. Hay que confirmar el marco legal español de captación antes de
+  publicar (tarea del usuario; el orquestador no da asesoría legal).
+- Uso de IA: casi todas las revistas exigen declarar la asistencia de IA en la
+  redacción y el código, y no admiten una IA como autora. La declaración y la
+  autoría son decisión y responsabilidad del usuario.
+
+### 5.4 Tareas
+
+| ID | Tarea | Modelo | Terminado cuando |
+|---|---|---|---|
+| P0 | Decisiones del usuario: revista (cuartil comprobado en JCR), autoría y afiliación, política de IA, alcance de los datos publicables | **Usuario** + Opus | Decisiones anotadas aquí |
+| P1 | Revisión bibliográfica sistemática: 40–60 referencias leídas, tabla comparativa (datos reales o sintéticos, nº de protocolos, origen de las etiquetas, ancho de banda, disponibilidad) y veredicto de novedad | **Sonnet**; Opus comprueba cada cita contra su fuente | `paper/related_work.md` sin citas sin verificar |
+| P2 | Exportar etiquetas: cada evento con instante de muestra inicial y final, frecuencia central, ancho ocupado y SNR, escrito como anotaciones SigMF junto a la grabación | **Sonnet** | Los 21 decodificadores lo emiten; test con señales inyectadas en posición conocida |
+| P3 | Validar las etiquetas: error de tiempo y frecuencia con señales sintéticas inyectadas sobre ruido real, cobertura frente a decodificadores de referencia, tasa de etiquetas falsas sobre ruido | **Sonnet** | Tabla de precisión y cobertura por protocolo |
+| P4 | Campaña de captura: bandas y horarios planificados, con USB 3 y las antenas adecuadas; registro de condiciones | **Opus** (placa) + usuario (antenas) | ≥ 20 h repartidas en ≥ 8 bandas |
+| P5 | Anonimización y empaquetado del conjunto de datos según 5.3, con ficha de datos y suma de comprobación | **Sonnet** | Revisión de Opus sin identificadores en claro |
+| P6 | Experimentos: detector de referencia entrenado con sintético frente a real (fuera del binario; aquí sí se usan bibliotecas de aprendizaje), con semillas y guiones reproducibles | **Sonnet** | Resultados repetidos con 3 semillas |
+| P7 | Figuras y tablas del artículo, generadas por guion | **Haiku** | Una orden las regenera todas |
+| P8 | Redacción en LaTeX con la plantilla de la revista | **Opus** | Borrador completo; cada cifra enlazada al guion que la produce |
+| P9 | Revisión interna simulando tres revisores y corrección | **Sonnet** (revisores) + **Opus** | Lista de objeciones cerrada |
+| P10 | Publicar datos y código con DOI, y enviar | **Usuario** | Enviado |
+
+Dependencias: P2 necesita la fase 1 cerrada; P4 necesita USB 3 (H2) y gana
+con F1, F3 y N4; P6 necesita P4 y P5. P1 puede empezar ya.
