@@ -29,6 +29,26 @@ extern const decoder_desc_t DEC_DMR;
 extern const modulator_desc_t MOD_DMR;
 
 /* chan_drift de test_util.h se desborda con ppm > 0: versión con búfer correcto. */
+typedef struct {
+    long blk, s0, s1;
+    bool found;
+} span_t;
+
+/* Recoge la posicion (smp0/smp1) del primer voice_header; blk = primera muestra del bloque. */
+static void span_cb(void *ctx, const char *json, size_t len)
+{
+    span_t *sp = ctx;
+    (void)len;
+    if (sp->found || !strstr(json, "\"burst\":\"voice_header\""))
+        return;
+    const char *a = strstr(json, "\"smp0\":"), *b = strstr(json, "\"smp1\":");
+    if (!a || !b)
+        return;
+    sp->s0 = sp->blk + atol(a + 7);
+    sp->s1 = sp->blk + atol(b + 7);
+    sp->found = true;
+}
+
 static void drift(const cf32 *in, int n, double ppm, cf32 *out)
 {
     cf32 *tmp = malloc(sizeof(cf32) * (size_t)(n * 1.01 + 64));
@@ -213,6 +233,50 @@ int main(void)
         fr[1] ^= 0x00010400;
         CHECK(dmr_emblc_decode(fr, lc2) >= 0);
         CHECK(memcmp(lc, lc2, 9) == 0);
+    }
+
+    printf("[5] posicion marcada (dec_emit_span) y vectores externos de FEC\n");
+    {
+        /* Posicion: cabecera de voz de la ranura 1 sin CSBK ni datos. La cola de la ranura 1 es
+         * NIDLE (4) ramas de reposo + cabecera: trama 2*4 de 144 simbolos (CACH 12 + rafaga 132).
+         * Convencion: off0 = primer simbolo de la rafaga, off1 = el ultimo (131 despues). */
+        char err[200];
+        iqbuf_t m = {0};
+        const char *prm = "{\"csbk\":false,\"data_header\":false,\"calls\":[{\"slot\":1,\"group\":true,\"dst\":91,"
+                          "\"src\":2001234,\"superframes\":1}]}";
+        CHECK_EQ(MOD_DMR.modulate(prm, &m, err, sizeof err), 0);
+        int pad = 12000, n = m.n + 2 * pad;
+        cf32 *x = calloc((size_t)n, sizeof(cf32));
+        memcpy(x + pad, m.s, sizeof(cf32) * (size_t)m.n);
+        for (int i = 0; i < pad; i++)
+            x[i] = x[n - 1 - i] = (cf32){0.8f, 0};
+        uint32_t seed = 5;
+        chan_awgn(x, n, 20, &seed);
+        dec_cfg_t cfg = {.rate = DEC_DMR.rate, .freq_hz = 438500000, .center_hz = 438500000};
+        void *st = DEC_DMR.create(&cfg, err, sizeof err);
+        CHECK(st != NULL);
+        span_t sp = {0};
+        for (int off = 0; st && off < n; off += 4096) {
+            sp.blk = off;
+            DEC_DMR.process(st, x + off, n - off < 4096 ? n - off : 4096, 0, span_cb, &sp);
+        }
+        if (st)
+            DEC_DMR.destroy(st);
+        int nh = 81; /* pulse_ntaps(10, 8) */
+        long exp0 = pad + (long)(0.05 * 48000) + (long)(2 * 4 * 144 + 12) * 10 + (nh - 1) / 2;
+        printf("  voice_header: smp0 %ld (esperado %ld), smp1 %ld (esperado %ld)\n", sp.s0, exp0, sp.s1, exp0 + 1310);
+        CHECK(sp.found);
+        CHECK(labs(sp.s0 - exp0) <= 10);
+        CHECK(labs(sp.s1 - (exp0 + 1310)) <= 10);
+        free(x);
+        iqbuf_free(&m);
+
+        /* QR(16,7,6) EMB: palabras de codigo de la tabla ENCODING_TABLE_1676 de MMDVM (implementacion
+         * independiente de la norma): dato de 7 bits en los bits 15..9 y paridad de 9 bits. */
+        CHECK_EQ(dmr_emb_encode(0, 0, 1), 0x0273);
+        CHECK_EQ(dmr_emb_encode(0, 0, 2), 0x04E5);
+        CHECK_EQ(dmr_emb_encode(0, 1, 0), 0x09C9);
+        CHECK_EQ(dmr_emb_encode(1, 0, 0), 0x11E2);
     }
     return TEST_SUMMARY();
 }

@@ -193,7 +193,27 @@ Flujo continuo de BS con las dos ranuras: reposo, [CSBK, cabecera de datos], cab
 * Hasta ≈ 1 % de las ráfagas se pierden por ruido a 10 dB; un solo fallo de CRC/RS descarta la ráfaga.
 * Coste de CPU ≈ 0,006 s por s de señal.
 
-## Intento de validación (V2, 2026-11-15) — sin validar
+## Auditoría de constantes (D2, fase 3) y posición
+
+Contraste de cada tabla de `dmr_fec.c`/`dmr.h` con ETSI TS 102 361-1 V2.5.1 (anexo B y cap. 9) y con una
+implementación independiente (MMDVM, de memoria del código público; no enlazada): Hamming(15,11,3) (B.15), (13,9,3)
+(B.14), (16,11,4) (B.16) y (7,4,3) (B.17) coinciden con las ecuaciones de paridad de MMDVM fila a fila; QR(16,7,6)
+(B.12) reproduce las palabras 0x0273, 0x04E5, 0x09C9 y 0x11E2 de su tabla (test [5]); máscaras de RS(12,9): 0x96
+cabecera / 0x99 terminador (tabla B.21); máscaras CRC-CCITT: CSBK 0xA5A5, cabecera de datos 0xCCCC; sincronías de la
+tabla 9.2 (BS voz 755FD7DF75F7, BS datos DFF57D75DF5D, MS voz 7F7D5DD57DFD, MS datos D5D7F77FD757, directo S1
+voz 5D577F7757FF / datos F7FDD5DDFD55, S2 voz 7DFFD5F55D5F / datos D7557F5FF7F5); entrelazado BPTC (i·181) mod 196.
+Golay(20,8) (B.11): solo se puede comprobar por su distancia mínima (8). No se ha cambiado ninguna constante: todas
+coincidían. Siguen sin usarse `linblock_init_qr16_7` ni `hamming_init` de A3 (el aviso de A3 era correcto, pero este
+decodificador no depende de ellos).
+
+**Posición** (`dec_emit_span`): `sample` = primer símbolo de la ráfaga de 132 símbolos (el CACH de 12 bits que la
+precede no cuenta; DMR no tiene preámbulo) y `sample_end` = su último símbolo. El test [5] lo comprueba contra la
+verdad del modulador (error ≤ 3 muestras a 48 kS/s).
+
+## Intento de validación (V2, 2026-11-15; repetido en D2) — sin validar
+
+Segunda búsqueda (2026-11-20): no hay grabación IQ de DMR con licencia explícita y metadatos publicados (SDRplay
+ofrece un WAV de 287 MB sin licencia; sigidwiki sin metadatos). No se añade ningún caso a `tests/data/real`.
 
 sigidwiki.com `DMR.zip` (`SDRSharp_20160101_231914Z_12kHz_IQ.wav`, cabecera 48 kS/s, 34 s): con tasa 48 kS/s y con la hipótesis de 12 kS/s
 (×4) el decodificador ve 1 sincronía y 0 ráfagas; no hay evidencia de que la señal sea DMR estándar (espectro de ≈ 15 kHz con una

@@ -100,6 +100,9 @@ typedef struct {
     /* adquisición de reloj dirigida por sincronía (ver acq_*) */
     float fh[FH_SIZE];       /* salida del filtro adaptado, anillo de muestras */
     int64_t ns;              /* nº de muestras procesadas */
+    int64_t symsmp[RING];    /* muestra (índice ns) en que salió cada símbolo del anillo */
+    int64_t base;            /* ns al empezar la llamada en curso a process() */
+    int64_t b_sym0, b_sym1;  /* primer/último símbolo de la ráfaga que se está procesando */
     uint32_t sreg[SPS];      /* por fase mod SPS: signos de los últimos 24 símbolos */
     int64_t last_sync_sym;
     bool cand;
@@ -189,9 +192,22 @@ static void finish_call(dmr_t *d, int slot)
     d->rec[d->nrec++] = r;
 }
 
+/* Retardo (muestras) entre el centro de un símbolo en la señal y el instante en que el
+ * filtro adaptado (RRC de 8 símbolos) y el de canal lo entregan: se resta para que
+ * sample/sample_end apunten al símbolo en la señal (convención de decoder.h). */
+#define SYM_DELAY (4 * SPS + 18)
+
+/* Posición del mensaje: primer símbolo de la ráfaga (el CACH de 12 bits que la precede en
+ * el canal de bajada no cuenta; DMR no tiene preámbulo) y su último símbolo. */
 static void send(dmr_t *d)
 {
-    if (d->emit)
+    if (!d->emit)
+        return;
+    if (d->b_sym1 > 0) {
+        int64_t o0 = d->symsmp[d->b_sym0 & (RING - 1)] - SYM_DELAY - d->base;
+        int64_t o1 = d->symsmp[d->b_sym1 & (RING - 1)] - SYM_DELAY - d->base;
+        dec_emit_span(d->emit, d->emit_ctx, o0, o1, d->sb.data, d->sb.len);
+    } else
         d->emit(d->emit_ctx, d->sb.data, d->sb.len);
 }
 
@@ -392,6 +408,8 @@ static void process_data_burst(dmr_t *d, int slot, const uint8_t *b)
 static void process_embedded(dmr_t *d, int slot, int64_t e)
 {
     uint8_t b[264];
+    d->b_sym0 = e - 77;
+    d->b_sym1 = e - 77 + 131;
     get_bits(d, e - 77, 132, b);
     uint32_t w = 0;
     for (int i = 0; i < 8; i++)
@@ -454,6 +472,8 @@ static void process_burst(dmr_t *d, int64_t e, int kind)
 {
     uint8_t b[264];
     int64_t sb0 = e - 77;
+    d->b_sym0 = sb0;
+    d->b_sym1 = sb0 + 131;
     get_bits(d, sb0, 132, b);
     d->n_bursts++;
     int slot = 0;
@@ -519,8 +539,10 @@ static void acq_accept(dmr_t *d, int64_t cur)
     if (bits_popcount64(w ^ DMR_SYNC[k]) > SYNC_MAX_ERR + 1)
         return;
     int64_t e = d->nsym - 1;
-    for (int j = 0; j < 100; j++) /* reconstruye los 100 símbolos previos con la fase buena */
+    for (int j = 0; j < 100; j++) { /* reconstruye los 100 símbolos previos con la fase buena */
         d->ring[(e - j) & (RING - 1)] = (uint8_t)dib_at(d, nb - (int64_t)SPS * j);
+        d->symsmp[(e - j) & (RING - 1)] = nb - (int64_t)SPS * j;
+    }
     d->ch.t = (double)(cur - nb) / SPS;
     d->ch.have_mid = false;
     d->win = w;
@@ -568,6 +590,7 @@ static void sym_in(dmr_t *d, float y)
 {
     int dib = ((y < 0) << 1) | (fabsf(y) > (2.0f / 3.0f));
     d->ring[d->nsym & (RING - 1)] = (uint8_t)dib;
+    d->symsmp[d->nsym & (RING - 1)] = d->ns;
     d->nsym++;
     d->win = ((d->win << 2) | (uint64_t)dib) & MASK48;
     int64_t last = d->nsym - 1;
@@ -650,6 +673,7 @@ static void dmr_process(void *st, const cf32 *iq, int n, double now, dec_emit_fn
             return;
     }
     fskfe_process(&d->fe, iq, n, d->fm);
+    d->base = d->ns;
     for (int k = 0; k < n; k++) {
         d->now = now + (double)k / d->rate;
         float y;
