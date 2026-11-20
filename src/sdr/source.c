@@ -529,6 +529,37 @@ int source_start(source_t *s)
     return 0;
 }
 
+/* Adaptador de fpga_lab a libbladeRF (aquí y no en fpga_lab.c para no obligar a las
+ * pruebas de fpga_lab a enlazar libbladeRF). */
+static int lab_ver(void *c, uint32_t *ma, uint32_t *mi, uint32_t *pa)
+{
+    struct bladerf_version v;
+    int r = bladerf_fpga_version((struct bladerf *)c, &v);
+    if (r < 0)
+        return r;
+    *ma = v.major;
+    *mi = v.minor;
+    *pa = v.patch;
+    return 0;
+}
+static int lab_gr(void *c, uint32_t *v) { return bladerf_config_gpio_read((struct bladerf *)c, v); }
+static int lab_gw(void *c, uint32_t v) { return bladerf_config_gpio_write((struct bladerf *)c, v); }
+static int lab_wr(void *c, uint32_t a, uint32_t *v) { return bladerf_wishbone_master_read((struct bladerf *)c, a, v); }
+static int lab_ww(void *c, uint32_t a, uint32_t v) { return bladerf_wishbone_master_write((struct bladerf *)c, a, v); }
+
+int source_fpga_lab_io(source_t *s, fpga_lab_io_t *io)
+{
+    if (!s->dev)
+        return -1;
+    io->ctx = s->dev;
+    io->fpga_version = lab_ver;
+    io->gpio_read = lab_gr;
+    io->gpio_write = lab_gw;
+    io->wb_read = lab_wr;
+    io->wb_write = lab_ww;
+    return 0;
+}
+
 int source_stop(source_t *s)
 {
     if (s->dev && s->streaming)

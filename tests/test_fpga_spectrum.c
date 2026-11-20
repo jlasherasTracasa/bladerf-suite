@@ -1,0 +1,211 @@
+/*
+ * test_fpga_spectrum.c — Espectro de la FPGA como fuente alternativa del motor (sin placa).
+ *
+ *  1. fpga_lab_choose_params: N y K para una cascada de 'fps' imágenes/s y el límite de caudal.
+ *  2. Tramas sintéticas con el formato del HDL (firmware/hdl, docs/hardware/FIRMWARE.md §10:
+ *     cabecera de 8 palabras {magic0, magic1, N|K<<16, grupo, ts_lo, ts_hi, 8|versión<<8, total},
+ *     N palabras {E[5:0], M[25:0]} en orden fftshift y relleno hasta múltiplo de 2048) →
+ *     intérprete → dBFS → mensaje binario tipo 1 (byte [1] = 2): cabecera y bytes cuantizados.
+ *     Un tono de amplitud 1000 (Q11) en el bin +100 debe leerse a su nivel teórico.
+ *  3. Motor con fuente de fichero: pedir "fpga" da error claro; "cpu"/"gpu" valen y el motor
+ *     sigue funcionando; "status" dice que no hay lab.
+ */
+#include "test_util.h"
+
+#include "engine.h"
+#include "sdr/fpga_lab.h"
+#include "tx/mod.h"
+#include "tx/tx.h"
+
+#include <unistd.h>
+
+#define N 1024
+#define K 4
+#define TOTAL 2048
+
+/* Palabra de potencia {E,M} para un valor acc (exacto hasta 26 bits de mantisa). */
+static uint32_t make_power(uint64_t acc)
+{
+    unsigned e = 0;
+    while ((acc >> e) > 0x3FFFFFFu) e++;
+    return (uint32_t)((acc >> e) & 0x3FFFFFFu) | (e << 26);
+}
+
+/* Trama sintética: ruido de potencia 'floor' y un tono de potencia 'tone' en el bin idx (0..N-1 = -N/2..N/2-1). */
+static int build_frame(uint32_t *w, uint32_t group, int tone_idx, uint64_t floor_p, uint64_t tone_p, bool dropped)
+{
+    w[0] = FPGA_SPEC_MAGIC0;
+    w[1] = FPGA_SPEC_MAGIC1;
+    w[2] = (uint32_t)N | ((uint32_t)K << 16);
+    w[3] = group;
+    uint64_t ts = (uint64_t)group * K * N;
+    w[4] = (uint32_t)ts;
+    w[5] = (uint32_t)(ts >> 32);
+    w[6] = 8u | (1u << 8) | (dropped ? 1u << 16 : 0);
+    w[7] = TOTAL;
+    for (int i = 0; i < N; i++)
+        w[8 + i] = make_power(i == tone_idx ? tone_p : floor_p + (uint64_t)(i % 7));
+    for (int i = 8 + N; i < TOTAL; i++)
+        w[i] = 0xDEADBEEFu; /* relleno */
+    return TOTAL;
+}
+
+typedef struct {
+    int count;
+    float db[N];
+    uint8_t msg[32 + N];
+    size_t msglen;
+    bool dropped;
+} cap_t;
+
+static void on_frame(void *ctx, const fpga_lab_frame_t *f)
+{
+    cap_t *c = ctx;
+    c->count++;
+    c->dropped = f->dropped;
+    fpga_lab_frame_to_dbfs(f, c->db);
+    c->msglen = spectrum_msg_pack(c->msg, c->db, f->n, SPEC_SRC_FPGA, 100e6, 30.72e6, -145.f, 0.6f);
+}
+
+static void test_params(void)
+{
+    int l, k;
+    /* 30,72 Msps, FFT 4096, 20 imágenes/s: K ≈ 375, 6144 palabras/trama */
+    CHECK_EQ(fpga_lab_choose_params(4096, 30.72e6, 20, &l, &k), 6144);
+    CHECK_EQ(l, 12);
+    CHECK_EQ(k, 375);
+    /* FFT pedida fuera de rango: se acota a 1024..8192 */
+    CHECK_EQ(fpga_lab_choose_params(256, 2e6, 30, &l, &k), 2048);
+    CHECK_EQ(l, 10);
+    CHECK_EQ(fpga_lab_choose_params(65536, 2e6, 30, &l, &k), 10240);
+    CHECK_EQ(l, 13);
+    /* Caudal acotado: nunca más de 3 Mpalabras/s */
+    for (int fps = 1; fps <= 60; fps += 7)
+        for (int fft = 1024; fft <= 8192; fft *= 2) {
+            int tot = fpga_lab_choose_params(fft, 61.44e6, fps, &l, &k);
+            CHECK(tot > 0 && k >= 1);
+            double wps = 61.44e6 * tot / ((double)(1 << l) * k);
+            CHECK(wps <= FPGA_LAB_MAX_WORDS_PER_S * 1.001);
+        }
+    CHECK(fpga_lab_choose_params(4096, 0, 20, &l, &k) < 0);
+    CHECK(fpga_lab_choose_params(4096, 1e6, 0, &l, &k) < 0);
+}
+
+static void test_frames(void)
+{
+    cap_t cap;
+    memset(&cap, 0, sizeof cap);
+    fpga_lab_parser_t *p = fpga_lab_parser_create(on_frame, &cap);
+    static uint32_t stream[4 * TOTAL];
+    const int tone_idx = N / 2 + 100;
+    /* acc = K·|X|²/4 con |X|² = (A·Σw·2048…)²: se parte de la potencia teórica en dBFS */
+    const double wsum = fpga_lab_window_sum(N);
+    const double tone_dbfs = 20 * log10(1000.0 / 2048.0);
+    const double acc_tone = pow(10.0, tone_dbfs / 10.0) * pow(2048.0 * wsum, 2) * K / 4.0;
+    const double floor_dbfs = -80.0;
+    const double acc_floor = pow(10.0, floor_dbfs / 10.0) * pow(2048.0 * wsum, 2) * K / 4.0;
+    int n = 0;
+    n += build_frame(stream + n, 0, tone_idx, (uint64_t)acc_floor, (uint64_t)acc_tone, false);
+    /* basura entre tramas (palabras perdidas) y una trama con grupo saltado */
+    stream[n++] = 0x12345678u;
+    stream[n++] = 0x9ABCDEF0u;
+    n += build_frame(stream + n, 2, tone_idx, (uint64_t)acc_floor, (uint64_t)acc_tone, true);
+    /* en trozos irregulares */
+    for (int i = 0; i < n;) {
+        int m = 1 + (i * 131) % 1000;
+        if (i + m > n) m = n - i;
+        fpga_lab_parser_feed_words(p, stream + i, (size_t)m);
+        i += m;
+    }
+    uint64_t frames, skipped, gaps;
+    fpga_lab_parser_stats(p, &frames, &skipped, &gaps);
+    CHECK_EQ(cap.count, 2);
+    CHECK_EQ(frames, 2);
+    CHECK_EQ(gaps, 1);
+    CHECK(cap.dropped);
+    CHECK(skipped >= 2);
+
+    /* Mensaje tipo 1 de la última trama */
+    const uint8_t *m = cap.msg;
+    CHECK_EQ(cap.msglen, 32 + N);
+    CHECK_EQ(m[0], 1);
+    CHECK_EQ(m[1], SPEC_SRC_FPGA);
+    uint32_t nn;
+    double ctr, rate;
+    float dbmin, dbstep;
+    memcpy(&nn, m + 4, 4);
+    memcpy(&ctr, m + 8, 8);
+    memcpy(&rate, m + 16, 8);
+    memcpy(&dbmin, m + 24, 4);
+    memcpy(&dbstep, m + 28, 4);
+    CHECK_EQ(nn, N);
+    CHECK_NEAR(ctr, 100e6, 1);
+    CHECK_NEAR(rate, 30.72e6, 1);
+    CHECK_NEAR(dbmin, -145.0, 1e-6);
+    CHECK_NEAR(dbstep, 0.6, 1e-6);
+    /* byte → dBFS = dbmin + v·dbstep, con 0,6 dB de resolución */
+    CHECK_NEAR(dbmin + m[32 + tone_idx] * dbstep, tone_dbfs, 0.7);
+    CHECK_NEAR(dbmin + m[32 + 10] * dbstep, floor_dbfs, 0.7);
+    CHECK_NEAR(cap.db[tone_idx], tone_dbfs, 0.05);
+    CHECK_NEAR(cap.db[10], floor_dbfs, 0.05);
+    printf("  tono: %.2f dBFS (teórico %.2f), suelo %.2f dBFS (teórico %.1f)\n", cap.db[tone_idx], tone_dbfs,
+           cap.db[10], floor_dbfs);
+    /* saturación: fuera de rango se acota a 0 / 255 */
+    float x[2] = {-300.f, 50.f};
+    uint8_t o[34];
+    spectrum_msg_pack(o, x, 2, SPEC_SRC_CPU, 1.0, 2.0, -145.f, 0.6f);
+    CHECK_EQ(o[1], 0);
+    CHECK_EQ(o[32], 0);
+    CHECK_EQ(o[33], 255);
+    fpga_lab_parser_destroy(p);
+}
+
+static void test_engine_file(void)
+{
+    const char *prefix = "/tmp/test_fpga_spec_src";
+    iqbuf_t iq = {0};
+    iq.rate = 1e6;
+    iq.n = 200000;
+    iq.s = calloc((size_t)iq.n, sizeof(cf32));
+    for (int i = 0; i < iq.n; i++)
+        iq.s[i] = (cf32){0.5f * cosf(2.f * (float)M_PI * 0.1f * (float)i), 0.5f * sinf(2.f * (float)M_PI * 0.1f * (float)i)};
+    char err[300] = "";
+    CHECK(tx_write_sigmf(prefix, &iq, 1, 433920000, "tono de prueba", err, sizeof err) == 0);
+    source_t *src = source_open_file("/tmp/test_fpga_spec_src.sigmf-meta", 0, 0, err, sizeof err);
+    CHECK(src != NULL);
+    if (!src) return;
+    server_callbacks_t cb = {0};
+    server_t *srv = server_create("127.0.0.1", 0, "web", "/tmp", &cb, NULL, err, sizeof err);
+    CHECK(srv != NULL);
+    engine_cfg_t cfg = {.center_hz = 433920000, .rate = 1000000, .fft_size = 1024, .fps = 20, .det_snr = 10};
+    engine_t *e = engine_create(src, srv, &cfg, false, "/tmp");
+    CHECK(e != NULL);
+    CHECK(engine_start(e) == 0);
+
+    CHECK(engine_set_spectrum_src(e, "fpga", err, sizeof err) < 0);
+    CHECK(strstr(err, "bladeRF") != NULL && strstr(err, "fichero") != NULL);
+    CHECK(engine_set_spectrum_src(e, "nada", err, sizeof err) < 0);
+    CHECK(engine_set_spectrum_src(e, "cpu", err, sizeof err) == 0);
+    CHECK(engine_set_spectrum_src(e, "gpu", err, sizeof err) == 0);
+    /* el motor sigue vivo: sintoniza y reporta que la lab no está */
+    CHECK(engine_wait_tuned(e, 433920000, 1000000, 3.0));
+    usleep(200000);
+    sb_t sb = {0};
+    engine_status_json(e, &sb);
+    CHECK(strstr(sb.data, "\"spectrum_src\":\"cpu\"") != NULL);
+    CHECK(strstr(sb.data, "\"fpga_lab\":{\"present\":false,\"active\":false}") != NULL);
+    sb_free(&sb);
+
+    engine_destroy(e);
+    server_destroy(srv);
+    source_close(src);
+    iqbuf_free(&iq);
+}
+
+int main(void)
+{
+    test_params();
+    test_frames();
+    test_engine_file();
+    return TEST_SUMMARY();
+}

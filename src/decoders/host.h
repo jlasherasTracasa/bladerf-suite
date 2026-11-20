@@ -90,6 +90,10 @@ bool dec_host_auto_sync(dec_host_t *h, double timeout_s); /* espera a que el hil
  * on=false (p. ej. --no-gpu) lo desactiva; BLADERF_DDC_GPU=0 hace lo mismo.
  * Solo tiene efecto sobre instancias que se (re)configuren después. */
 void dec_host_set_gpu(dec_host_t *h, bool on);
+
+/* Suspensión global: mientras el motor no entrega IQ (espectro generado en la FPGA) las
+ * instancias se muestran "waiting" con 'reason' como texto. NULL o "" la levanta. */
+void dec_host_set_suspended(dec_host_t *h, const char *reason);
 /* Estado del DDC en GPU: false si no se usa. n_ch canales, bloques crudos
  * procesados y descartados, segundos de GPU y de CPU del hilo gestor. */
 bool dec_host_gpu_info(dec_host_t *h, char *dev, size_t devlen, int *n_ch, unsigned long *blocks,

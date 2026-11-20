@@ -135,6 +135,7 @@ struct dec_host {
     int npool;
     double t_state, t_list, t_load;
     atomic_int list_dirty;
+    char suspended[120]; /* no hay IQ (ver dec_host_set_suspended); protegido por h->lock */
     /* DDC en GPU compartido (se crea la primera vez que hace falta) */
     pthread_mutex_t gpu_lock;
     ddc_mgr_t *mgr;
@@ -1025,12 +1026,13 @@ void dec_host_list_json(dec_host_t *h, sb_t *sb)
         if (!in)
             continue;
         pthread_mutex_lock(&in->m);
+        const bool susp = h->suspended[0] && in->state != ST_ERROR;
         double rate = in->rate_now > 0 ? in->rate_now : (in->d->kind == DEC_WIDE ? h->fs : in->d->rate);
         sb_printf(sb, "%s{\"inst\":%d,\"proto\":\"%s\",\"freq\":%lld,\"rate\":%.0f,\"owner\":%d,\"state\":\"%s\","
                       "\"err\":",
                   first ? "" : ",", in->id, in->d->id, (long long)in->freq, rate, in->owner,
-                  STATE_NAMES[in->state]);
-        sb_json_str(sb, in->err);
+                  susp ? STATE_NAMES[ST_WAITING] : STATE_NAMES[in->state]);
+        sb_json_str(sb, susp ? h->suspended : in->err);
         sb_printf(sb, ",\"events\":%lu,\"drops\":%lu,\"load\":%.3f}", in->events, in->drops, in->load);
         pthread_mutex_unlock(&in->m);
         first = false;
@@ -1189,13 +1191,22 @@ bool dec_host_inst_info(dec_host_t *h, int id, char *state, size_t slen, char *e
         if (!in || in->id != id)
             continue;
         pthread_mutex_lock(&in->m);
-        snprintf(state, slen, "%s", STATE_NAMES[in->state]);
-        snprintf(err, elen, "%s", in->err);
+        const bool susp = h->suspended[0] && in->state != ST_ERROR;
+        snprintf(state, slen, "%s", susp ? STATE_NAMES[ST_WAITING] : STATE_NAMES[in->state]);
+        snprintf(err, elen, "%s", susp ? h->suspended : in->err);
         pthread_mutex_unlock(&in->m);
         ok = true;
     }
     pthread_mutex_unlock(&h->lock);
     return ok;
+}
+
+void dec_host_set_suspended(dec_host_t *h, const char *reason)
+{
+    pthread_mutex_lock(&h->lock);
+    snprintf(h->suspended, sizeof h->suspended, "%s", reason ? reason : "");
+    pthread_mutex_unlock(&h->lock);
+    atomic_store(&h->list_dirty, 1);
 }
 
 void dec_host_set_gpu(dec_host_t *h, bool on)

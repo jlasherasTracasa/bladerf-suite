@@ -18,6 +18,7 @@
 #define BLADERF_LAB_SOURCE_H
 
 #include "../common.h"
+#include "fpga_lab.h"
 
 /* Modos de ganancia del receptor (AD9361, ver libbladeRF: bladerf_gain_mode).
  *   AUTO    = el modo "por defecto" de libbladeRF (en el 2.0 micro: AGC lenta)
@@ -92,6 +93,12 @@ void source_sc8_to_q11(const int8_t *in, int16_t *out, size_t n_values);
 /* Flujo de baja latencia (búferes pequeños) para el barrido; surte efecto en el
  * próximo source_start(). */
 void source_set_low_latency(source_t *s, bool on);
+
+/* E/S hacia la FPGA para fpga_lab (versión, config_gpio, Wishbone) con el dispositivo de
+ * esta fuente. 0 si va bien; < 0 si la fuente no es un bladeRF. Los accesos a la
+ * placa los serializa libbladeRF, pero quien los llame debe ser el hilo que ya
+ * gobierna la fuente (el DSP del motor, con el lector en pausa). */
+int source_fpga_lab_io(source_t *s, fpga_lab_io_t *io);
 
 /* Arranca/para el flujo de recepción. */
 int source_start(source_t *s);

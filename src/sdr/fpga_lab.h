@@ -144,6 +144,25 @@ void fpga_lab_frame_to_dbfs(const fpga_lab_frame_t *f, float *db);
 /* dBFS de una potencia acumulada concreta, para un N y un K dados. */
 double fpga_lab_power_to_dbfs(double acc, int n, int k);
 
+/* ---- Integración con el motor (fuente de espectro alternativa) ------------ */
+
+/* Origen del espectro, byte [1] del mensaje binario tipo 1 (antes solo 0/1 = CPU/GPU). */
+enum { SPEC_SRC_CPU = 0, SPEC_SRC_GPU = 1, SPEC_SRC_FPGA = 2 };
+
+/* Elige N (2^log2n, 1024..8192) y K para una cascada de 'fps' imágenes/s a la tasa 'rate':
+ * K = rate/(fps·N) (un grupo de K tramas de FFT por imagen), con el mínimo que mantiene el
+ * flujo USB por debajo de FPGA_LAB_MAX_WORDS_PER_S (docs/hardware/FIRMWARE.md §16.4). 'fft' es
+ * el tamaño pedido a la interfaz: se acota a 1024..8192. Devuelve las palabras por trama con
+ * relleno (múltiplo de 2048) o < 0 si los parámetros no son válidos. */
+#define FPGA_LAB_MAX_WORDS_PER_S 3000000.0
+int fpga_lab_choose_params(int fft, double rate, int fps, int *log2n, int *k);
+
+/* Empaqueta el mensaje binario tipo 1 (espectro): cabecera de 32 bytes + n bytes,
+ * v = (dB − dbmin)/dbstep saturado a 0..255. Es el mismo formato para las tres fuentes. Devuelve el
+ * tamaño total (32 + n). out debe tener 32 + n bytes. */
+size_t spectrum_msg_pack(uint8_t *out, const float *db, int n, int src, double center, double rate, float dbmin,
+                         float dbstep);
+
 /* Adaptador a libbladeRF (solo con -DFPGA_LAB_WITH_LIBBLADERF). dev es un struct bladerf *. */
 #ifdef FPGA_LAB_WITH_LIBBLADERF
 void fpga_lab_io_bladerf(fpga_lab_io_t *io, void *bladerf_dev);

@@ -17,6 +17,21 @@ function fillRates(st) {
   fillSelect(sel, [...set].sort((a, b) => a - b).map((r) => [r, (r / 1e6).toFixed(r % 1e5 ? 3 : 2).replace(/\.?0+$/, '') + ' Msps']), st.rate);
 }
 
+// Fuente del espectro: CPU/GPU o motor de la imagen lab (FPGA). La opción FPGA solo se
+// habilita si el servidor detectó la lab (status.fpga_lab.present).
+function renderSpectrumSrc(st) {
+  const sel = $('#hw-sspec'), note = $('#hw-sspec-note'), lab = st.fpga_lab || { present: false, active: false };
+  const fpga = sel.querySelector('option[value="fpga"]');
+  fpga.disabled = !lab.present;
+  fpga.textContent = lab.present ? `FPGA (imagen lab ${lab.version || ''})`.trim() : 'FPGA (la imagen lab no está cargada)';
+  if (!editing(sel)) sel.value = st.spectrum_src === 'fpga' ? 'fpga' : 'cpu';
+  sel.querySelector('option[value="cpu"]').textContent = st.spectrum_src === 'gpu' ? 'GPU (FFT propia)' : 'CPU (FFT propia)';
+  note.hidden = !lab.active;
+  note.textContent = lab.active
+    ? `Espectro de la FPGA: N=${lab.n}, K=${lab.k}, ${lab.frames} tramas${lab.gaps ? `, ${lab.gaps} huecos` : ''}. Sin muestras IQ: el audio, la grabación y los decodificadores esperan.`
+    : '';
+}
+
 function renderStatus(st) {
   const d = st.device;
   fillRates(st);
@@ -45,6 +60,7 @@ function renderStatus(st) {
     $('#hw-lat').value = st.loc ? st.loc.lat : ''; $('#hw-lon').value = st.loc ? st.loc.lon : '';
   }
   for (const id of ['#hw-center', '#hw-rate', '#hw-rfbw', '#hw-gmode']) $(id).disabled = !d.can_tune;
+  renderSpectrumSrc(st);
   const kv = [
     ['Tipo', d.kind], ['Placa', d.board], ['Serie', d.serial], ['Firmware FX3', d.fw], ['FPGA', d.fpga], ['libbladeRF', d.lib],
     ['Frecuencia', `${fmtHz(d.freq_min)} – ${fmtHz(d.freq_max)}`], ['Tasa', `${fmtHz(d.rate_min)} – ${fmtHz(d.rate_max)}`],
@@ -98,6 +114,13 @@ export function initHardware() {
   $('#hw-bias').addEventListener('change', (e) => {
     if (e.target.checked && !confirm('El bias-tee pone tensión en el conector de antena. Actívalo solo con una antena activa que lo necesite. ¿Continuar?')) { e.target.checked = false; return; }
     cfg({ biastee: e.target.checked });
+  });
+  $('#hw-sspec').addEventListener('change', (e) => {
+    if (e.target.value === 'fpga' && !confirm('Con el espectro de la FPGA no hay muestras IQ: se pausan el audio, la grabación y los decodificadores. ¿Continuar?')) {
+      if (S.status) renderSpectrumSrc(S.status);
+      return;
+    }
+    cfg({ spectrum_src: e.target.value });
   });
   $('#hw-fft').addEventListener('change', (e) => cfg({ fft: +e.target.value }));
   $('#hw-fps').addEventListener('change', (e) => cfg({ fps: Math.max(1, Math.min(60, +e.target.value || 20)) }));

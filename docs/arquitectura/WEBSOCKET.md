@@ -17,7 +17,7 @@ con `Host`). Todo es little-endian. Hay mensajes binarios (datos) y JSON (contro
 
 | Tipo | Cabecera | Datos |
 |---|---|---|
-| 1 espectro | `[1]`=1 si GPU, `[4..7]` u32 n, `[8..15]` f64 centro Hz, `[16..23]` f64 tasa, `[24..27]` f32 dbmin, `[28..31]` f32 dbstep | n bytes `v`: dBFS = dbmin + v·dbstep. Hoy dbmin = −145, dbstep = 0,6 (rango −145…+8 dBFS; 0 dBFS = tono complejo de amplitud 1,0): léelos siempre de la cabecera |
+| 1 espectro | `[1]` = origen del espectro: 0 CPU, 1 GPU, 2 FPGA (imagen lab; los clientes antiguos que solo comparan con 1 lo toman como CPU), `[4..7]` u32 n, `[8..15]` f64 centro Hz, `[16..23]` f64 tasa, `[24..27]` f32 dbmin, `[28..31]` f32 dbstep | n bytes `v`: dBFS = dbmin + v·dbstep. Hoy dbmin = −145, dbstep = 0,6 (rango −145…+8 dBFS; 0 dBFS = tono complejo de amplitud 1,0): léelos siempre de la cabecera |
 | 2 audio | `[1]` flags, `[2]` canales (1/2), `[4..7]` f32 nivel dBFS | PCM int16 48 kHz intercalado |
 | 3 nivel | igual que audio | — (sin datos) |
 | 4 barrido | ver abajo (cabecera de 32 bytes como el tipo 1) | n bytes `v`, dBFS = dbmin + v·dbstep |
@@ -43,6 +43,9 @@ continua (±2 bins del centro) ya viene sustituido en el espectro.
            "gain_min","gain_max","can_tune","biastee","can_tx"},
  "center","rate","rf_bw","gain_mode":"auto|manual|fast|slow|hybrid","gain","gain_now",
  "format":"sc16|sc8|…","oversample":bool,"dbm_offset":dB|null,
+ "spectrum_src":"cpu|gpu|fpga",
+ "fpga_lab":{"present":bool,"active":bool,"version":"1.1"   (solo si present),
+             "n","k","frames","gaps"                         (solo si active)},
  "sweep":null|{"start","stop","fft","rate","hops","bins","mode":"quick|slow","sweeps","restarts"},
  "biastee","fft","fps","det_snr","profile":"id"|null,"loc":{"lat","lon"}|null,
  "stats":{"rate","overruns","drops","ring_ms","temp","load","clients","sent","backend"}}
@@ -120,7 +123,8 @@ válido responde `error`.
 
 ```
 {"cmd":"config","center":Hz,"rate":Hz,"rf_bw":Hz,"gain_mode":"auto|manual","gain":dB,
- "biastee":bool,"fft":N,"fps":N,"det_snr":dB,"loc":{"lat":..,"lon":..}|null}
+ "biastee":bool,"fft":N,"fps":N,"det_snr":dB,"loc":{"lat":..,"lon":..}|null,
+ "spectrum_src":"cpu|gpu|fpga"}
 {"cmd":"channel","freq":Hz,"mode":"wfm|nfm|am|usb|lsb|cw","bw":Hz,"squelch":dBFS|null,
  "deemph":50|75|0,"stereo":bool,"audio":bool}
 {"cmd":"profile","id":"ais"}
@@ -169,6 +173,22 @@ Notas:
   decodificadores ni grabación, y una `config` queda pendiente. `sweep_stop` repone la
   configuración normal. Errores (`error`): fuente de fichero, rango vacío o fuera del
   equipo, `fft` no válido. Ver ../hardware/HARDWARE.md.
+
+### Espectro de la FPGA (`spectrum_src`)
+
+`{"cmd":"config","spectrum_src":"fpga"}` conmuta en caliente a las tramas de espectro del
+motor de la imagen «lab» (rx_mux = 3; ver `docs/hardware/HARDWARE.md` §7). `"cpu"` o `"gpu"`
+vuelven a la FFT propia (el motor FFT lo decide `--no-gpu`). Reglas:
+
+- Con fuente de fichero, `fpga` responde `error` y no cambia nada. Con un bladeRF sin la lab
+  cargada (FPGA 0.16.0), el motor lo comprueba sin tocar el bus Wishbone y responde `error`.
+- N sale de `fft` (acotado a 1024…8192) y K de `rate/(fps·N)`: cambiar tasa, FFT o fps
+  reconfigura el motor. Con `rate` > 61,44 Msps (oversample) no se admite.
+- Se difunde el mismo mensaje binario tipo 1 (cabecera con `[1]` = 2); `status.stats.backend`
+  dice «FPGA lab (N=…, K=…)». El detector y el S-meter de los canales siguen funcionando.
+- Mientras dura no hay IQ: el audio no suena, `record` y `sweep` dan `error`, y los
+  decodificadores aparecen en `dec_list` como `"waiting"` con el aviso en `err`.
+- Si dejan de llegar tramas 3 s, el motor vuelve solo a CPU/GPU (con `error` y `status`).
 
 ## TV (pestaña «TV», AGENTS.md §8c)
 

@@ -81,6 +81,14 @@ void engine_get_config(engine_t *e, engine_cfg_t *out);
 int engine_sweep_start(engine_t *e, int64_t start_hz, int64_t stop_hz, int fft, char *err, size_t errlen);
 void engine_sweep_stop(engine_t *e);
 
+/* Fuente del espectro: "cpu"/"gpu" (FFT propia sobre las muestras IQ) o "fpga" (el motor de la
+ * imagen lab calcula la FFT y el USB solo lleva tramas de espectro; ver sdr/fpga_lab.h). La
+ * conmutación se hace en caliente en el hilo DSP. En modo fpga no hay IQ: audio, grabación y
+ * decodificadores esperan; se vuelve solo a CPU/GPU si dejan de llegar tramas. < 0 con err si
+ * el valor no es válido o la fuente es un fichero; los fallos de detección (la imagen cargada
+ * no es la lab…) llegan después como mensaje "error" y el motor se queda como estaba. */
+int engine_set_spectrum_src(engine_t *e, const char *src, char *err, size_t errlen);
+
 /* Canales de audio (uno por cliente WebSocket) */
 void engine_add_client(engine_t *e, int client);
 void engine_remove_client(engine_t *e, int client);

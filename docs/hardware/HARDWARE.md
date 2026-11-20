@@ -174,3 +174,20 @@ bloque da varias vueltas al fichero).
 2. Barrido: `--replay` no sirve; lanzar `{"cmd":"sweep","start":70e6,"stop":6e9}` y medir
    `sweeps`/`restarts`, nivel de costuras con un generador de señal y retraso real del retune.
 3. `dbm_offset` con una tabla de calibración instalada.
+
+## 7. Espectro generado en la FPGA (imagen «lab»)
+
+Fuente de espectro alternativa (CPU / GPU / FPGA) del motor, `src/engine.c` + `src/sdr/fpga_lab.*`.
+
+- **Detección**: `engine_create` llama a `fpga_lab_probe` (versión de FPGA 0.16.101 y marca 0xA en
+  `config_gpio` antes de tocar Wishbone; en la imagen de serie no se accede al bus). Aparece en
+  `status.fpga_lab.present` (y `version`). Si se carga la lab con el servidor ya arrancado, se
+  vuelve a sondear al pedir `spectrum_src: "fpga"`.
+- **Activación** (hilo DSP, lector en pausa): RX parado → sondeo → N/K (`fpga_lab_choose_params`:
+  N = FFT pedida en 1024…8192, K = rate/(fps·N), con relleno) → RX con rx_mux = 0 → 4 lecturas →
+  rx_mux = 3 («late-mux», §16.2 de FIRMWARE.md). El anillo pasa a bloques de 4096 palabras.
+- **Datos**: las palabras SC16 van al intérprete de tramas; cada trama se convierte a dBFS y sigue
+  el camino normal (relleno del pico de continua, detector, S-meter, mensaje tipo 1 con `[1]` = 2).
+- **Salida**: `spectrum_src: "cpu"|"gpu"` (rx_mux = 0, se reinicia el flujo IQ y se reconstruye
+  la FFT) o automática si no llegan tramas en 3 s. No hay IQ en modo FPGA: grabar y barrer se rechazan.
+- Pruebas sin placa: `tests/test_fpga_spectrum.c`. En placa, secuencia de prueba en el informe de F1.

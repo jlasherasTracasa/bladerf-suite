@@ -323,6 +323,47 @@ void fpga_lab_parser_feed_iq(fpga_lab_parser_t *p, const int16_t *iq, size_t nsa
     }
 }
 
+/* ---- Integración con el motor ---------------------------------------------- */
+
+int fpga_lab_choose_params(int fft, double rate, int fps, int *log2n, int *k)
+{
+    if (rate <= 0 || fps < 1 || !log2n || !k) return -1;
+    int l = 10;
+    while (l < 13 && (1 << l) < fft) l++;
+    const int n = 1 << l;
+    /* Palabras por trama: cabecera + N, completado a múltiplos de 2048 (relleno de la FPGA,
+     * necesario para que el último paquete USB no se quede retenido en el FX3). */
+    const int total = ((n + FPGA_SPEC_HDR_WORDS + 2047) / 2048) * 2048;
+    double kk = rate / ((double)fps * n);
+    const double kmin = rate * total / ((double)n * FPGA_LAB_MAX_WORDS_PER_S);
+    if (kk < kmin) kk = kmin;
+    kk = ceil(kk - 1e-9);
+    if (kk > 65535.0) kk = 65535.0;
+    if (kk < 1.0) kk = 1.0;
+    *log2n = l;
+    *k = (int)kk;
+    return total;
+}
+
+size_t spectrum_msg_pack(uint8_t *m, const float *db, int n, int src, double center, double rate, float dbmin,
+                         float dbstep)
+{
+    memset(m, 0, 32);
+    m[0] = 1;
+    m[1] = (uint8_t)src;
+    const uint32_t nn = (uint32_t)n;
+    memcpy(m + 4, &nn, 4);
+    memcpy(m + 8, &center, 8);
+    memcpy(m + 16, &rate, 8);
+    memcpy(m + 24, &dbmin, 4);
+    memcpy(m + 28, &dbstep, 4);
+    for (int i = 0; i < n; i++) {
+        float v = (db[i] - dbmin) / dbstep;
+        m[32 + i] = (uint8_t)(v < 0.f ? 0.f : v > 255.f ? 255.f : v);
+    }
+    return 32 + (size_t)n;
+}
+
 /* ---- Adaptador a libbladeRF ---------------------------------------------- */
 
 #ifdef FPGA_LAB_WITH_LIBBLADERF

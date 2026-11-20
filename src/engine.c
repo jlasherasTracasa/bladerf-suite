@@ -80,6 +80,20 @@ struct engine {
     bool sweep_active;     /* publicado en "status" */
     sweep_info_t sweep_info;
     float dsp_load;
+    /* --- espectro generado en la FPGA (imagen "lab"; ver fpga_lab.h) ---
+     * lab y los campos fpga_* los toca solo el hilo DSP (y engine_create antes de
+     * arrancarlo); fpga_active/fpga_info se publican bajo e->lock para el estado. */
+    fpga_lab_t lab;
+    bool lab_present_pub; /* copias de lab.present/version y del motor de espectro para "status" (bajo e->lock) */
+    uint32_t lab_version_pub;
+    bool spec_gpu;
+    int ssrc_cmd;          /* 0 nada, 1 pasar a FPGA, 2 volver a CPU/GPU (bajo e->lock) */
+    bool fpga_active;
+    fpga_lab_parser_t *fpar;
+    int fpga_n, fpga_k;
+    float *fpga_db;        /* FPGA_SPEC_NMAX valores dBFS de la trama en curso */
+    double fpga_t_last;    /* instante (monotónico) de la última trama útil */
+    uint64_t fpga_frames, fpga_gaps; /* publicados en "status" (copia de las estadísticas del parser) */
     char spec_backend[160];
     char last_error[300];
     det_signal_t sigs[MAX_SIGNALS];
@@ -239,21 +253,9 @@ static void on_spectrum(void *ctx, const float *db_in, int n, int navg)
         e->specmsg_cap = need;
     }
     uint8_t *m = e->specmsg;
-    memset(m, 0, 32);
-    m[0] = BIN_SPECTRUM;
-    m[1] = spectrum_using_gpu(e->spec) ? 1 : 0;
-    uint32_t nn = (uint32_t)n;
-    double center = (double)source_frequency(e->src), rate = (double)source_rate(e->src);
-    float dbmin = DB_MIN, dbstep = DB_STEP;
-    memcpy(m + 4, &nn, 4);
-    memcpy(m + 8, &center, 8);
-    memcpy(m + 16, &rate, 8);
-    memcpy(m + 24, &dbmin, 4);
-    memcpy(m + 28, &dbstep, 4);
-    for (int i = 0; i < n; i++) {
-        float v = (db[i] - DB_MIN) / DB_STEP;
-        m[32 + i] = (uint8_t)CLAMP(v, 0.f, 255.f);
-    }
+    const int src = e->fpga_active ? SPEC_SRC_FPGA : spectrum_using_gpu(e->spec) ? SPEC_SRC_GPU : SPEC_SRC_CPU;
+    need = spectrum_msg_pack(m, db, n, src, (double)source_frequency(e->src), (double)source_rate(e->src), DB_MIN,
+                             DB_STEP);
     server_send_binary(e->srv, -1, m, need, true);
 }
 
@@ -303,6 +305,7 @@ static void rebuild_spectrum(engine_t *e, const engine_cfg_t *c)
     }
     pthread_mutex_lock(&e->lock);
     snprintf(e->spec_backend, sizeof e->spec_backend, "%s", e->spec ? spectrum_backend(e->spec) : "?");
+    e->spec_gpu = e->spec && spectrum_using_gpu(e->spec);
     e->nsigs = 0;
     pthread_mutex_unlock(&e->lock);
 }
@@ -480,6 +483,176 @@ static void alloc_block(engine_t *e, uint32_t rate)
     e->buf = realloc(e->buf, sizeof(cf32) * b);
 }
 
+static void send_recording(engine_t *e, int client);
+static void send_status(engine_t *e);
+
+/* ======================================================================= */
+/*  Espectro generado en la FPGA (imagen "lab")                            */
+/* ======================================================================= */
+/* Con rx_mux = 3 el flujo SC16 que sale de la placa no son muestras IQ sino tramas de
+ * espectro (fpga_lab.h): la FPGA hace la FFT y promedia K tramas, así que el USB solo
+ * lleva ~0,2 Mpalabras/s aunque el ADC corra a 61,44 Msps. El lector y el anillo no
+ * cambian (siguen entregando "muestras" que ahora son palabras de 32 bits); el hilo
+ * DSP las pasa al intérprete y de cada trama sale el mismo mensaje binario tipo 1 que
+ * produce la FFT de CPU/GPU, con el byte [1] = 2. Sin IQ no hay audio, grabación ni
+ * decodificadores: el motor lo dice con un aviso y el host los pone en "waiting". */
+#define FPGA_BLOCK_WORDS 4096u      /* palabras por bloque del anillo en modo FPGA (~20 ms) */
+#define FPGA_WARMUP_READS 4         /* búferes leídos con rx_mux = 0 antes de activar el espectro (late-mux) */
+#define FPGA_FRAME_TIMEOUT_S 3.0    /* sin tramas durante este tiempo → vuelta a CPU/GPU */
+#define FPGA_SUSPEND_MSG "Espectro FPGA activo: sin muestras IQ (el audio y los decodificadores esperan)"
+
+static void fpga_frame_cb(void *ctx, const fpga_lab_frame_t *f)
+{
+    engine_t *e = ctx;
+    e->fpga_t_last = now_monotonic();
+    if (f->n != e->fpga_n || server_client_count(e->srv) == 0)
+        return; /* una trama de otro N (llegada tras un cambio de configuración) no se dibuja */
+    fpga_lab_frame_to_dbfs(f, e->fpga_db);
+    on_spectrum(e, e->fpga_db, f->n, f->k);
+}
+
+static void fpga_publish(engine_t *e, bool active)
+{
+    pthread_mutex_lock(&e->lock);
+    e->fpga_active = active;
+    pthread_mutex_unlock(&e->lock);
+    if (e->host)
+        dec_host_set_suspended(e->host, active ? FPGA_SUSPEND_MSG : NULL);
+}
+
+/* Pasa a espectro FPGA con la configuración c. Hilo DSP. < 0 con err si no se puede
+ * (en ese caso la fuente queda como estaba: modo IQ normal). */
+static int fpga_enter(engine_t *e, const engine_cfg_t *c, char *err, size_t el)
+{
+    const source_info_t *in = source_info(e->src);
+    if (strcmp(in->kind, "bladerf") != 0) {
+        snprintf(err, el, "el espectro FPGA exige un bladeRF con la imagen lab (la fuente es un fichero)");
+        return -1;
+    }
+    if (c->rate > SOURCE_RATE_NATIVE_MAX || source_oversample(e->src)) {
+        snprintf(err, el, "el espectro FPGA no se combina con el modo oversample (máx. %.2f Msps)",
+                 SOURCE_RATE_NATIVE_MAX / 1e6);
+        return -1;
+    }
+    int log2n, k;
+    if (fpga_lab_choose_params(c->fft_size, (double)c->rate, c->fps, &log2n, &k) < 0) {
+        snprintf(err, el, "parámetros de espectro FPGA no válidos");
+        return -1;
+    }
+    if (!e->fpga_db) {
+        e->fpga_db = malloc(sizeof(float) * FPGA_SPEC_NMAX);
+        if (!e->fpga_db) {
+            snprintf(err, el, "sin memoria");
+            return -1;
+        }
+    }
+    reader_pause(e);
+    int rc = -1;
+    bool started = false;
+    /* 1) RX parado: es seguro tocar la imagen. Detección (también si la lab se cargó con el servidor ya en marcha). */
+    source_stop(e->src);
+    char perr[160] = "";
+    fpga_lab_io_t io;
+    if (source_fpga_lab_io(e->src, &io) < 0) {
+        snprintf(err, el, "no se pudo acceder a la FPGA");
+    } else if (fpga_lab_probe(&io, &e->lab, perr, sizeof perr) < 0) {
+        snprintf(err, el, "FPGA: %s", perr);
+    } else if (!e->lab.present) {
+        snprintf(err, el, "la FPGA cargada no es la imagen lab (FPGA %s): carga hosted-xA9-lab con bladeRF-cli -l",
+                 in->fpga_version);
+    } else if (fpga_lab_config_spectrum(&e->lab, log2n, k, true) < 0) {
+        snprintf(err, el, "no se pudo configurar el motor de espectro de la FPGA");
+    } else {
+        /* 2) late-mux (fpga_lab.h): RX con rx_mux = 0, unas lecturas para que el flujo USB arranque y
+         *    solo entonces rx_mux = 3, para no perder la primera trama. */
+        if (source_start(e->src) < 0) {
+            snprintf(err, el, "no se pudo arrancar el flujo: %s", source_error(e->src));
+        } else {
+            started = true;
+            const unsigned nb = MIN(e->rg_block, 16384u);
+            unsigned ovr = 0;
+            int r = 0;
+            for (int i = 0; i < FPGA_WARMUP_READS && r == 0; i++)
+                r = source_read(e->src, e->ring, nb, &ovr);
+            if (r < 0)
+                snprintf(err, el, "lectura de arranque: %s", source_error(e->src));
+            else if (fpga_lab_set_spectrum_mode(&e->lab, true) < 0)
+                snprintf(err, el, "no se pudo activar rx_mux = 3");
+            else
+                rc = 0;
+        }
+    }
+    if (rc < 0) {
+        if (e->lab.present)
+            fpga_lab_set_spectrum_mode(&e->lab, false);
+        if (!started)
+            source_start(e->src); /* recupera el flujo IQ que se paró para configurar */
+        pthread_mutex_lock(&e->lock);
+        e->lab_present_pub = e->lab.present;
+        e->lab_version_pub = e->lab.version;
+        pthread_mutex_unlock(&e->lock);
+        reader_resume(e, true);
+        return -1;
+    }
+    fpga_lab_parser_destroy(e->fpar);
+    e->fpar = fpga_lab_parser_create(fpga_frame_cb, e);
+    e->fpga_n = 1 << log2n;
+    e->fpga_k = k;
+    e->fpga_t_last = now_monotonic();
+    e->fpga_frames = e->fpga_gaps = 0;
+    ring_alloc(e, FPGA_BLOCK_WORDS, 1e6);
+    /* Ventana Blackman-Harris de N puntos (FFT de la FPGA) y detector del tamaño de la trama */
+    detector_destroy(e->det);
+    e->det = detector_create(e->fpga_n);
+    e->enbw_bins = 2.0044;
+    e->t_spec = 0;
+    recorder_stop(e->rec);
+    send_recording(e, -1);
+    pthread_mutex_lock(&e->lock);
+    e->nsigs = 0;
+    e->lab_present_pub = true;
+    e->lab_version_pub = e->lab.version;
+    snprintf(e->spec_backend, sizeof e->spec_backend, "FPGA lab (N=%d, K=%d, %.1f imágenes/s)", e->fpga_n, k,
+             (double)c->rate / ((double)e->fpga_n * k));
+    pthread_mutex_unlock(&e->lock);
+    fpga_publish(e, true);
+    reader_resume(e, true);
+    LOG_I("Espectro FPGA: N=%d K=%d a %.2f Msps (%.1f imágenes/s)", e->fpga_n, k, c->rate / 1e6,
+          (double)c->rate / ((double)e->fpga_n * k));
+    return 0;
+}
+
+/* Vuelve al modo IQ con la configuración c. Hilo DSP. */
+static void fpga_leave(engine_t *e, const engine_cfg_t *c)
+{
+    reader_pause(e);
+    if (e->lab.present)
+        fpga_lab_set_spectrum_mode(&e->lab, false);
+    /* Reiniciar el flujo: las palabras de espectro que quedan en los búferes de la FPGA/FX3 no son IQ */
+    source_stop(e->src);
+    source_start(e->src);
+    fpga_lab_parser_destroy(e->fpar);
+    e->fpar = NULL;
+    fpga_publish(e, false);
+    alloc_block(e, c->rate);
+    rebuild_spectrum(e, c);
+    reader_resume(e, true);
+}
+
+/* Estado de la FPGA para el mensaje "status" (bajo e->lock). */
+static void fpga_status_json(engine_t *e, sb_t *sb)
+{
+    sb_printf(sb, ",\"spectrum_src\":\"%s\"", e->fpga_active ? "fpga" : e->spec_gpu ? "gpu" : "cpu");
+    sb_printf(sb, ",\"fpga_lab\":{\"present\":%s,\"active\":%s", e->lab_present_pub ? "true" : "false",
+              e->fpga_active ? "true" : "false");
+    if (e->lab_present_pub)
+        sb_printf(sb, ",\"version\":\"%u.%u\"", (e->lab_version_pub >> 16) & 0xFFFFu, e->lab_version_pub & 0xFFFFu);
+    if (e->fpga_active)
+        sb_printf(sb, ",\"n\":%d,\"k\":%d,\"frames\":%llu,\"gaps\":%llu", e->fpga_n, e->fpga_k,
+                  (unsigned long long)e->fpga_frames, (unsigned long long)e->fpga_gaps);
+    sb_puts(sb, "}");
+}
+
 static void apply_config(engine_t *e, bool first)
 {
     pthread_mutex_lock(&e->lock);
@@ -554,6 +727,16 @@ static void apply_config(engine_t *e, bool first)
     if (d & CFG_DET)
         a.det_snr = w.det_snr;
 
+    /* Espectro FPGA activo: N y K dependen de tasa, FFT y fps; se reconfigura el motor. Si ya no
+     * se puede (p. ej. la nueva tasa pide oversample) se vuelve a CPU/GPU con un aviso. */
+    if (e->fpga_active && (d & (CFG_RATE | CFG_FFT))) {
+        char ferr[300] = "";
+        fpga_leave(e, &a);
+        if (fpga_enter(e, &a, ferr, sizeof ferr) < 0) {
+            snprintf(err, sizeof err, "Espectro FPGA desactivado: %s. Vuelvo a CPU/GPU.", ferr);
+            send_status(e);
+        }
+    }
     if (paused)
         reader_resume(e, (d & (CFG_RATE | CFG_CENTER)) != 0);
     pthread_mutex_lock(&e->lock);
@@ -699,6 +882,13 @@ static void sweep_iteration(engine_t *e)
 int engine_sweep_start(engine_t *e, int64_t start_hz, int64_t stop_hz, int fft, char *err, size_t errlen)
 {
     const source_info_t *in = source_info(e->src);
+    pthread_mutex_lock(&e->lock);
+    const bool fpga_on = e->fpga_active;
+    pthread_mutex_unlock(&e->lock);
+    if (fpga_on) {
+        snprintf(err, errlen, "el barrido no es compatible con el espectro FPGA: vuelva antes a spectrum_src=cpu");
+        return -1;
+    }
     if (!in->can_tune) {
         snprintf(err, errlen, "el barrido requiere el bladeRF (no funciona con ficheros)");
         return -1;
@@ -716,6 +906,23 @@ int engine_sweep_start(engine_t *e, int64_t start_hz, int64_t stop_hz, int fft, 
     pthread_mutex_lock(&e->lock);
     e->sweep_req = c;
     e->sweep_cmd = 1;
+    pthread_mutex_unlock(&e->lock);
+    return 0;
+}
+
+int engine_set_spectrum_src(engine_t *e, const char *src, char *err, size_t errlen)
+{
+    const bool fpga = src && strcmp(src, "fpga") == 0;
+    if (!src || (!fpga && strcmp(src, "cpu") != 0 && strcmp(src, "gpu") != 0)) {
+        snprintf(err, errlen, "spectrum_src: use cpu, gpu o fpga");
+        return -1;
+    }
+    if (fpga && strcmp(source_info(e->src)->kind, "bladerf") != 0) {
+        snprintf(err, errlen, "spectrum_src=fpga exige un bladeRF con la imagen lab (la fuente actual es un fichero)");
+        return -1;
+    }
+    pthread_mutex_lock(&e->lock);
+    e->ssrc_cmd = fpga ? 1 : 2; /* "cpu" y "gpu" equivalen: el motor FFT lo elige --no-gpu */
     pthread_mutex_unlock(&e->lock);
     return 0;
 }
@@ -785,7 +992,8 @@ static void periodic(engine_t *e, double now, double *t_sig, double *t_status, u
         bool have_g = source_get_gain(e->src, &g) == 0;
         refresh_dbm(e);
         pthread_mutex_lock(&e->lock);
-        e->meas_rate = *samples / (now - *t_rate);
+        /* En modo FPGA lo que entrega el lector son palabras de espectro, no muestras: se publica la tasa nominal */
+        e->meas_rate = e->fpga_active ? (double)source_rate(e->src) : *samples / (now - *t_rate);
         if (have_t)
             e->temp_c = t;
         if (have_g)
@@ -956,12 +1164,42 @@ static void *dsp_main(void *arg)
 
         apply_config(e, false);
 
+        /* Fuente del espectro (CPU/GPU ↔ FPGA) */
+        pthread_mutex_lock(&e->lock);
+        int ssc = e->ssrc_cmd;
+        e->ssrc_cmd = 0;
+        engine_cfg_t scfg = e->cfg;
+        pthread_mutex_unlock(&e->lock);
+        if (ssc == 1 && !e->fpga_active) {
+            char ferr[300] = "";
+            if (fpga_enter(e, &scfg, ferr, sizeof ferr) < 0) {
+                LOG_W("%s", ferr);
+                send_error(e, -1, ferr);
+            }
+            send_status(e);
+            if (e->fpga_active)
+                send_error(e, -1, "Espectro FPGA activo: no hay IQ, el audio y los decodificadores esperan");
+        } else if (ssc == 2 && e->fpga_active) {
+            fpga_leave(e, &scfg);
+            send_status(e);
+        }
+        if (e->fpga_active && now_monotonic() - e->fpga_t_last > FPGA_FRAME_TIMEOUT_S) {
+            const char *m = "FPGA: no llegan tramas de espectro; vuelvo al espectro de CPU/GPU";
+            LOG_W("%s", m);
+            send_error(e, -1, m);
+            fpga_leave(e, &scfg);
+            send_status(e);
+        }
+
         /* Órdenes de grabación (solo este hilo arranca/para el grabador) */
         pthread_mutex_lock(&e->lock);
         int rc = e->rec_cmd;
         e->rec_cmd = 0;
         pthread_mutex_unlock(&e->lock);
-        if (rc == 1) {
+        if (rc == 1 && e->fpga_active) {
+            send_error(e, -1, "No se puede grabar IQ con el espectro FPGA activo (no hay muestras)");
+            send_recording(e, -1);
+        } else if (rc == 1) {
             char err[256] = "";
             const source_info_t *in = source_info(e->src);
             char hw[128];
@@ -1014,6 +1252,27 @@ static void *dsp_main(void *arg)
                 e->ring_peak_ms = ms;
         }
 
+        if (e->fpga_active) {
+            /* Modo FPGA: el bloque son palabras de espectro. Cada trama completa sale por
+             * fpga_frame_cb → on_spectrum (detector, S-meter y difusión). Nada más usa el bloque. */
+            sync_slots(e);
+            fpga_lab_parser_feed_iq(e->fpar, iq, n);
+            uint64_t fr = 0, sk = 0, gp = 0;
+            fpga_lab_parser_stats(e->fpar, &fr, &sk, &gp);
+            pthread_mutex_lock(&e->lock);
+            e->fpga_frames = fr;
+            e->fpga_gaps = gp;
+            pthread_mutex_unlock(&e->lock);
+            pthread_mutex_lock(&e->rg_m);
+            e->rg_busy = false;
+            pthread_mutex_unlock(&e->rg_m);
+            double t2f = now_monotonic();
+            busy += t2f - t1;
+            periodic(e, t2f, &t_sig, &t_status, &samples, &t_rate);
+            if (e->host)
+                dec_host_periodic(e->host, now_wall());
+            continue;
+        }
         bool chan_needs = sync_slots(e);
 
         /* 1) Espectro (trabaja con los enteros crudos) */
@@ -1126,6 +1385,16 @@ engine_t *engine_create(source_t *src, server_t *srv, const engine_cfg_t *initia
     engine_sanitize(e, &e->want);
     e->cfg = e->want;
     e->rec = recorder_create(recdir);
+    /* ¿Está cargada la imagen lab? La detección solo lee la versión y config_gpio (seguro en la
+     * imagen de serie); el hilo DSP todavía no existe, nadie más usa la placa. */
+    fpga_lab_io_t io;
+    char perr[160];
+    if (source_fpga_lab_io(src, &io) == 0 && fpga_lab_probe(&io, &e->lab, perr, sizeof perr) > 0) {
+        e->lab_present_pub = true;
+        e->lab_version_pub = e->lab.version;
+        LOG_I("FPGA: imagen lab detectada (versión %u.%u): espectro FPGA disponible", e->lab.version >> 16,
+              e->lab.version & 0xFFFFu);
+    }
     return e;
 }
 
@@ -1157,6 +1426,8 @@ void engine_destroy(engine_t *e)
     free(e->rg_t);
     free(e->buf);
     free(e->specmsg);
+    free(e->fpga_db);
+    fpga_lab_parser_destroy(e->fpar);
     pthread_mutex_destroy(&e->lock);
     pthread_mutex_destroy(&e->tap_lock);
     pthread_mutex_destroy(&e->rg_m);
@@ -1370,6 +1641,7 @@ void engine_status_json(engine_t *e, sb_t *sb)
     } else {
         sb_puts(sb, ",\"sweep\":null");
     }
+    fpga_status_json(e, sb);
     sb_printf(sb, ",\"biastee\":%s,\"fft\":%d,\"fps\":%d,\"det_snr\":%.1f",
               c->biastee ? "true" : "false", c->fft_size, c->fps, c->det_snr);
     if (e->profile[0]) {

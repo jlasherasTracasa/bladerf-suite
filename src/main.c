@@ -326,6 +326,9 @@ static void cmd_config(app_t *a, const char *js, const jtok_t *t)
     if (num_chk(a, -1, "config", js, t, "fft", 0, 1.04858e+06, &v) > 0) { c.fft_size = (int)v; f |= CFG_FFT; }
     if (num_chk(a, -1, "config", js, t, "fps", 0, 1000, &v) > 0) { c.fps = (int)v; f |= CFG_FFT; }
     if (num_chk(a, -1, "config", js, t, "det_snr", -100, 200, &v) > 0) { c.det_snr = (float)v; f |= CFG_DET; }
+    /* Fuente del espectro: "cpu" | "gpu" | "fpga" (imagen lab). Se aplica en el motor tras el resto de campos. */
+    char ssrc[16];
+    bool has_ssrc = get_str(js, t, "spectrum_src", ssrc, sizeof ssrc);
     int l = json_obj_get(js, t, 0, "loc");
     if (l >= 0) {
         f |= CFG_LOC;
@@ -347,6 +350,11 @@ static void cmd_config(app_t *a, const char *js, const jtok_t *t)
         engine_set_profile(a->eng, NULL);
     if (f)
         engine_request(a->eng, &c, f);
+    if (has_ssrc) {
+        char err[200];
+        if (engine_set_spectrum_src(a->eng, ssrc, err, sizeof err) < 0)
+            send_error(a, -1, err);
+    }
 }
 
 static void cmd_channel(app_t *a, int client, const char *js, const jtok_t *t)
