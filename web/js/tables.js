@@ -6,6 +6,7 @@
 // ordena (otro clic invierte). El estado de orden se recuerda por tabla (id) para que
 // sobreviva a los redibujados de cada segundo.
 import { h } from './util.js';
+import { afListMhz } from './rds.js';
 
 const MAX_COLS = 14;
 const sortState = new Map();           // id -> {key, dir}
@@ -64,12 +65,21 @@ export function autoTable(rows, opts = {}) {
 /** Un array «es tabla» si tiene filas y la primera es un objeto. */
 export const isTable = (v) => Array.isArray(v) && v.length > 0 && typeof v[0] === 'object' && v[0] !== null && !Array.isArray(v[0]);
 
+/** Texto de un escalar; «af» (RDS) son frecuencias en Hz y se muestran en MHz con un decimal. */
+export function fmtScalar(k, v) {
+  if (k === 'af' && Array.isArray(v)) {
+    const mhz = afListMhz(v);
+    if (mhz.length) return mhz.map((x) => x.toFixed(1)).join(' · ') + ' MHz';
+  }
+  return fmtVal(v);
+}
+
 /** Vista completa de un estado: escalares como pares clave/valor y una tabla por cada array de objetos. */
 export function stateView(state, idPrefix) {
   const scal = [], tabs = [];
   for (const [k, v] of Object.entries(state || {})) (isTable(v) ? tabs : scal).push([k, v]);
   const out = [];
-  if (scal.length) out.push(h('div', { class: 'kv' }, scal.flatMap(([k, v]) => [h('span', { class: 'k', text: k }), h('span', { class: 'v mono', text: fmtVal(v) })])));
+  if (scal.length) out.push(h('div', { class: 'kv' }, scal.flatMap(([k, v]) => [h('span', { class: 'k', text: k }), h('span', { class: 'v mono', text: fmtScalar(k, v) })])));
   for (const [k, rows] of tabs) out.push(h('div', { class: 'muted', text: `${k} (${rows.length})` }), autoTable(rows, { id: idPrefix + ':' + k }));
   if (!out.length) out.push(h('span', { class: 'muted', text: 'Estado vacío.' }));
   return out;

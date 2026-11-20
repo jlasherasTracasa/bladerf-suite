@@ -47,7 +47,7 @@
  * pilotos continuos y TPS (derivadas de la 2k + estructura 1704, recordadas de la
  * norma y coherentes con los totales 45/177 y 17/68), PRBS y orden de bits del
  * cell id, orden de los bits de paridad BCH (se prueba también el inverso y se
- * indica en "bch"). Ver docs/decoders/dvbt.md.
+ * indica en "bch"). Ver docs/protocolos/dvbt.md.
  */
 #include "decoder.h"
 

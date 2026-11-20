@@ -13,6 +13,8 @@ function pick(inst) {
 }
 // AF puede llegar en MHz (98.1), en kHz (98100) o en Hz; se normaliza a MHz para mostrar.
 const afMhz = (v) => (typeof v === 'number' ? (v > 1e6 ? v / 1e6 : v > 1e4 ? v / 1e3 : v) : parseFloat(v));
+/** Lista de AF en MHz (valores no numéricos descartados). Reutilizada por la tabla de estado de Decod. */
+export const afListMhz = (list) => (Array.isArray(list) ? list.map(afMhz).filter((x) => isFinite(x)) : []);
 const flag = (on, t, title) => h('span', { class: 'flag' + (on ? ' on' : ''), title, text: t });
 
 function render() {
@@ -25,7 +27,7 @@ function render() {
   $('#rds-inst').textContent = `#${i.inst} · ${fmtHz(i.freq, 3)}`;
   const body = $('#rds-body');
   if (!has) { body.replaceChildren(h('p', { class: 'muted', text: i.state === 'ok' ? 'Esperando grupos RDS…' : `Instancia en estado «${i.state}»${i.err ? ': ' + i.err : ''}.` })); return; }
-  const af = Array.isArray(d.af) ? d.af.map(afMhz).filter((x) => isFinite(x)) : [];
+  const af = afListMhz(d.af);
   body.replaceChildren(
     h('div', { class: 'rds-ps', text: d.ps != null ? String(d.ps) : '········' }),
     h('div', { class: 'rds-rt', text: d.rt != null ? String(d.rt) : '' }),

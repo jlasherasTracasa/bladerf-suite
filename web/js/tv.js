@@ -1,4 +1,4 @@
-// tv.js — pestaña «TV»: ver y oír la TDT (AGENTS.md §8c, docs/PROTOCOLO.md).
+// tv.js — pestaña «TV»: ver y oír la TDT (AGENTS.md §8c, docs/arquitectura/WEBSOCKET.md).
 //
 // Flujo de datos (todo en little-endian):
 //   WS binario tipo 5 (vídeo): [1] bit0 = clave, [2] códec (1 H.264, 2 MPEG-2, 3 HEVC), [3] nº de

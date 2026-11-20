@@ -15,7 +15,7 @@
  *     guarda cada vez que el motor aplica un cambio (engine_on_config_change)
  *     y se recupera al arrancar. Con una fuente de fichero no se guarda el
  *     centro ni la tasa (los fija la grabación, no el usuario).
- *   - Las órdenes del protocolo WebSocket (docs/PROTOCOLO.md) y el
+ *   - Las órdenes del protocolo WebSocket (docs/arquitectura/WEBSOCKET.md) y el
  *     «snapshot» que recibe cada cliente al conectar.
  *   - Modo --gen: genera una señal SigMF con un modulador y termina.
  *   - Cierre limpio con SIGINT/SIGTERM o --duration.
@@ -483,7 +483,7 @@ static void *cal_thread(void *arg)
  * Exige --enable-tx; nunca emite por antena. El resultado llega como mensaje
  * "tx_cal" y los rechazos como "tx_result". AVISO: el bucle RFIC_BIST es digital
  * y no pasa por el LO de TX; la calibración real exige cable TX→RX con
- * atenuador ≥ 30 dB y permiso del usuario (docs/TX.md). */
+ * atenuador ≥ 30 dB y permiso del usuario (docs/arquitectura/TX.md). */
 static void cmd_tx_cal(app_t *a, const char *js, const jtok_t *t)
 {
     double v;
@@ -599,7 +599,7 @@ static void on_text(void *app, int client, const char *msg, size_t len)
     } else if (strcmp(cmd, "tx_stop") == 0) {
         tx_stop(a->tx);
     } else if (strcmp(cmd, "sweep") == 0) {
-        /* Barrido rápido: {"cmd":"sweep","start":Hz,"stop":Hz,"fft":N} (ver docs/HARDWARE.md) */
+        /* Barrido rápido: {"cmd":"sweep","start":Hz,"stop":Hz,"fft":N} (ver docs/hardware/HARDWARE.md) */
         double f0, f1, nfft = 1024;
         get_num(msg, t, "fft", &nfft);
         if (!get_num(msg, t, "start", &f0) || !get_num(msg, t, "stop", &f1))
@@ -735,7 +735,7 @@ static void usage(const char *prog)
            "  --gen ID             genera una señal SigMF con el modulador ID y termina\n"
            "    --gen-params JSON --gen-freq Hz --gen-center Hz --gen-rate Hz --out PREFIJO\n"
            "  --enable-tx          permite TX en bucle interno (loopback)\n"
-           "  --enable-tx-air      permite TX por antena (política de docs/TX.md)\n"
+           "  --enable-tx-air      permite TX por antena (política de docs/arquitectura/TX.md)\n"
            "  --callsign C         indicativo de radioaficionado\n"
            "  --tx-max-gain dB     ganancia máxima de TX (0)\n"
            "  -v                   mensajes de depuración\n",

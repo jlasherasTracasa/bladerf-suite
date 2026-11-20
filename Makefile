@@ -110,7 +110,7 @@ check:
 run: $(BIN)
 	$(BIN) $(ARGS)
 
-# Batería E2E de la interfaz web (Chromium por CDP, servidores --replay y mock; ver docs/QA_WEB.md).
+# Batería E2E de la interfaz web (Chromium por CDP, servidores --replay y mock; ver docs/calidad/QA_WEB.md).
 # SOAK=600 alarga la prueba de fugas a 10 minutos. Usa el binario de BUILD (por defecto el de este make).
 webtest: $(BIN)
 	BIN=$(abspath $(BIN)) node tests/web_e2e.mjs --soak $(or $(SOAK),60) $(WEBARGS)

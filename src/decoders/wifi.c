@@ -52,7 +52,7 @@
  * LIMITACIONES: solo OFDM BPSK/QPSK (6-18 Mb/s) y DSSS 1 Mb/s; no 2/5,5/11 Mb/s
  * ni 24-54 Mb/s (las balizas casi siempre van a la tasa básica); no se
  * recombinan ráfagas pegadas (SIFS); sin 802.11n/ac/ax salvo identificar su IE.
- * No hay vectores públicos con IQ real de referencia: ver docs/decoders/wifi.md.
+ * No hay vectores públicos con IQ real de referencia: ver docs/protocolos/wifi.md.
  */
 #include "decoder.h"
 

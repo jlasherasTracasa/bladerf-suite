@@ -22,7 +22,8 @@ function renderStatus(st) {
   fillRates(st);
   if (!editing($('#hw-center'))) $('#hw-center').value = fmtHz(st.center, 6);
   if (!editing($('#hw-rate'))) $('#hw-rate').value = st.rate;
-  if (!editing($('#hw-rfbw'))) $('#hw-rfbw').value = st.rf_bw > 0 ? fmtHz(st.rf_bw, 3) : '—';
+  // Con fuente de fichero no hay filtro analógico que mostrar: se indica en vez de un guion
+  if (!editing($('#hw-rfbw'))) $('#hw-rfbw').value = st.rf_bw > 0 ? fmtHz(st.rf_bw, 3) : d.kind === 'file' ? 'no aplica (fichero)' : '—';
   $('#hw-gmode').value = st.gain_mode;
   const agc = st.gain_mode !== 'manual';   // auto, fast, slow y hybrid: el servidor ajusta la ganancia
   const ovs = $('#hw-ovs-note');
