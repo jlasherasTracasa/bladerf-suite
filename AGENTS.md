@@ -182,6 +182,13 @@ const decoder_desc_t *decoder_find(const char *id);
   comprobación de integridad no se emite (como mucho, se cuenta).
 - Los que mantienen una tabla (aviones, barcos, celdas, redes WiFi…) la exponen
   con `state_json` (objeto JSON) y caducan entradas viejas.
+- **Posición del mensaje** (P2, para el etiquetado del artículo): emite con
+  `dec_emit_span(emit, ctx, off0, off1, json, len)` (`decoder.h`), con `off0/off1`
+  = desplazamiento en muestras de **entrada de `process*`** del primer y último
+  símbolo del mensaje respecto al inicio del bloque. El host lo convierte en
+  `sample`, `sample_end` (índice absoluto en la fuente), `sample_src`,
+  `rssi_dbfs` y `snr_db`. Sin marca, `sample` es el inicio del bloque. Todo
+  decodificador nuevo debe marcar. Hoy marcan ais, adsb, aprs y lora.
 
 ### 4.2 Host de decodificadores — `src/decoders/host.{h,c}` (A1)
 
@@ -475,7 +482,13 @@ Opciones de línea de órdenes de `main.c` (A1): `--host`, `--port` (por defecto
 `--recdir`, `--config`, `--profile <id>`, `--decode <id>[@Hz]` (repetible),
 `--print` (eventos JSONL por stdout), `--log-events <dir>`, `--duration <s>`,
 `--gen <id>` + `--gen-params/--gen-freq/--gen-center/--gen-rate/--out`,
-`--enable-tx`, `--enable-tx-air`, `--callsign`, `--tx-max-gain`, `-v`.
+`--enable-tx`, `--enable-tx-air`, `--callsign`, `--tx-max-gain`, `-v`,
+`--replay-fast` (fichero sin ritmo de tiempo real ni bucle, sin pérdidas, sale al
+acabar), `--labels <f.sigmf-meta>` (exporta etiquetas verified/unknown/gap; implica
+`--replay-fast`), `spectrum_src` en la orden `config` (cpu/gpu/fpga).
+
+`make ci` ejecuta todas las puertas (check con y sin CUDA, SAN, webtest, fuzz,
+TSan, realtest, bench, linkcheck); cada paso suelto: `make fuzz|tsan|realtest|bench|linkcheck`.
 
 ---
 
