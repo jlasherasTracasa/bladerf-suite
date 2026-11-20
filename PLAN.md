@@ -120,6 +120,27 @@ de nada; la 1 protege todo lo que viene después.
 | W5 | Paneles específicos: celdas (LTE/NR/GSM), redes WiFi, buscas, radiosondas con perfil de altura | **Sonnet** | Cada tabla ordenable, con exportación CSV |
 | W6 | Capturas de la guía y del curso regeneradas; `QA_WEB.md` con el estado final | **Haiku** | Sin capturas antiguas |
 
+#### Fase 4b — Experiencia de uso (UI/UX)
+
+Añadida el 2026-11-20. W1–W5 añaden funciones; estas tareas hacen que la
+aplicación se entienda y se maneje bien. Empieza por W7: su resultado ordena el
+resto. Todo sigue sin bibliotecas ni recursos externos.
+
+| ID | Tarea | Modelo | Terminado cuando |
+|---|---|---|---|
+| W7 | Auditoría de uso: 12 tareas reales («escuchar una emisora», «ver aviones en el mapa», «grabar y reproducir», «decodificar esta señal»…) guionizadas en las pruebas de la web, midiendo clics, tiempo y errores; lista priorizada de fricciones | **Sonnet** (guiones) + **Opus** (revisión con capturas) | `docs/calidad/UX.md` con la línea base y los objetivos por tarea; las medidas se repiten en `make webtest` |
+| W8 | Manipulación directa del espectro: clic para sintonizar, rueda con pasos por modo, arrastrar los bordes del filtro, zoom y desplazamiento con inercia, doble clic centra; atajos de teclado y paleta de órdenes (Ctrl+K) | **Sonnet** | Todas las tareas de W7 de sintonía se hacen sin tocar un campo de texto; hoja de atajos en la ayuda |
+| W9 | «¿Qué es esta señal?»: al pulsar una señal detectada se proponen decodificadores por banda, ancho y forma espectral, con un clic para añadirlos; eventos con búsqueda, filtros, fijar, panel de detalle y copiar/exportar | **Sonnet** | De señal detectada a primer mensaje decodificado en ≤ 2 clics |
+| W10 | Estado y errores comprensibles: barra única (fuente, enlace USB 2/3, pérdidas, GPU, carga por decodificador), avisos no bloqueantes con la acción que los resuelve, `waiting`/`error` explicados, reconexión que restaura sesión y audio | **Sonnet** | Ningún error se muestra solo como texto crudo del servidor; cortar y volver la red no pierde el estado |
+| W11 | Primer uso: recorrido guiado de 6 pasos, estados vacíos que dicen qué hacer, glosario emergente (dBFS, squelch, CFAR…) enlazado a la guía, modo demostración con una grabación incluida cuando no hay placa | **Sonnet** | Una persona sin experiencia en radio completa 3 tareas de W7 sin leer la documentación (lo valida el usuario) |
+| W12 | Fluidez: cascada y espectro en WebGL dentro de un *worker* (OffscreenCanvas) con alternativa 2D, tablas virtualizadas con 10 000 eventos, memoria acotada tras 8 h | **Sonnet** | 60 imágenes/s a 4K con CPU del navegador < 25 % de un núcleo; sin crecimiento de memoria en la prueba larga |
+| W13 | Accesibilidad: todo manejable con teclado, foco visible, roles ARIA, respeto de «reducir movimiento», paletas de cascada aptas para daltonismo, zoom al 200 % sin solapes | **Sonnet** | Recorrido completo con teclado en las pruebas; contraste AA medido |
+| W14 | Disposición: paneles redimensionables y plegables, disposiciones guardadas por perfil, mapa y TV en ventana aparte, pantalla completa de la cascada | **Sonnet** | La disposición sobrevive a recargar; pruebas a 360, 768, 1440 y 3840 px |
+| W15 | Asistente de emisión seguro: explica la política antes de pedir datos, muestra el espectro previsto de la señal y la banda permitida, deja claro `file`/`loopback`/`air`, confirmación explícita para aire | **Sonnet** | Imposible llegar a «emitir» sin ver modo, frecuencia, duración y motivo de un rechazo |
+| W16 | Panel de hardware y FPGA: imagen cargada y capacidades, fuente del espectro (CPU, GPU, FPGA), contadores de la FPGA (F17), temperatura y caudal USB en una gráfica | **Sonnet** | Refleja en vivo los registros de la imagen lab; con imagen de serie lo indica sin errores |
+| W17 | Idiomas: textos en un diccionario (`web/i18n/es.json`, `en.json`), selector y formato local de números y fechas | **Haiku** | Ningún texto fijo en el HTML/JS; inglés completo |
+| W18 | Sistema de diseño: variables de color, tipografía y espaciado únicas, componentes (botón, tabla, pestaña, aviso) documentados en una página `web/estilo.html` | **Haiku** (inventario) + **Sonnet** (unificación) | Sin colores ni tamaños sueltos en el CSS; capturas de referencia para regresión visual |
+
 ### Fase 5 — Firmware (FPGA)
 
 Todo HDL: simulación contra el modelo C, temporización con setup ≥ +0,1 ns y
@@ -137,6 +158,25 @@ prueba en placa la hace Opus en RAM.
 | F7 | Margen de temporización: segmentar los caminos con menos de +0,2 ns y fijar restricciones; informe de recursos | **Sonnet** | Setup y hold ≥ +0,1 ns en los 4 modelos |
 | F8 | Automatizar: `firmware/ci.sh` lanza todas las simulaciones y compara sumas; tabla de registros generada desde un único fichero para HDL, C y documentación | **Haiku** | Una orden; registros sin duplicar a mano |
 | F9 | `docs/hardware/FIRMWARE.md`, figuras y módulo del curso al día | **Haiku** | Coincide con el HDL y con las medidas |
+
+#### Fase 5b — Firmware: más funciones en la FPGA
+
+Añadida el 2026-11-20. Mismas reglas que la fase 5 (simulación contra modelo C,
+temporización, solo RAM, nunca la flash). Orden sugerido: F10 y F11 primero
+(dan seguridad y caudal a todo lo demás); F14 y F15 dependen de F5.
+
+| ID | Tarea | Modelo | Terminado cuando |
+|---|---|---|---|
+| F10 | Registro de capacidades y telemetría: versión, mapa de bits de funciones, contadores (desbordes de FIFO, saturación del ADC, tramas emitidas y perdidas); el host negocia y funciona igual con la imagen de serie | **Sonnet** | `lab_probe --regs` y el motor leen las capacidades; ninguna función se activa a ciegas |
+| F11 | Empaquetado de muestras: modo de 12 bits empaquetados (3 bytes por muestra IQ en vez de 4) y modo de 8 bits con ganancia digital, para sacar más ancho de banda por el mismo USB | **Sonnet** | +33 % de Msps sostenidos medidos en placa (≈ 11 → ≈ 15 Msps en USB 2); decodificadores sin pérdida de sensibilidad medible |
+| F12 | Motor de espectro configurable: tamaño de FFT 256–8192, ventana (Hann, Blackman-Harris) por ROM, media exponencial, retención de máximo y de mínimo por bin, tasa de imágenes programable | **Sonnet** | Cada modo coincide bit a bit con el modelo C; selector en la web (W16) |
+| F13 | Corrección en la FPGA antes de todo lo demás: bloqueo de continua, corrección de desequilibrio IQ con coeficientes del host y ganancia digital con detección de saturación | **Sonnet** | Pico de continua e imagen ≥ 20 dB más bajos en placa que sin corregir |
+| F14 | Captura con predisparo: memoria circular en BRAM de las últimas N muestras; al dispararse el detector (F5) se envía la ráfaga completa con su marca de tiempo, sin transmitir el resto | **Sonnet** | Ráfagas ISM de 433 MHz capturadas enteras desde 61,44 Msps con USB 2 |
+| F15 | Barrido dirigido por la FPGA: el secuenciador cambia de frecuencia con los perfiles de quick-tune y etiqueta cada trama de espectro con su frecuencia; el host solo compone el panorama | **Sonnet** + **Opus** (placa) | 47 MHz–6 GHz en < 1 s por pasada, sin tramas mal etiquetadas |
+| F16 | Demodulador ADS-B en la FPGA: detección de preámbulo y recorte de bits a 2 Msps equivalentes, entrega de tramas de 112 bits con nivel y marca de tiempo; el CRC y lo demás siguen en el host | **Sonnet** | Mismas tramas que el decodificador de CPU en la grabación real ±1 %; CPU del host ≈ 0 |
+| F17 | Emisión desde la FPGA: reproductor en bucle de una forma de onda guardada en BRAM, generador de tono y de barrido para calibrar (T1), y emisión programada por marca de tiempo. Solo se prueba en `loopback` o por cable con permiso | **Sonnet** + **Opus** (placa) | Tono y barrido usados por la calibración de TX; nada sale por antena en las pruebas |
+| F18 | Verificación más dura: bancos autoverificables con estímulos aleatorios y semilla, aserciones en las interfaces (válido/listo, cruces de reloj), cobertura de registros y revisión de cruces de dominio | **Sonnet** | Cada bloque nuevo con ≥ 1 000 tramas aleatorias sin discrepancias; informe de cruces de reloj sin avisos sin justificar |
+| F19 | Compilación y carga cómodas: `firmware/build.sh` reproducible con suma publicada, imagen comprimida, tiempo de carga medido y orden `--fpga-lab` del servidor que la carga en RAM solo con confirmación | **Haiku** (guiones) + **Sonnet** (servidor) | Dos compilaciones dan la misma suma; la web muestra qué imagen hay y nunca escribe la flash |
 
 ### Fase 6 — Emisión y cierre
 
@@ -156,6 +196,9 @@ prueba en placa la hace Opus en RAM.
 3. En paralelo: N1 (detector), F1 (espectro de la FPGA en la web), D1 (VDL2), W3 (cascada).
 4. Cuando el usuario conecte USB 3: H2 y después D4, D5 y F6.
 5. Cuando conecte la antena de TV: D6.
+6. Experiencia de uso: W7 (auditoría) en cuanto cierre la fase 1; después W8,
+   W9 y W10, que son las que más cambian el manejo diario.
+7. FPGA: F10 y F11 justo después de F1; el resto de la fase 5b tras F5.
 
 ## 4. Riesgos
 
@@ -164,6 +207,9 @@ prueba en placa la hace Opus en RAM.
 | F4 (DDC en FPGA) no cierra temporización o no cabe | Empezar por 4 canales; hay holgura de recursos (9,5 k ALM usados de 113 k) |
 | Protocolos nuevos sin grabaciones públicas | No se dan por validados: quedan como «sintético» en la matriz |
 | Carreras difíciles de reproducir | Q2 (TSan) antes de tocar más el host |
+| F11 (12 bits empaquetados) exige tocar el camino FX3/libbladeRF, que no se modifica | Empaquetar dentro del flujo de muestras de la FPGA y desempaquetar en `src/sdr/`; si no es viable, queda solo el modo de 8 bits |
+| F16/F17 amplían mucho el HDL y pueden romper temporización | Cada bloque detrás de su bit de capacidad (F10) y desactivable en síntesis |
+| Las mejoras de UX se juzgan a ojo | W7 fija medidas (clics, tiempo, errores) y se repiten en `make webtest` |
 | Deriva entre código, documentación y curso | Tareas Haiku de cierre en cada fase (D12, W6, F9, Z1) |
 
 ---
