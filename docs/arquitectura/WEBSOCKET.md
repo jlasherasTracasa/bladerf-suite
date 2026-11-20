@@ -71,7 +71,12 @@ continua (±2 bins del centro) ya viene sustituido en el espectro.
 
 **`recording`** `{"on","name","bytes","seconds","dropped"}`.
 
-**`error`** `{"msg"}`.
+**`error`** `{"msg"}`. Con `"level":"info"` no es un error sino un aviso informativo (la web lo
+muestra sin estilo de error). Lo envía `profile` solo al cliente que lo pidió cuando el canal de
+audio del perfil cae fuera de la banda capturada (fuente de fichero): el servidor lo coloca en la
+señal detectada más cercana o en centro + tasa/4 y añade `"chan_freq":Hz` (frecuencia elegida);
+justo después envía a ese cliente un `status` con el mismo campo `chan_freq`. La web adopta esa
+frecuencia sin reenviar su canal.
 
 **`decoders`** (catálogo, al conectar):
 `{"list":[{"id","name","group","desc","kind":"narrow|wide","rate","bw","wide_rate",

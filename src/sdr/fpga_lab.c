@@ -3,6 +3,7 @@
  */
 #include "fpga_lab.h"
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -147,7 +148,7 @@ int fpga_lab_clear_counters(const fpga_lab_t *lab)
 
 double fpga_lab_power_value(uint32_t word) { return ldexp((double)(word & 0x3FFFFFFu), (int)(word >> 26)); }
 
-double fpga_lab_window_sum(int n)
+static double window_sum_calc(int n)
 {
     /* Misma ventana que src/dsp/fft.c, cuantizada a Q15 como en la ROM de la FPGA. */
     const double a0 = 0.35875, a1 = 0.48829, a2 = 0.14128, a3 = 0.01168;
@@ -161,6 +162,22 @@ double fpga_lab_window_sum(int n)
     return s;
 }
 
+/* La suma depende solo de N (potencias de 2 de 1024 a 8192) y calcularla cuesta 3·N/2 cosenos:
+ * se guarda en una caché (_Atomic: la usan el hilo DSP y las pruebas; calcular dos veces es inocuo). */
+double fpga_lab_window_sum(int n)
+{
+    static _Atomic double cache[14];
+    int l = 0;
+    while (l < 14 && (1 << l) != n) l++;
+    if (l == 14) return window_sum_calc(n);
+    double v = atomic_load_explicit(&cache[l], memory_order_relaxed);
+    if (v == 0.0) {
+        v = window_sum_calc(n);
+        atomic_store_explicit(&cache[l], v, memory_order_relaxed);
+    }
+    return v;
+}
+
 double fpga_lab_power_to_dbfs(double acc, int n, int k)
 {
     const double wsum = fpga_lab_window_sum(n);
@@ -172,8 +189,28 @@ void fpga_lab_frame_to_dbfs(const fpga_lab_frame_t *f, float *db)
 {
     const double wsum = fpga_lab_window_sum(f->n);
     const double off = -20.0 * log10(2048.0 * wsum) + 10.0 * log10(4.0 / (f->k > 0 ? f->k : 1));
-    for (int i = 0; i < f->n; i++)
-        db[i] = (float)(10.0 * log10(fpga_lab_power_value(f->power[i]) + 1e-30) + off);
+    /* dB = 10·log10(M·2^E) = 10·log10(2)·(log2(M) + E). Con M de 26 bits (exacto en float salvo los
+     * 2 bits bajos, error relativo < 6e-8) log2(M) = e + log2(m), m en [1,2), con un polinomio de
+     * grado 5 (error < 2e-5 en log2 → < 6e-5 dB, mil veces por debajo del escalón de 0,6 dB del
+     * mensaje). Evita 4096 log10 en doble precisión + ldexp por imagen. */
+    const float k10 = 3.0102999566f; /* 10·log10(2) */
+    const float offf = (float)off;
+    const float floor_db = -300.0f + offf; /* igual que el +1e-30 de la versión exacta */
+    for (int i = 0; i < f->n; i++) {
+        const uint32_t w = f->power[i], m26 = w & 0x3FFFFFFu;
+        if (m26 == 0) { db[i] = floor_db; continue; }
+        const float x = (float)m26;
+        uint32_t b;
+        memcpy(&b, &x, 4);
+        const int ex = (int)(b >> 23) - 127;
+        b = (b & 0x7FFFFFu) | 0x3F800000u;
+        float mm;
+        memcpy(&mm, &b, 4);
+        const float t = (mm - 1.0f) / (mm + 1.0f); /* log2(m) = 2/ln2 · atanh(t), |t| ≤ 1/3 */
+        const float t2 = t * t;
+        const float l2 = t * (2.8853900818f + t2 * (0.9617966939f + t2 * (0.5770780164f + t2 * 0.4121985831f)));
+        db[i] = k10 * ((float)ex + l2 + (float)(w >> 26)) + offf;
+    }
 }
 
 /* ---- Intérprete ---------------------------------------------------------- */

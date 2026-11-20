@@ -94,6 +94,8 @@ int engine_set_spectrum_src(engine_t *e, const char *src, char *err, size_t errl
 void engine_add_client(engine_t *e, int client);
 void engine_remove_client(engine_t *e, int client);
 bool engine_get_channel(engine_t *e, int client, chan_params_t *p);
+/* Señales detectadas ahora (copia bajo cerrojo, hasta max). *center_hz = centro al que se refieren los offsets. */
+int engine_get_signals(engine_t *e, det_signal_t *out, int max, int64_t *center_hz);
 void engine_set_channel(engine_t *e, int client, const chan_params_t *p);
 
 /* Grabación IQ */

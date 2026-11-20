@@ -622,6 +622,12 @@ static int fpga_enter(engine_t *e, const engine_cfg_t *c, char *err, size_t el)
     bool started = false;
     /* 1) RX parado: es seguro tocar la imagen. Detección (también si la lab se cargó con el servidor ya en marcha). */
     source_stop(e->src);
+    /* Reconfiguración con el modo ya activo (cambio de fps/N/tasa): el FPGA sigue con rx_mux = 3. Se deja
+     * en 0 AHORA, con RX parado, para que el arranque del flujo sea el late-mux de siempre; hacerlo
+     * después de arrancar (como hacía fpga_leave) deja el flujo IQ a 30 Msps sobre USB 2, que no lo
+     * sostiene, y la lectura se queda esperando hasta el «sync_rx: Operation timed out». */
+    if (e->lab.present)
+        fpga_lab_set_spectrum_mode(&e->lab, false);
     char perr[160] = "";
     fpga_lab_io_t io;
     if (source_fpga_lab_io(e->src, &io) < 0) {
@@ -643,8 +649,22 @@ static int fpga_enter(engine_t *e, const engine_cfg_t *c, char *err, size_t el)
             const unsigned nb = MIN(e->rg_block, 16384u);
             unsigned ovr = 0;
             int r = 0;
-            for (int i = 0; i < FPGA_WARMUP_READS && r == 0; i++)
-                r = source_read(e->src, e->ring, nb, &ovr);
+            /* Un intento más si el flujo no arranca: parar, rx_mux = 0 (con RX parado) y volver a empezar */
+            for (int intento = 0; intento < 2; intento++) {
+                r = 0;
+                for (int i = 0; i < FPGA_WARMUP_READS && r == 0; i++)
+                    r = source_read(e->src, e->ring, nb, &ovr);
+                if (r == 0)
+                    break;
+                LOG_W("Espectro FPGA: la lectura de arranque falló (%s)%s", source_error(e->src),
+                      intento == 0 ? ", reintento" : "");
+                if (intento == 0) {
+                    source_stop(e->src);
+                    fpga_lab_set_spectrum_mode(&e->lab, false);
+                    if (source_start(e->src) < 0)
+                        break;
+                }
+            }
             if (r < 0)
                 snprintf(err, el, "lectura de arranque: %s", source_error(e->src));
             else if (fpga_lab_set_spectrum_mode(&e->lab, true) < 0)
@@ -697,10 +717,11 @@ static int fpga_enter(engine_t *e, const engine_cfg_t *c, char *err, size_t el)
 static void fpga_leave(engine_t *e, const engine_cfg_t *c)
 {
     reader_pause(e);
+    /* Con RX parado: rx_mux = 0 y solo entonces se reinicia el flujo (las palabras de espectro que
+     * quedan en los búferes de la FPGA/FX3 no son IQ) */
+    source_stop(e->src);
     if (e->lab.present)
         fpga_lab_set_spectrum_mode(&e->lab, false);
-    /* Reiniciar el flujo: las palabras de espectro que quedan en los búferes de la FPGA/FX3 no son IQ */
-    source_stop(e->src);
     source_start(e->src);
     fpga_lab_parser_destroy(e->fpar);
     e->fpar = NULL;
@@ -802,8 +823,10 @@ static void apply_config(engine_t *e, bool first)
      * se puede (p. ej. la nueva tasa pide oversample) se vuelve a CPU/GPU con un aviso. */
     if (e->fpga_active && (d & (CFG_RATE | CFG_FFT))) {
         char ferr[300] = "";
-        fpga_leave(e, &a);
+        /* Directo a fpga_enter (que ya para, pone rx_mux = 0 y rearranca): pasar antes por fpga_leave
+         * rearrancaba un flujo IQ completo que luego se paraba de inmediato (causa del timeout). */
         if (fpga_enter(e, &a, ferr, sizeof ferr) < 0) {
+            fpga_leave(e, &a);
             snprintf(err, sizeof err, "Espectro FPGA desactivado: %s. Vuelvo a CPU/GPU.", ferr);
             send_status(e);
         }
@@ -1636,6 +1659,18 @@ void engine_remove_client(engine_t *e, int client)
         if (e->slots[i].used && e->slots[i].client == client)
             e->slots[i].used = false; /* el canal se reutiliza en la próxima conexión */
     pthread_mutex_unlock(&e->lock);
+}
+
+/* Copia de las señales del último ciclo del detector (offsets relativos al centro). */
+int engine_get_signals(engine_t *e, det_signal_t *out, int max, int64_t *center_hz)
+{
+    pthread_mutex_lock(&e->lock);
+    int n = MIN(e->nsigs, max);
+    memcpy(out, e->sigs, sizeof(det_signal_t) * (size_t)n);
+    if (center_hz)
+        *center_hz = e->cfg.center_hz;
+    pthread_mutex_unlock(&e->lock);
+    return n;
 }
 
 bool engine_get_channel(engine_t *e, int client, chan_params_t *p)

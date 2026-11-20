@@ -588,8 +588,32 @@ static void on_text(void *app, int client, const char *msg, size_t len)
         const profile_t *p = get_str(msg, t, "id", id, sizeof id) ? profile_find(id) : NULL;
         if (!p)
             send_error(a, client, "perfil desconocido");
-        else if (profile_apply(p, a->eng, a->host, client, err, sizeof err) < 0)
-            send_error(a, client, err);
+        else {
+            int pr = profile_apply(p, a->eng, a->host, client, err, sizeof err);
+            if (pr < 0) {
+                send_error(a, client, err);
+            } else if (pr == 1) {
+                /* Canal de audio movido: aviso informativo (no error) y estado con la frecuencia elegida */
+                chan_params_t cp;
+                bool have = engine_get_channel(a->eng, client, &cp);
+                sb_t sb = {0};
+                sb_puts(&sb, "{\"type\":\"error\",\"level\":\"info\",\"msg\":");
+                sb_json_str(&sb, err);
+                if (have)
+                    sb_printf(&sb, ",\"chan_freq\":%lld", (long long)cp.freq_hz);
+                sb_puts(&sb, "}");
+                server_send_text(a->srv, client, sb.data, sb.len);
+                sb_free(&sb);
+                sb_t st = {0};
+                engine_status_json(a->eng, &st);
+                if (have && st.len > 0 && st.data[st.len - 1] == '}') {
+                    st.len--;
+                    sb_printf(&st, ",\"chan_freq\":%lld}", (long long)cp.freq_hz);
+                }
+                server_send_text(a->srv, client, st.data, st.len);
+                sb_free(&st);
+            }
+        }
     } else if (strcmp(cmd, "dec_add") == 0) {
         char proto[24];
         if (!get_str(msg, t, "proto", proto, sizeof proto) || num_chk(a, client, "dec_add", msg, t, "freq", 0, 6e9, &v) <= 0) {

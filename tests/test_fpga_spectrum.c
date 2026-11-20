@@ -202,8 +202,32 @@ static void test_engine_file(void)
     iqbuf_free(&iq);
 }
 
+/* La conversión rápida a dB (polinomio + caché de Σw) debe coincidir con la exacta (log10 en doble). */
+static void test_dbfs_fast(void)
+{
+    static fpga_lab_frame_t f;
+    f.n = 4096;
+    f.k = 375;
+    uint32_t x = 12345;
+    for (int i = 0; i < f.n; i++) {
+        x = x * 1664525u + 1013904223u;
+        f.power[i] = (i % 97 == 0) ? 0u : ((x >> 6) & 0x3FFFFFFu) | (((x >> 3) % 40u) << 26);
+    }
+    static float db[4096];
+    fpga_lab_frame_to_dbfs(&f, db);
+    double maxerr = 0;
+    for (int i = 0; i < f.n; i++) {
+        if ((f.power[i] & 0x3FFFFFFu) == 0) continue;
+        double ex = fpga_lab_power_to_dbfs(fpga_lab_power_value(f.power[i]) , f.n, f.k);
+        double e = fabs(ex - db[i]);
+        if (e > maxerr) maxerr = e;
+    }
+    CHECK(maxerr < 0.01);
+}
+
 int main(void)
 {
+    test_dbfs_fast();
     test_params();
     test_frames();
     test_engine_file();

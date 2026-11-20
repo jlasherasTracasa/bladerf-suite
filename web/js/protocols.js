@@ -61,7 +61,7 @@ function applyProfile(p) {
     // Fuente de fichero: el centro y la tasa no cambian, así que el canal de audio no se toca si el perfil cae fuera de la banda.
     const inBand = p.chan_freq && p.chan_freq >= st.center - st.rate / 2 && p.chan_freq <= st.center + st.rate / 2;
     if (inBand && p.mode) setChannel({ freq: p.chan_freq, mode: p.mode, ...(p.bw ? { bw: p.bw } : {}) });
-    else setChannel({});   // el servidor mueve el canal a la frecuencia del perfil aunque quede fuera de banda (src/profiles.c:121): se reenvía el de la web para que ambos coincidan
+    // Fuera de banda: el servidor elige la frecuencia (señal detectada o centro+tasa/4) y la avisa con un error level:info (más abajo); no se reenvía el canal de la web para no pisarlo.
     const same = Math.abs(st.center - p.center) < 1 && st.rate === p.rate;
     if (!same && !fileNoticeShown) {
       fileNoticeShown = true;
@@ -123,6 +123,12 @@ const follow = throttle(() => {
 }, 300);
 
 export function initProtocols() {
+  // Aviso informativo del servidor (canal de audio del perfil movido): se muestra y el canal local adopta la frecuencia elegida.
+  bus.on('msg:error', (m) => {
+    if (m.level !== 'info') return;
+    toast(m.msg || 'Aviso del servidor');
+    if (m.chan_freq) setChannel({ freq: m.chan_freq });
+  });
   bus.on('msg:profiles', renderProfiles);
   bus.on('msg:decoders', renderCatalog);
   bus.on('msg:status', () => { markActive(); tryFollow(); });

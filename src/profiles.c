@@ -152,7 +152,14 @@ int profile_apply(const profile_t *p, engine_t *e, dec_host_t *h, int client, ch
             engine_cfg_t real;
             engine_get_config(e, &real);
             int64_t f;
-            if (profile_pick_audio_freq(p->chan_freq, real.center_hz, real.rate, NULL, 0, &f)) {
+            /* Señales que el detector ya ve (fuente de fichero: la banda no cambia, así que valen) */
+            det_signal_t dsg[96];
+            int64_t sc = real.center_hz;
+            int nd = engine_get_signals(e, dsg, 96, &sc);
+            int64_t sig_hz[96];
+            for (int i = 0; i < nd; i++)
+                sig_hz[i] = sc + (int64_t)llround(dsg[i].offset_hz);
+            if (profile_pick_audio_freq(p->chan_freq, real.center_hz, real.rate, nd ? sig_hz : NULL, nd, &f)) {
                 snprintf(err, errlen, "el canal de audio del perfil (%.3f MHz) queda fuera de la banda capturada; se coloca en %.3f MHz",
                          (double)p->chan_freq / 1e6, (double)f / 1e6);
                 LOG_W("Perfil %s: %s", p->id, err);
