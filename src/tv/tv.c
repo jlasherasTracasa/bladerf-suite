@@ -30,6 +30,7 @@
 
 #include <errno.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -107,7 +108,8 @@ struct tv {
 
     /* hilos */
     pthread_t pub_th, file_th, scan_th;
-    bool pub_run, file_run, scan_run, scan_started, file_started;
+    atomic_bool pub_run, file_run, scan_run; /* los leen sus hilos sin cerrojo */
+    bool scan_started, file_started;
     char file_path[600];
 
     /* exploración */

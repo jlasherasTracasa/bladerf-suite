@@ -55,7 +55,7 @@ struct engine {
     server_t *srv;
     recorder_t *rec;
     pthread_t thread;
-    volatile bool running;
+    atomic_bool running;
     bool use_gpu;
 
     pthread_mutex_t lock;  /* protege todo lo de este bloque */
@@ -323,13 +323,15 @@ static void ring_alloc(engine_t *e, unsigned block, double rate)
         return;
     free(e->ring);
     free(e->rg_t);
-    e->ring = malloc(sizeof(int16_t) * 2 * (size_t)block * n);
-    e->rg_t = calloc(n, sizeof(double));
+    /* n+1 bloques: el último (índice n) es la ranura de derrame del lector cuando el
+     * anillo está lleno y el DSP tiene la única ranura libre en uso (ver reader_main). */
+    e->ring = malloc(sizeof(int16_t) * 2 * (size_t)block * (n + 1));
+    e->rg_t = calloc(n + 1, sizeof(double));
     if (!e->ring || !e->rg_t) {
         LOG_E("Sin memoria para el anillo de lectura (%u bloques de %u muestras)", n, block);
         abort();
     }
-    memset(e->ring, 0, sizeof(int16_t) * 2 * (size_t)block * n);
+    memset(e->ring, 0, sizeof(int16_t) * 2 * (size_t)block * (n + 1));
     e->rg_n = n;
     e->rg_block = block;
     e->rg_head = e->rg_tail = 0;
@@ -351,12 +353,20 @@ static void *reader_main(void *arg)
             break;
         }
         e->rd_busy = true;
-        uint64_t lo = e->rg_busy ? e->rg_head - 1 : e->rg_head;
-        if (e->rg_tail - lo >= e->rg_n) {
-            e->rg_head++; /* DSP atrasado: se pierde el bloque sin consumir más viejo */
+        /* Anillo lleno y DSP atrasado: se pierde un bloque. Si el DSP tiene una ranura en
+         * uso (head−1), con el anillo lleno tail % n cae justo en ella: descartar el más
+         * viejo no la libera y escribir ahí sería una carrera de datos con el DSP (la
+         * detectó TSan). En ese caso el bloque nuevo se lee en la ranura de derrame (n)
+         * y se descarta; si el DSP no tiene ranura, se descarta el más viejo sin leer. */
+        bool spill = false;
+        if (e->rg_busy ? (e->rg_tail - (e->rg_head - 1) >= e->rg_n) : (e->rg_tail - e->rg_head >= e->rg_n)) {
+            if (e->rg_busy)
+                spill = true;
+            else
+                e->rg_head++;
             atomic_fetch_add(&e->dsp_drops, 1);
         }
-        unsigned slot = (unsigned)(e->rg_tail % e->rg_n), block = e->rg_block;
+        unsigned slot = spill ? e->rg_n : (unsigned)(e->rg_tail % e->rg_n), block = e->rg_block;
         pthread_mutex_unlock(&e->rg_m);
 
         unsigned ovr = 0;
@@ -368,10 +378,12 @@ static void *reader_main(void *arg)
         pthread_mutex_lock(&e->rg_m);
         if (rc == 0) {
             consecutive_errors = 0;
-            e->rg_t[slot] = t;
-            e->rg_tail++;
             atomic_fetch_add(&e->rd_samples, block);
-            pthread_cond_signal(&e->rg_data);
+            if (!spill) {
+                e->rg_t[slot] = t;
+                e->rg_tail++;
+                pthread_cond_signal(&e->rg_data);
+            }
         } else {
             if (++consecutive_errors == 1 || consecutive_errors % 20 == 0) {
                 LOG_E("Error de lectura: %s", source_error(e->src));

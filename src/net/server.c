@@ -24,6 +24,7 @@
 #include <netinet/tcp.h>
 #include <poll.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -55,7 +56,7 @@ typedef struct {
     int fd;
     int id;
     int state;
-    bool kill;
+    atomic_bool kill; /* lo pone el hilo DSP (cola llena) y lo lee el hilo de red */
     /* entrada (solo hilo de red) */
     uint8_t *in;
     size_t in_len, in_cap;
@@ -79,7 +80,7 @@ struct server {
     pthread_mutex_t lock;
     client_t cl[MAX_CLIENTS];
     int next_id;
-    volatile bool stop;
+    atomic_bool stop;
     unsigned long long sent;
 };
 

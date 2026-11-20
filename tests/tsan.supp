@@ -1,0 +1,8 @@
+# Supresiones de ThreadSanitizer (tests/tsan.sh). Una línea por supresión, con su motivo.
+
+# Maqueta de hardware de tests/test_tx.c: s_write() (hilo de calibración) copia la señal
+# transmitida a un búfer y rx_hook() (hilo de captura de tx.c) la lee con un usleep() como
+# única sincronía. Es el modelo de laboratorio del test, no código de producción: el
+# bucle real RFIC_BIST lo resuelve el propio hardware.
+race:rx_hook
+race:tx_model
