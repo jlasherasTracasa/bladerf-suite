@@ -15,6 +15,7 @@ import { initRds } from './rds.js';
 import { initTx } from './tx.js';
 import { initTv } from './tv.js';
 import { initPalette, openPalette } from './palette.js';
+import { initStatus } from './status.js';
 
 /* ---- pestañas ---- */
 let curTab = 'receptor';
@@ -48,31 +49,6 @@ function showTab(id, user) {
   // En pantallas estrechas el panel queda bajo el espectro: llevarlo a la vista (la cabecera fija se compensa con scroll-margin-top).
   if (user && innerWidth < 1000) $('#tabs').scrollIntoView({ block: 'start', behavior: 'smooth' });
   bus.emit('tab', id);
-}
-
-/* ---- barra superior ---- */
-let lastOver = null, overTimer = 0;
-function renderTop() {
-  const conn = $('#st-conn');
-  conn.replaceChildren(h('i', { class: 'dot' + (S.connected ? '' : ' off') }), h('b', { text: S.connected ? 'Conectado' : 'Sin conexión' }));
-  const st = S.status;
-  if (!st) return;
-  const d = st.device, s = st.stats || {};
-  $('#st-dev').textContent = `${d.board || d.kind}${d.serial ? ' · ' + d.serial.slice(-6) : ''}`;
-  $('#st-rate').textContent = `${((s.rate || 0) / 1e6).toFixed(2)} Msps`;
-  const ld = $('#st-load');
-  ld.textContent = `DSP ${((s.load || 0) * 100).toFixed(0)}%`;
-  ld.className = 'chip' + (s.load > 0.9 ? ' bad' : s.load > 0.7 ? ' warn' : '');
-  $('#st-temp').textContent = s.temp > 0 ? `${s.temp.toFixed(0)} °C` : '— °C';
-  $('#st-clients').textContent = `${s.clients ?? '—'} cli.`;
-  const ov = $('#st-over');
-  ov.textContent = `OVR ${s.overruns ?? 0}`;
-  if (lastOver != null && s.overruns > lastOver) {
-    ov.className = 'chip bad';
-    clearTimeout(overTimer);
-    overTimer = setTimeout(() => { ov.className = 'chip'; }, 4000);
-  }
-  lastOver = s.overruns;
 }
 
 /* ---- atajos de teclado ---- */
@@ -116,19 +92,16 @@ function shortcuts(e) {
 }
 
 function boot() {
-  initAudio(); initReceiver(); initSpectrum(); initSweep(); initHardware(); initProtocols(); initDecoders(); initSignal(); initMap(); initMessages(); initRds(); initTx(); initTv(); initPalette();
+  initAudio(); initReceiver(); initSpectrum(); initSweep(); initHardware(); initProtocols(); initDecoders(); initSignal(); initMap(); initMessages(); initRds(); initTx(); initTv(); initPalette(); initStatus();
   buildTabs(); showTab(decodeURIComponent(location.hash.slice(1)) || 'receptor');
   bus.on('tabs-changed', () => { buildTabs(); showTab(curTab); });
   window.addEventListener('hashchange', () => showTab(decodeURIComponent(location.hash.slice(1)) || 'receptor'));
   $('#btn-help').addEventListener('click', () => $('#help-dlg').showModal());
   document.addEventListener('keydown', shortcuts);
-  let everDown = false;
-  bus.on('ws', (up) => { renderTop(); if (!up) everDown = true; if (!up || everDown) toast(up ? 'Conectado de nuevo al servidor' : 'Conexión perdida; reintentando…', up ? 'ok' : 'err'); });   // sin aviso en la primera conexión
-  bus.on('msg:status', renderTop);
+  // La barra de estado, los avisos y la restauración tras reconectar viven en status.js.
+  bus.on('ws', (up) => { if (!up) toast('Conexión perdida; reintentando…', 'err'); });
   const setTitle = () => { document.title = `${fmtHz(S.chan.freq, 3)} · BladeRF Lab`; };
   bus.on('chan', setTitle); setTitle();
-  bus.on('msg:error', (m) => m.level === 'info' || toast(m.msg || 'Error del servidor', 'err'));
-  renderTop();
   connect();
 }
 // Gancho de solo lectura para las pruebas E2E (tests/web_e2e.mjs) y la consola del navegador.

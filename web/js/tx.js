@@ -2,7 +2,7 @@
 // Los modos: «file» escribe SigMF (siempre seguro), «loopback» usa el bucle
 // interno del RFIC (nada sale por la antena) y «air» radia de verdad: solo se
 // ofrece si la política lo permite y el modulador es radiable (air_ok).
-import { S, bus, $, fmtHz, parseHz, fillSelect, toast } from './util.js';
+import { S, bus, $, h, fmtHz, parseHz, fillSelect, toast } from './util.js';
 import { send } from './ws.js';
 
 const cur = () => S.decoders.find((d) => d.id === $('#tx-proto').value);
@@ -118,6 +118,17 @@ export function initTx() {
   bus.on('msg:status', () => syncCenterRate(false));
   bus.on('msg:tx_policy', renderPolicy);
   bus.on('msg:decoders', () => { if (S.txPolicy && S.txPolicy.enabled) fillProtos(); });
-  bus.on('msg:tx_result', (m) => result(!!m.ok, `${m.msg || ''}${m.file ? `\nFichero: ${m.file}` : ''}${m.seconds ? `\nDuración: ${(+m.seconds).toFixed(2)} s` : ''}`));
+  bus.on('msg:tx_result', (m) => {
+    result(!!m.ok, `${m.msg || ''}${m.file ? `\nFichero: ${m.file}` : ''}${m.seconds ? `\nDuración: ${(+m.seconds).toFixed(2)} s` : ''}`);
+    if (!m.ok || !m.file) return;
+    // Enlaces para descargar la señal generada y la orden para decodificarla de punta a punta con --replay.
+    const base = String(m.file).split('/').pop().replace(/\.sigmf-(meta|data)$/, ''), r = $('#tx-result'), proto = ($('#tx-proto') || {}).value || '';
+    const cmd = `build/bladerf-lab --replay recordings/${base}.sigmf-meta --decode ${proto}@${Math.round(parseHz($('#tx-freq').value) || 0)} --print`;
+    r.append(h('div', { class: 'row wrap', style: 'margin-top:6px;gap:8px' },
+      h('a', { href: `/recordings/${base}.sigmf-meta`, download: `${base}.sigmf-meta`, text: 'Descargar metadatos' }),
+      h('a', { href: `/recordings/${base}.sigmf-data`, download: `${base}.sigmf-data`, text: 'Descargar datos IQ' }),
+      h('button', { class: 'btn small', type: 'button', text: 'Copiar orden para decodificarlo', title: cmd,
+        onclick: () => { try { navigator.clipboard.writeText(cmd); toast('Orden copiada', 'ok'); } catch { toast(cmd); } } })));
+  });
   renderPolicy();
 }

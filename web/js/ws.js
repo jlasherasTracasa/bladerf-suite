@@ -7,6 +7,7 @@ let ws = null, delay = 500, timer = 0;
 
 export function send(obj) {
   if (!ws || ws.readyState !== 1) return false;
+  S.lastCmd = { cmd: obj.cmd, t: Date.now() };   // contexto para explicar un error posterior del servidor (status.js)
   ws.send(JSON.stringify(obj));
   return true;
 }
@@ -46,7 +47,7 @@ function open() {
   const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
   try { ws = new WebSocket(url); } catch { retry(); return; }
   ws.binaryType = 'arraybuffer';
-  ws.onopen = () => { delay = 500; S.connected = true; bus.emit('ws', true); };
+  ws.onopen = () => { delay = 500; S.retry = { at: 0, n: 0 }; S.connected = true; bus.emit('ws', true); };
   ws.onmessage = (ev) => {
     if (typeof ev.data === 'string') {
       try { onJson(JSON.parse(ev.data)); } catch (e) { console.warn('JSON inválido', e); }
@@ -55,9 +56,17 @@ function open() {
   ws.onclose = () => { S.connected = false; bus.emit('ws', false); retry(); };
   ws.onerror = () => { try { ws.close(); } catch { /* nada */ } };
 }
+// Espera creciente entre reintentos: 0,5 s · 0,85 · 1,4 · 2,4 … hasta 6 s. S.retry deja a la interfaz
+// mostrar la cuenta atrás (status.js) y reconnectNow() permite no esperarla.
 function retry() {
   clearTimeout(timer);
+  S.retry = { at: Date.now() + delay, n: (S.retry ? S.retry.n : 0) + 1 };
   timer = setTimeout(open, delay);
   delay = Math.min(delay * 1.7, 6000);
+}
+export function reconnectNow() {
+  if (ws && ws.readyState <= 1) return;   // ya conectado o conectando
+  delay = 500;
+  open();
 }
 export function connect() { open(); }

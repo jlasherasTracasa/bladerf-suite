@@ -802,17 +802,96 @@ suites.reconexion = async (ctx) => {
   const srv = startServer(8806, 'fm'); await waitHttp('http://127.0.0.1:8806/');
   const pg = await openApp(ctx.br, 8806);
   await pg.fill('#freq-input', '99.6'); await sleep(200);
+  // estado de sesión que debe sobrevivir: decodificador manual (RDS@99,6), modo, anchura y audio
+  await pg.ev(`location.hash='decoders';(()=>{const s=document.querySelector('#da-proto');s.value='rds';s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+  await pg.fill('#da-freq', '99,6', false); await pg.clickSel('#da-add');
+  await pg.waitFor(`__app.S.decList.some(i=>i.proto==='rds'&&i.owner===0)`, 4000, 'RDS manual');
+  await pg.ev(`location.hash='receptor';document.activeElement.blur();0`);
+  if (!(await S_(pg, 'S.chan.audio'))) { await pg.key(' '); await sleep(400); }
+  await pg.clickSel('#mode-seg button[data-m="nfm"]'); await sleep(200);
+  check('antes de cortar: audio activo y modo NFM', (await S_(pg, 'S.chan.audio && S.chan.mode==="nfm"')));
   srv.kill('SIGKILL'); await sleep(300);
   await pg.waitFor(`!__app.S.connected`, 5000).then(() => check('detecta la caída del servidor', true), () => check('detecta la caída del servidor', false));
   check('el chip pasa a "Sin conexión"', (await pg.ev(`document.querySelector('#st-conn').textContent`)).includes('Sin conexión'));
   check('se avisa al usuario (toast)', (await pg.ev(`document.querySelector('#toasts').textContent`)).length > 0);
+  await sleep(1200);
+  const banner = await pg.ev(`(()=>{const n=document.querySelector('#notices .notice.err');return n?n.textContent:''})()`);
+  check('aviso persistente con cuenta atrás y «Reintentar ya»', /Sin conexión/.test(banner) && /Reintentando/.test(banner) && /Reintentar ya/.test(banner), banner);
+  const n1 = await S_(pg, 'S.retry.n'); await sleep(2500);
+  check('los reintentos se espacian (espera creciente)', (await S_(pg, 'S.retry.n')) >= n1 && (await S_(pg, 'S.retry.at - Date.now()')) > -1000);
   await pg.shot(`${shotsDir()}/16_sin_conexion.png`);
   const srv2 = startServer(8806, 'fm'); await waitHttp('http://127.0.0.1:8806/');
   await pg.waitFor(`__app.S.connected`, 12000).then(() => check('reconecta solo al volver el servidor', true), () => check('reconecta solo al volver el servidor', false));
   const n0 = await pg.ev('__t.fr'); await sleep(1500);
   check('el espectro vuelve a llegar', (await pg.ev('__t.fr')) > n0 + 5);
   check('el canal se conserva (99,6 MHz)', (await S_(pg, 'S.chan.freq')) === 99600000, await S_(pg, 'S.chan.freq'));
-  srv2.kill('SIGKILL'); pg.close();
+  check('modo NFM y audio restaurados', await S_(pg, 'S.chan.mode==="nfm" && S.chan.audio'));
+  await pg.waitFor(`__app.S.decList.some(i=>i.proto==='rds'&&i.owner===0)`, 6000).then(() => check('el decodificador manual se restaura en el servidor nuevo', true), () => check('el decodificador manual se restaura en el servidor nuevo', false, 'dec_list sin RDS'));
+  check('el aviso de conexión desaparece', (await pg.ev(`document.querySelectorAll('#notices .notice.err').length`)) === 0);
+  check('sin duplicar el decodificador', (await S_(pg, 'S.decList.filter(i=>i.proto==="rds"&&i.owner===0).length')) === 1);
+  await pg.shot(`${shotsDir()}/16b_reconectado.png`);
+  ctx.reconDone = true; srv2.kill('SIGKILL'); pg.close();
+};
+
+/* W10: barra de estado, avisos con acción y estados waiting/error explicados (servidor mock: radio sintonizable) */
+suites.estado_avisos = async (ctx) => {
+  const pg = await openApp(ctx.br, ctx.mock.port);
+  const chips = await pg.ev(`[...document.querySelectorAll('#topstats .chip')].map(c=>({id:c.id,t:c.textContent,title:c.title}))`);
+  for (const id of ['st-dev', 'st-usb', 'st-rate', 'st-over', 'st-gpu', 'st-load', 'st-dec', 'st-temp']) check(`barra: «${id}» con descripción emergente`, chips.some((c) => c.id === id && c.title.length > 25), JSON.stringify(chips.find((c) => c.id === id)));
+  check('barra: la tasa nunca dice 0.00 Msps', !chips.find((c) => c.id === 'st-rate').t.startsWith('0.00'), chips.find((c) => c.id === 'st-rate').t);
+  // pérdidas con color por gravedad
+  await pg.ev(`(()=>{const s=JSON.parse(JSON.stringify(__app.S.status));s.stats.overruns=7;s.stats.drops=0;__app.S.status=s;__app.bus.emit('msg:status',s)})()`); await sleep(100);
+  check('pérdidas que suben → chip rojo', (await pg.ev(`document.querySelector('#st-over').className`)).includes('bad'), await pg.ev(`document.querySelector('#st-over').textContent`));
+  // decodificador en error (radio): acción «Cambiar a 2 Msps»
+  await pg.ev(`location.hash='decoders';(()=>{const s=document.querySelector('#da-proto');s.value='dab';s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+  await pg.clickSel('#da-add');
+  await pg.waitFor(`__app.S.decList.some(i=>i.state==='error')`, 4000, 'instancia en error');
+  await sleep(300);
+  const why = await pg.ev(`(()=>{const w=document.querySelector('#di-list .why.error');return w?w.textContent:''})()`);
+  check('estado error: motivo y acción en la fila', /necesita capturar a exactamente/.test(why) && /Cambiar a 2\.048 Msps/.test(why), why);
+  await pg.ev(`[...document.querySelectorAll('#di-list .why button')].find(b=>/Cambiar a/.test(b.textContent)).click()`); await sleep(300);
+  check('la acción envía config con la tasa exacta', (await logOf(ctx.mock.port)).some((c) => c.cmd === 'config' && c.rate === 2048000));
+  // waiting: fuera de banda
+  await pg.ev(`(()=>{const s=document.querySelector('#da-proto');s.value='rs41';s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+  await pg.fill('#da-freq', '403,5', false); await pg.clickSel('#da-add');
+  await pg.waitFor(`__app.S.decList.some(i=>i.proto==='rs41'&&i.state==='waiting')`, 4000, 'instancia waiting');
+  await sleep(300);
+  const w2 = await pg.ev(`(()=>{const w=document.querySelector('#di-list .why.waiting');return w?w.textContent:''})()`);
+  check('estado waiting: explica la banda y ofrece centrar el hardware', /fuera de la banda/.test(w2) && /Centrar el hardware en 403\.500/.test(w2), w2);
+  await pg.ev(`document.querySelector('#di-list .why.error').scrollIntoView({block:'center'});0`); await sleep(200);
+  await pg.shot(`${shotsDir()}/17_decodificador_explicado.png`);
+  // errores del servidor traducidos: nunca el texto crudo solo
+  const emit = (m) => pg.ev(`__app.bus.emit('msg:error', ${JSON.stringify({ type: 'error', ...m })});0`);
+  await emit({ msg: 'la transmisión está desactivada (arrancar con --enable-tx)' }); await sleep(100);
+  let nt = await pg.ev(`[...document.querySelectorAll('#notices .notice')].map(n=>n.textContent)`);
+  check('TX denegado: aviso con acción «Usar modo Fichero»', nt.some((t) => /desactivada en el servidor/.test(t) && /Usar modo Fichero/.test(t)), JSON.stringify(nt));
+  await emit({ msg: 'cosa rara del servidor' }); await sleep(100);
+  nt = await pg.ev(`[...document.querySelectorAll('#notices .notice')].map(n=>n.textContent)`);
+  check('error desconocido: lleva contexto («El servidor avisa»), no solo el texto crudo', nt.some((t) => /El servidor avisa|respondió/.test(t) && /cosa rara/.test(t)), JSON.stringify(nt));
+  await emit({ level: 'info', msg: 'Espectro FPGA desactivado: prueba. Vuelvo a CPU/GPU.' }); await sleep(100);
+  check('aviso informativo en gris', (await pg.ev(`document.querySelectorAll('#notices .notice.info').length`)) >= 1);
+  check('ningún aviso de error se muestra como toast rojo', (await pg.ev(`document.querySelectorAll('#toasts .toast.err').length`)) === 0);
+  await pg.shot(`${shotsDir()}/18_avisos.png`);
+  // «fuera de banda» sostenido → aviso con «Mover centro aquí»
+  await pg.ev(`__app.S.chan.audio=true;__app.S.chan.freq=120e6;Object.defineProperty(__app.S,'level',{get:()=>({db:-150,flags:4}),set(){},configurable:true});0`); await sleep(3000);
+  const oob = await pg.ev(`(()=>{const n=document.querySelector('#notices .notice[data-id=oob]');return n?n.textContent:''})()`);
+  check('canal fuera de banda: aviso con «Mover centro aquí»', /fuera de la banda/.test(oob) && /Mover centro aquí/.test(oob), oob);
+    pg.close();
+};
+
+/* W10: con una fuente de fichero estrecha (48 kHz) la tasa no es «0.00 Msps» y el canal no sale «FUERA» */
+suites.fichero_estrecho = async (ctx) => {
+  const rec = path.join(ROOT, 'build/webtest/rec_w10'); fs.mkdirSync(rec, { recursive: true });
+  const srv = launch(BIN, ['--port', '8812', '--replay', path.join(ROOT, 'tests/data/real/ais.sigmf-meta'), '--config', 'none', '--recdir', rec, '--web', path.join(ROOT, 'web')]);
+  await waitHttp('http://127.0.0.1:8812/');
+  const pg = await openApp(ctx.br, 8812);
+  const r0 = await pg.ev(`document.querySelector('#st-rate').textContent`);
+  check('fichero 48 kHz: tasa legible desde el primer momento', /48\.0 ksps/.test(r0) || /47\.\d ksps/.test(r0), r0);
+  await pg.key(' '); await sleep(2500);
+  check('el canal cabe en la banda: ni FUERA ni filtro más ancho que la banda', !(await pg.ev(`document.querySelector('#fl-oob').classList.contains('on')`)) && (await S_(pg, 'S.chan.bw')) < 48000, JSON.stringify(await S_(pg, '[S.chan.mode,S.chan.bw,S.chan.freq]')));
+  check('modo ajustado a uno estrecho (no WFM en 48 kHz)', (await S_(pg, 'S.chan.mode')) !== 'wfm');
+  await pg.shot(`${shotsDir()}/19_fichero_estrecho.png`);
+  pg.close(); srv.kill('SIGKILL');
 };
 
 suites.atajos = async (ctx) => {
@@ -1016,9 +1095,10 @@ suites.senal_eventos = async (ctx) => {
 suites.errores = async (ctx) => {
   const all = [...(ctx.pgs || [])];
   check('cero excepciones no capturadas en toda la batería', ctx.allExceptions.length === 0, ctx.allExceptions.slice(0, 3).join(' | '));
-  const real = ctx.allConsole.filter((e) => !/:8806\/ws/.test(e));   // los fallos de WebSocket de la prueba de reconexión (servidor caído a propósito) son esperados
+  const real = ctx.allConsole.filter((e) => !/:8806\//.test(e));   // los fallos de WebSocket de la prueba de reconexión (servidor caído a propósito) son esperados
   check('cero errores de consola en toda la batería', real.length === 0, real.slice(0, 5).join(' | '));
-  check('cero peticiones fallidas (CSP incluida)', ctx.allReqFail.length === 0, ctx.allReqFail.slice(0, 5).join(' | '));
+  const rf = ctx.allReqFail.filter((e) => !/ERR_CONNECTION_REFUSED/.test(e) || !ctx.reconDone);   // solo se toleran los rechazos de la prueba de reconexión (servidor caído a propósito)
+  check('cero peticiones fallidas (CSP incluida)', rf.length === 0, rf.slice(0, 5).join(' | '));
   void all;
 };
 

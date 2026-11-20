@@ -5,6 +5,7 @@ import { send } from './ws.js';
 import { setChannel } from './receiver.js';
 import { stateView } from './tables.js';
 import { createEventList } from './evlist.js';
+import { explainInst, rememberDecoder } from './status.js';
 
 const msps = (r) => `${+(r / 1e6).toFixed(3)} Msps`;   // tasas de muestreo en Msps (no «MHz»)
 
@@ -12,7 +13,7 @@ export function addDecoder(proto, freq, opts) {
   const d = S.decoders.find((x) => x.id === proto);
   const f = d && d.kind === 'wide' && S.status ? S.status.center : freq;
   const m = { cmd: 'dec_add', proto, freq: Math.round(f) };
-  if (opts && Object.keys(opts).length) m.opts = opts;
+  if (opts && Object.keys(opts).length) { m.opts = opts; rememberDecoder(proto, f, opts); }
   if (!send(m)) toast('Sin conexión con el servidor', 'err');
 }
 
@@ -35,6 +36,14 @@ function onProtoChange() {
   $('#da-hint').textContent = `${d.desc} (${wide ? 'banda ancha' : 'banda estrecha'}, ${rate})`;
 }
 
+/* Motivo y acción para una instancia que no está en «ok» (el texto crudo del servidor queda como detalle técnico). */
+function whyRow(i) {
+  const e = explainInst(i);
+  if (!e) return null;
+  return h('div', { class: 'why ' + i.state, role: 'note' }, h('span', { class: 'tx', text: e.why }),
+    ...e.actions.map((a) => h('button', { class: 'btn small' + (a.primary === false ? '' : ' primary'), type: 'button', text: a.label, onclick: a.fn })));
+}
+
 /* ---------- lista de instancias ---------- */
 function renderInstances() {
   const box = $('#di-list');
@@ -54,7 +63,8 @@ function renderInstances() {
         h('span', { class: i.drops ? 'st waiting' : '', text: `${i.drops} descartes` }),
         h('span', { title: 'Carga de CPU de la instancia' }, 'carga ', h('span', { class: 'load' }, h('i', { style: `width:${Math.min(100, i.load * 100)}%` })), ` ${(i.load * 100).toFixed(0)}%`),
         h('span', { text: i.owner === 1 ? 'perfil' : 'manual' }),
-        i.err ? h('span', { style: 'color:var(--err)', text: i.err }) : null));
+        i.err ? h('span', { class: 'muted', title: 'Mensaje técnico del servidor', text: 'Detalle técnico: ' + i.err }) : null),
+      whyRow(i));
   }));
 }
 
@@ -134,6 +144,7 @@ export function initDecoders() {
   });
   bus.on('msg:decoders', fillProtoSelect);
   bus.on('msg:dec_list', () => { renderInstances(); });
+  bus.on('msg:status', () => { if (S.decList.some((i) => i.state !== 'ok')) renderInstances(); });
   bus.on('msg:dec_state', renderStates);
   bus.on('msg:dec_list', renderStates);
   bus.on('tab', (t) => { if (t === 'decoders') renderStates(); });

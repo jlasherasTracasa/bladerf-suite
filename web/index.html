@@ -17,16 +17,20 @@
   <div class="brand"><svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true"><path d="M3 20h5l3-10 4 16 4-20 3 14h7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></svg><span>BladeRF Lab</span></div>
   <div class="stats" id="topstats" role="status" aria-live="off">
     <span class="chip" id="st-conn" title="Conexión con el servidor"><i class="dot off"></i><b>Sin conexión</b></span>
-    <span class="chip hide-sm" id="st-dev" title="Equipo">—</span>
+    <span class="chip hide-sm" id="st-dev" title="Fuente de muestras">—</span>
+    <span class="chip hide-sm" id="st-usb" title="Enlace USB">USB —</span>
     <span class="chip" id="st-rate" title="Tasa de muestreo medida">— Msps</span>
+    <span class="chip" id="st-over" title="Pérdidas de muestras">Pérdidas 0</span>
+    <span class="chip hide-sm" id="st-gpu" title="Cálculo del espectro">CPU</span>
     <span class="chip" id="st-load" title="Carga del hilo DSP">DSP —</span>
+    <span class="chip hide-sm" id="st-dec" title="Decodificadores">Dec. 0</span>
     <span class="chip hide-sm" id="st-temp" title="Temperatura">— °C</span>
     <span class="chip hide-sm" id="st-clients" title="Clientes conectados">— cli.</span>
-    <span class="chip" id="st-over" title="Desbordamientos (muestras perdidas)">OVR 0</span>
   </div>
   <button class="icon-btn" id="btn-palette" aria-label="Paleta de órdenes" title="Paleta de órdenes (Ctrl+K)">⌘</button>
   <button class="icon-btn" id="btn-help" aria-label="Atajos de teclado" title="Atajos de teclado (?)">?</button>
 </header>
+<div class="notices" id="notices" role="region" aria-label="Avisos"></div>
 
 <main class="layout">
   <section class="scope" aria-label="Espectro y cascada">

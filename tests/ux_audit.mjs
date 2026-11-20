@@ -309,6 +309,9 @@ async function main() {
     M.notes.push('Texto de la instancia: «' + txt.slice(0, 200) + '»');
     const hint = await pg.ev(`document.querySelector('#da-hint').textContent.trim()`);
     M.notes.push('Pista del formulario: «' + hint.slice(0, 120) + '»');
+    const act = await pg.ev(`[...document.querySelectorAll('#di-list .why.error button')].map(b=>b.textContent).join('|')`);
+    M.notes.push('Acción propuesta en la fila de error: «' + act + '»');
+    if (err && !act) M.dead.push('la fila de error explica la causa pero no propone ninguna acción');
     if (!err) M.dead.push('la instancia no llegó a estado de error');
     else if (!ctx.ok) M.dead.push('el estado «error» no explica la causa');
     // variante: narrow fuera de banda → «esperando» (no cuenta en las acciones de la tarea)

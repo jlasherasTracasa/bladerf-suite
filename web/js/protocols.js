@@ -126,8 +126,7 @@ export function initProtocols() {
   // Aviso informativo del servidor (canal de audio del perfil movido): se muestra y el canal local adopta la frecuencia elegida.
   bus.on('msg:error', (m) => {
     if (m.level !== 'info') return;
-    toast(m.msg || 'Aviso del servidor');
-    if (m.chan_freq) setChannel({ freq: m.chan_freq });
+    if (m.chan_freq) { toast(m.msg || 'Aviso del servidor'); setChannel({ freq: m.chan_freq }); }   // el resto de avisos informativos los muestra status.js
   });
   bus.on('msg:profiles', renderProfiles);
   bus.on('msg:decoders', renderCatalog);
