@@ -154,6 +154,8 @@ prueba en placa la hace Opus en RAM.
 | ID | Tarea | Modelo | Terminado cuando |
 |---|---|---|---|
 | F1 | Integrar el espectro de la FPGA en el motor y la web como fuente alternativa (`rx_mux = 3`, secuencia «late-mux»), con conmutación en caliente y vuelta automática si la imagen no es la lab | **Sonnet** | Cascada a 30 imágenes/s a 61,44 Msps con CPU del host < 5 % |
+| F1✔ | Probado en placa el 2026-11-20 (RAM, USB 2, 30,72 Msps): 20 imágenes/s, 0 huecos, nivel medio igual que la CPU, FFT y fps reconfigurables, vuelta a CPU correcta. CPU del servidor 146 % → 10 % de un núcleo | — | — |
+| F1b | Bajar de 10 % a < 5 % de CPU en modo FPGA (perfilar lectura USB y conversión de tramas) y evitar el `sync_rx: Operation timed out` que aparece al reconfigurar fps | **Sonnet** + **Opus** (placa) | < 5 % medido en placa; 10 reconfiguraciones seguidas sin error |
 | F2 | Trama robusta: CRC por trama e indicador de saturación del ADC; el host descarta tramas corruptas | **Sonnet** | Test con errores inyectados en simulación |
 | F3 | Espectro y muestras a la vez: canal de espectro diezmado multiplexado con el flujo IQ (hoy es uno u otro) | **Sonnet** | Decodificar y ver el espectro de la FPGA al mismo tiempo en placa |
 | F4 | DDC en la FPGA: NCO + CIC + FIR de compensación, 4–8 canales estrechos configurables por Wishbone, entregados empaquetados por USB | **Sonnet** | Los decodificadores estrechos funcionan con el ancho de banda completo sin pasar todo por USB; AIS + ACARS + POCSAG a la vez desde 61,44 Msps |

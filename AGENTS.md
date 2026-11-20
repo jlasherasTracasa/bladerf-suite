@@ -548,21 +548,17 @@ Recogidos por el orquestador de los informes verificados de fase 2:
    RS), ACARS (polaridad, BCS), DSC (bits de comprobación, categorías), RS41
    (parámetros RS), DVB-T (pilotos/TPS), LoRa (tablas).
 9. AIS: mejora PLVA (Kanaan et al.) no hecha.
-10. Detector (`src/dsp/detector.c`): falsos positivos en el ~5 % de cada borde
-    de la banda y racimos de marcadores sobre una misma señal FM. La web los
-    oculta o agrupa (UX1), pero hay que corregirlo en origen: excluir los bordes y
-    fusionar las detecciones contiguas dentro del ancho ocupado.
-11. Web (pulido menor): RDS `af` se muestra en Hz crudos (pasar a MHz); «Ancho RF»
-    sale «—» con fuente de fichero (ver `docs/calidad/QA_WEB.md`).
+10. ✔ Detector: bordes excluidos, fusión por ancho ocupado e histéresis (N1, 2026-11-20).
+11. ✔ Web: RDS `af` en MHz y «Ancho RF» con fichero (L1).
 12. Enlace USB: el 2026-11-16 la placa estaba en USB 2.0 Hi-Speed (≈ 45 MB/s,
     ≈ 11 Msps). Volver a medir el caudal (RX normal, 61,44 Msps y el modo espectro
     de la imagen lab) con USB 3 SuperSpeed (`bladeRF-cli -e info`).
-13. Host + GPU: SIGSEGV al añadir, mover y quitar instancias deprisa con el DDC de
-    GPU activo (`make webtest` con CUDA; reproductor `build/orq/repro_gpu.mjs`).
-    En curso: G1. `make webtest` debe pasarse siempre también con CUDA.
-14. Imagen FPGA «lab» (0cd2913c…): probada en placa el 2026-11-16 (RAM). Falta
-    integrarla en el motor y la web (`rx_mux = 3`, secuencia «late-mux» de
-    `fpga_lab.h`) como fuente de espectro alternativa.
+13. ✔ Host + GPU: SIGSEGV corregido (G1); `make webtest` incluye la prueba de
+    estrés y debe pasarse siempre también con CUDA.
+14. ✔ Imagen FPGA «lab» integrada como fuente de espectro (`spectrum_src`, F1) y
+    probada en placa el 2026-11-20. Pendiente F1b (CPU < 5 % y error de lectura
+    al reconfigurar). La lab se carga solo en RAM; tras probar, se vuelve a la
+    imagen de serie.
 
 ## 8c. TDT: ver y oír la televisión (fase 3b)
 
