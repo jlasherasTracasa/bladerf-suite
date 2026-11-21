@@ -119,6 +119,32 @@ static int run_case(const char *params, double snr, double cfo, double ppm, bool
     return n;
 }
 
+/* Variante de run_case que devuelve los contadores del decodificador (state_json) en vez de los
+ * eventos: permite exigir NÚMERO de tramas, no solo "alguna". */
+static long json_count(const char *js, const char *key)
+{
+    char pat[40];
+    snprintf(pat, sizeof pat, "\"%s\":", key);
+    const char *p = strstr(js, pat);
+    return p ? atol(p + strlen(pat)) : -1;
+}
+
+static void count_q(const int16_t *q, int n, long *frames, long *bursts, long *fcs_err)
+{
+    char err[100];
+    dec_cfg_t cfg = {.rate = WIFI_FS, .freq_hz = 2437000000LL, .center_hz = 2437000000LL};
+    void *st = DEC_WIFI.create(&cfg, err, sizeof err);
+    for (int i = 0; i < n; i += 65536)
+        DEC_WIFI.process_raw(st, q + 2 * i, MIN(65536, n - i), (double)i / WIFI_FS, NULL, NULL);
+    sb_t sb = {0};
+    DEC_WIFI.state_json(st, &sb, (double)n / WIFI_FS);
+    *frames = json_count(sb.data, "frames");
+    *bursts = json_count(sb.data, "bursts");
+    *fcs_err = json_count(sb.data, "fcs_err");
+    sb_free(&sb);
+    DEC_WIFI.destroy(st);
+}
+
 int main(void)
 {
     /* ---- Vectores de la norma ---- */
@@ -327,6 +353,77 @@ int main(void)
         evs_free(&ev);
         printf("  [coste] ocupación ~25 %%: %.3f s CPU por s de señal (límite 0,3); saturado 100 %%: %.3f\n", c2, c3);
         CHECK(c2 < VR_CPU(0.3)); /* bajo sanitizer el umbral se relaja ×8 */
+    }
+
+    /* ---- 8. Señal DÉBIL (captura real de Pamplona, balizas DSSS a SNR por muestra de −3,4 dB) ----
+     * El detector antiguo exigía +6 dB sobre el suelo y no abría ráfaga (0 tramas con la captura);
+     * el correlador de Barker con muestreo puntual perdía 2,6 dB y dejaba el BER de ~1e-3. Aquí:
+     * 12 balizas DSSS a −2 dB de SNR (potencia de señal / potencia de ruido en 20 MHz) con CFO y
+     * deriva de reloj: se exigen ≥ 10 de 12 con FCS correcto y ninguna con FCS malo. */
+    {
+        iqbuf_t b = {0};
+        char err[100];
+        const char *pr = "{\"std\":\"b\",\"ssid\":\"Debil\",\"repeat\":12,\"gap_us\":2500}";
+        CHECK(MOD_WIFI.modulate(pr, &b, err, sizeof err) == 0);
+        int n = b.n;
+        cf32 *x = calloc((size_t)n, sizeof(cf32));
+        drift(b.s, n, 60, x);
+        chan_cfo(x, n, WIFI_FS, -35e3);
+        uint32_t seed = 4242;
+        awgn_avg(x, n, -2.0, &seed);
+        int16_t *q = malloc(sizeof(int16_t) * 2 * (size_t)n);
+        cf32_to_q11(x, n, 1.0, q);
+        long fr, bu, fe;
+        count_q(q, n, &fr, &bu, &fe);
+        printf("  [debil] DSSS −2 dB: %ld/12 tramas, %ld FCS malos, %ld ráfagas\n", fr, fe, bu);
+        CHECK(fr >= 10);
+        CHECK(fe <= 1);
+        free(q);
+        free(x);
+        iqbuf_free(&b);
+    }
+    /* ---- 9. Ruido de bajo nivel cuantizado (1,5 LSB, continua de 2 LSB) y de nivel medio:
+     * el detector no puede disparar ráfagas (en el aire con ganancia 20 dB salían ~6500/s). ---- */
+    {
+        const double sg[3] = {0.7, 1.5, 8.0};
+        for (int k = 0; k < 3; k++) {
+            int n = 4000000;
+            int16_t *q = malloc(sizeof(int16_t) * 2 * (size_t)n);
+            uint32_t seed = 99u + (uint32_t)k;
+            for (int i = 0; i < n; i++) {
+                q[2 * i] = (int16_t)lrint(sg[k] * tu_gauss(&seed) + 2.0);
+                q[2 * i + 1] = (int16_t)lrint(sg[k] * tu_gauss(&seed) - 1.0);
+            }
+            long fr, bu, fe;
+            count_q(q, n, &fr, &bu, &fe);
+            printf("  [ruido %.1f LSB] ráfagas=%ld tramas=%ld\n", sg[k], bu, fr);
+            CHECK(bu <= 2 && fr == 0);
+            free(q);
+        }
+    }
+    /* ---- 10. Captura REAL propia (bladeRF 2.0 micro, Pamplona, 2026-11-21): 50 ms con una baliza
+     * DSSS 1 Mb/s de MOVISTAR-WIFI6-D458 a SNR por muestra de −3,4 dB (mkfixtures.py; el fichero no
+     * va en git). int8 = Q11 crudo / 16 al reproducirlo, igual que el motor. ---- */
+    {
+        FILE *f = fopen("tests/data/real/wifi_dsss_aire.sigmf-data", "rb");
+        if (!f)
+            printf("  (sin tests/data/real/wifi_dsss_aire.sigmf-data: se omite)\n");
+        else {
+            int n = 1000000;
+            int8_t *r8 = malloc(2 * (size_t)n);
+            int16_t *q = malloc(sizeof(int16_t) * 2 * (size_t)n);
+            size_t got = fread(r8, 2, (size_t)n, f);
+            fclose(f);
+            for (size_t i = 0; i < 2 * got; i++)
+                q[i] = (int16_t)(r8[i] * 16);
+            long fr, bu, fe;
+            count_q(q, (int)got, &fr, &bu, &fe);
+            printf("  [aire] captura propia 50 ms: %ld tramas, %ld FCS malos, %ld ráfagas\n", fr, fe, bu);
+            CHECK(fr >= 1);
+            CHECK(fe == 0);
+            free(r8);
+            free(q);
+        }
     }
     return TEST_SUMMARY();
 }

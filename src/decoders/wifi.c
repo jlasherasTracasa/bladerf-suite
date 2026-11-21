@@ -14,11 +14,24 @@
  *
  * Cadena de recepción (20 Msps exactos, muestras Q11):
  *
- *  0. Detector de energía por bloques de 1 µs (20 muestras) con suelo de ruido
- *     adaptativo: sube lento, baja rápido. Dos bloques > 6 dB sobre el suelo
- *     abren una ráfaga (con 256 muestras de pre-roll); tres bloques bajos la
- *     cierran. Todo lo demás solo se hace SOBRE LA RÁFAGA, lo que mantiene el
- *     coste en ~0,05 s de CPU por segundo de señal aunque el canal esté ocupado.
+ *  0. Detector de energía por bloques de 1 µs (20 muestras). El suelo de ruido es una
+ *     media móvil EXPONENCIAL (no un mínimo: un seguidor "baja rápido, sube lento" se
+ *     clava en el cuantil ~1 % de la potencia y sesga el suelo ~2 dB hacia abajo, ver
+ *     docs/protocolos/wifi.md §Detector) que solo se actualiza con bloques sin señal.
+ *     Se abre una ráfaga con DOS criterios sobre medias de bloques consecutivas:
+ *      - rápido: media de 8 µs > 1,8× el suelo (+2,6 dB; σ de la media = 1/√160 = 8 %,
+ *        o sea > 9σ en solo ruido gaussiano) para señales fuertes;
+ *      - lento: media de 64 µs > 1,35× (+1,3 dB; σ = 2,8 %, > 12σ) para señales débiles:
+ *        una baliza DSSS a 1 Mb/s se decodifica con SNR por muestra de ~0 dB (Barker
+ *        da 10,4 dB de ganancia), muy por debajo del antiguo umbral de +6 dB.
+ *     Se cierra tras 64 µs con la media de 16 µs bajo 1,2× el suelo (una baliza débil
+ *     fluctúa ±40 % y se partía en trozos) o, si la ráfaga era fuerte, tras 3 bloques
+ *     bajo el 25 % de su nivel. Las ráfagas de < 24 µs se
+ *     descartan (no caben ni un preámbulo OFDM más SIGNAL) y las que llegan a
+ *     BURST_MAX no se procesan: se re-aprende el suelo (cambio de ganancia, interferencia
+ *     continua) en vez de disparar cientos de miles de ráfagas falsas. Todo lo demás
+ *     solo se hace SOBRE LA RÁFAGA (pre-roll de 2048 muestras = 102 µs, por el retardo
+ *     de la ventana lenta), lo que mantiene el coste bajo aunque el canal esté ocupado.
  *  1. OFDM 802.11a/g (Bloessl et al., "An IEEE 802.11a/g/p OFDM Receiver for GNU
  *     Radio", SRIF 2013), 6-54 Mb/s:
  *      a. Schmidl-Cox sobre el STF: P(n)=Σ x[n+k]·x*[n+k+16], M=|P|²/R²; el
@@ -37,13 +50,12 @@
  *         decodifica entero: desentrelazado, reinserción de borrados (2/3 y 3/4), Viterbi K=7
  *         (133,171) con cola, desaleatorizado (la semilla sale de los 7 primeros
  *         bits del campo SERVICE, que son ceros), FCS = CRC-32.
- *  2. DSSS 802.11b a 1 Mb/s (si no hay STF): Barker-11 evaluado directamente a
- *     20 Msps interpolando (Catmull-Rom) en las posiciones de chip
- *     p + i·20/11; fase de símbolo por búsqueda en pasos de 0,25 muestra;
- *     seguimiento de reloj temprano/tardío (±100 ppm = 1 muestra/500 símbolos);
- *     DBPSK diferencial con CFO por arg(Σd²)/2; desaleatorizador
- *     autosincronizado z⁻⁷+z⁻⁴+1; SFD 0xF3A0 precedido de unos; cabecera PLCP
- *     con CRC-16; PSDU con FCS CRC-32.
+ *  2. DSSS 802.11b a 1 Mb/s (si no hay STF): Barker-11 con filtro adaptado al chip
+ *     (coseno alzado, 6 muestras por chip) en las posiciones p + i·20/11; fase de símbolo
+ *     por búsqueda en ventanas con señal; seguimiento de reloj temprano/tardío (±100 ppm =
+ *     1 muestra/500 símbolos); DBPSK diferencial con CFO por arg(Σd²)/2; desaleatorizador
+ *     autosincronizado z⁻⁷+z⁻⁴+1; SFD 0xF3A0 precedido de unos; cabecera PLCP con CRC-16;
+ *     PSDU con FCS CRC-32. Sensibilidad medida: balizas reales a −3,4 dB de SNR por muestra.
  *
  * Una red genera un evento al verse por primera vez o cuando cambian su SSID,
  * canal, seguridad o estándar. state_json lista las redes vistas (caducan a los
@@ -51,7 +63,8 @@
  *
  * LIMITACIONES: OFDM 6-54 Mb/s y DSSS 1 Mb/s; no 2/5,5/11 Mb/s (CCK); no se
  * recombinan ráfagas pegadas (SIFS); sin 802.11n/ac/ax salvo identificar su IE.
- * No hay vectores públicos con IQ real de referencia: ver docs/protocolos/wifi.md.
+ * Validado con IQ real DSSS (sigidwiki y captura propia de Pamplona); OFDM solo sintético:
+ * ver docs/protocolos/wifi.md.
  */
 #include "decoder.h"
 
@@ -72,13 +85,14 @@
 #define DBG(...) ((void)0)
 #endif
 #define BLK 20                 /* 1 µs */
-#define PRE 256                /* pre-roll (potencia de 2) */
+#define PRE 2048               /* pre-roll (potencia de 2) */
 #define BURST_MAX 200000       /* 10 ms */
 #define MAX_NETS 64
 #define NET_TTL 300.0
 #define MAX_PSDU 1500
 #define SOFT_CAP (520 * 288)
 #define PMIN 1e-8f
+#define MIN_BLK 24             /* ráfaga mínima (µs) */
 #define DELTA 4                /* adelanto de la ventana FFT dentro del GI */
 
 typedef struct {
@@ -103,11 +117,16 @@ typedef struct {
     int rpos;
     cf32 *buf, *work;
     int n;
-    bool inburst, noise_init;
-    int bfill, hi, lo;
+    bool inburst;
+    int bfill, lo, warm, hold, quiet;
     float psum, noise;
-    double burst_pow;
+    float pw[64];                /* potencias de los últimos 64 bloques */
+    int pwi;
+    double s8, s16, s64;         /* sumas móviles de 8, 16 y 64 bloques */
+    float level;                 /* mayor media de 8 µs de la ráfaga en curso */
+    float *bp;                   /* potencia de cada bloque de la ráfaga (para la mediana) */
     int burst_blocks;
+    uint64_t short_bursts, overlong;
     double t_now;                /* hora de la muestra siguiente */
     int64_t abs_n;               /* muestras consumidas desde el principio (índice absoluto) */
     int64_t call0;               /* abs_n al empezar la llamada en curso a process_raw */
@@ -145,12 +164,13 @@ static void *wifi_create(const dec_cfg_t *cfg, char *err, size_t errlen)
     crc_init(&w->crc32, crc_preset("CRC-32"));
     w->buf = malloc(sizeof(cf32) * (BURST_MAX + PRE + 64));
     w->work = malloc(sizeof(cf32) * (BURST_MAX + PRE + 64));
+    w->bp = malloc(sizeof(float) * ((BURST_MAX + PRE) / BLK + 64));
     w->z = malloc(sizeof(cf32) * (BURST_MAX / 20 + 64));
     w->soft = malloc(sizeof(float) * SOFT_CAP);
     w->bits = malloc((size_t)(BURST_MAX / 20 + 64));
-    if (!w->fft || !w->vit || !w->buf || !w->work || !w->z || !w->soft || !w->bits) {
+    if (!w->fft || !w->vit || !w->buf || !w->work || !w->bp || !w->z || !w->soft || !w->bits) {
         snprintf(err, errlen, "sin memoria");
-        free(w->buf); free(w->work); free(w->z); free(w->soft); free(w->bits);
+        free(w->buf); free(w->work); free(w->bp); free(w->z); free(w->soft); free(w->bits);
         if (w->fft) fft_plan_destroy(w->fft);
         if (w->vit) viterbi_destroy(w->vit);
         free(w);
@@ -166,7 +186,7 @@ static void wifi_destroy(void *st)
         return;
     fft_plan_destroy(w->fft);
     viterbi_destroy(w->vit);
-    free(w->buf); free(w->work); free(w->z); free(w->soft); free(w->bits);
+    free(w->buf); free(w->work); free(w->bp); free(w->z); free(w->soft); free(w->bits);
     free(w);
 }
 
@@ -713,6 +733,7 @@ static int ofdm_try(wifi_t *w, const cf32 *x, int n, double rssi_db)
                 mac_frame(w, psdu, len, phy, rssi_db);
             } else {
                 w->fcs_err++;
+                DBG("OFDM fcs_err t=%.4f rate=%d len=%d snr=%.1f\n", (double)w->abs_n / w->fs, r->mbps, len, w->snr_db);
             }
             free(psdu);
         }
@@ -724,27 +745,70 @@ static int ofdm_try(wifi_t *w, const cf32 *x, int n, double rssi_db)
 /* ======================================================================== */
 /*  DSSS 1 Mb/s                                                             */
 /* ======================================================================== */
-/* Tabla de interpolación de Catmull-Rom para los 11 chips de un símbolo cuyo
- * primer chip cae en p0: la posición de chip i es p0 + i·20/11 (+20 por cada
- * símbolo, que es entero), así que índices y pesos son los MISMOS en todos los
- * símbolos y se calculan una sola vez por fase. */
+/* Filtro adaptado al chip. Antes cada chip se leía interpolando UNA sola muestra
+ * (Catmull-Rom en la posición del chip): con 20 Msps y 11 Mchip/s eso toma solo 11 de las
+ * 20 muestras por símbolo y pierde 10·log10(20/11) = 2,6 dB de relación Es/N0 frente al
+ * correlador ideal (ruido blanco: Es/N0 = SNR_muestra + 10·log10(20)). A SNR por muestra
+ * de −3,4 dB (balizas reales de la captura de Pamplona) esos 2,6 dB son la diferencia entre
+ * un BER del descodificador de ~1e-3 y ~1e-4 y, con 3700 bits por baliza, entre 0 y
+ * ~50 % de tramas con FCS correcto. Aquí cada chip se integra con el pulso de coseno
+ * alzado (α = BK_ALPHA) que usa el transmisor, evaluado en las 6 muestras que rodean a la
+ * posición del chip p0 + i·20/11 (índices idx-2…idx+3, ±1,8 chips: el lóbulo principal). Los
+ * índices y pesos son los MISMOS en todos los símbolos (20 muestras = entero). Los pesos
+ * se normalizan a suma 1 para que la escala de salida no cambie. */
+#define BK_ALPHA 0.5
+#define BK_TAPS 6
 typedef struct {
-    int idx[11];      /* índice de la muestra anterior a la posición del chip */
-    float wt[11][4];  /* pesos de las muestras idx-1…idx+2 (ya multiplicados por el Barker) */
+    int idx[11];             /* índice de la muestra anterior a la posición del chip */
+    float wt[11][BK_TAPS];   /* pesos de las muestras idx-2…idx+3 (ya multiplicados por el Barker) */
 } bk_t;
+
+static double rc_pulse(double u, double alpha)   /* u en periodos de chip */
+{
+    double d = 1.0 - 4.0 * alpha * alpha * u * u;
+    double sc = fabs(u) < 1e-9 ? 1.0 : sin(M_PI * u) / (M_PI * u);
+    if (fabs(d) < 1e-6)
+        return M_PI / 4.0 * sc;
+    return sc * cos(M_PI * alpha * u) / d;
+}
+
+/* Las posiciones de chip son p0 + i·20/11 con p0 múltiplo de 0,25: su parte fraccionaria es
+ * siempre un múltiplo de 1/44, así que los pesos del pulso se calculan UNA vez para esas 44
+ * fracciones (sin, cos y divisiones por chip costaban más que la correlación). */
+#define BK_FR 44
+static float g_bkw[BK_FR][BK_TAPS];
+static bool g_bkw_ok;
+
+static void bk_tables(void)
+{
+    const double tc = 20.0 / 11.0;
+    for (int k = 0; k < BK_FR; k++) {
+        double f = (double)k / BK_FR, h[BK_TAPS], sum = 0;
+        for (int j = 0; j < BK_TAPS; j++) {
+            h[j] = rc_pulse(((j - 2) - f) / tc, BK_ALPHA);
+            sum += h[j];
+        }
+        for (int j = 0; j < BK_TAPS; j++)
+            g_bkw[k][j] = (float)(h[j] / sum);
+    }
+    g_bkw_ok = true;
+}
 
 static void bk_prepare(bk_t *t, double p0)
 {
-    const double tc = 20.0 / 11.0;
+    if (!g_bkw_ok)
+        bk_tables();
+    const int p44 = (int)lrint(p0 * BK_FR); /* p0 en 1/44 de muestra (exacto para múltiplos de 0,25) */
     for (int i = 0; i < 11; i++) {
-        double pos = p0 + i * tc;
-        int ix = (int)floor(pos);
-        float f = (float)(pos - ix), b = (float)WIFI_BARKER[i];
+        int pos44 = p44 + i * 80; /* i·20/11 = i·80/44 */
+        int ix = pos44 / BK_FR, k = pos44 % BK_FR;
+        if (pos44 < 0) {
+            ix = -((-pos44 + BK_FR - 1) / BK_FR);
+            k = pos44 - ix * BK_FR;
+        }
         t->idx[i] = ix;
-        t->wt[i][0] = b * (-0.5f * f * (1 - f) * (1 - f));
-        t->wt[i][1] = b * (1 - 2.5f * f * f + 1.5f * f * f * f);
-        t->wt[i][2] = b * (0.5f * f * (1 + 4 * f - 3 * f * f));
-        t->wt[i][3] = b * (-0.5f * f * f * (1 - f));
+        for (int j = 0; j < BK_TAPS; j++)
+            t->wt[i][j] = (float)WIFI_BARKER[i] * g_bkw[k][j];
     }
 }
 
@@ -753,36 +817,97 @@ static cf32 bk_corr(const bk_t *t, const cf32 *x, int base)
 {
     float re = 0, im = 0;
     for (int i = 0; i < 11; i++) {
-        const cf32 *q = x + base + t->idx[i] - 1;
-        re += t->wt[i][0] * q[0].re + t->wt[i][1] * q[1].re + t->wt[i][2] * q[2].re + t->wt[i][3] * q[3].re;
-        im += t->wt[i][0] * q[0].im + t->wt[i][1] * q[1].im + t->wt[i][2] * q[2].im + t->wt[i][3] * q[3].im;
+        const cf32 *q = x + base + t->idx[i] - 2;
+        for (int k = 0; k < BK_TAPS; k++) {
+            re += t->wt[i][k] * q[k].re;
+            im += t->wt[i][k] * q[k].im;
+        }
     }
     return (cf32){re, im};
 }
 
 static inline float mag2(cf32 a) { return a.re * a.re + a.im * a.im; }
 
-static int dsss_try(wifi_t *w, const cf32 *x, int n, double rssi_db)
+static int dsss_try(wifi_t *w, const cf32 *x0, int n, double rssi_db)
 {
     if (n < 4600)
         return 0;
-    /* ---- fase de símbolo: 80 candidatos de 0,25 muestras sobre m = 20…69 ---- */
+    /* El filtro del chip lee hasta 2 muestras antes de la posición: se desplaza el origen 4
+     * muestras (las posiciones relativas a x se convierten con +XOFF al final). */
+    const int XOFF = 4;
+    const cf32 *x = x0 + XOFF;
+    n -= XOFF;
+    /* ---- fase de símbolo: 80 candidatos de 0,25 muestras sobre 50 símbolos ----
+     * La ráfaga lleva 2048 muestras de pre-roll (102 µs) y la trama empieza en cualquier punto
+     * de [0, ~PRE+100]: se prueban ventanas de 50 símbolos cada 25 y solo las que tienen
+     * potencia > 1,15× el suelo (ruido puro: σ = 3 %), y se elige la de mayor contraste
+     * (S_máx / media de las 20 fases gruesas; con ruido u OFDM ronda 1,2-2,1, con Barker alineado > 3). */
     bk_t tb;
-    double bestS = 0, sum = 0, p_best = 0;
-    for (int c = 0; c < 80; c++) {
-        double p0 = 2.0 + 0.25 * c, S = 0;
-        bk_prepare(&tb, p0);
-        for (int m = 20; m < 70; m++)
-            S += mag2(bk_corr(&tb, x, 20 * m));
-        sum += S;
-        if (S > bestS) {
-            bestS = S;
-            p_best = p0;
+    double bestC = 0, p_best = 0, Cw[40], pbw[40];
+    int ms = -1, nw = 0, m0w[40];
+    int nwin_ok = 0;
+    for (int m0 = 20; m0 + 50 + 4 < (n - 64) / 20 && m0 < PRE / 20 + 130 && nwin_ok < 3; m0 += 25) {
+        double pw = 0;
+        for (int i = 20 * m0; i < 20 * (m0 + 50); i++)
+            pw += mag2(x[i]);
+        if (pw / (20.0 * 50.0) < 1.15 * w->noise)
+            continue;
+        /* Como mucho 3 ventanas con señal, la 2.ª y la 3.ª a +50 y +100 símbolos de la primera
+         * (el preámbulo dura 128: alguna cae entera dentro). Las ráfagas OFDM débiles que no
+         * se pudieron decodificar llegan aquí y no deben costar 7 ventanas cada una. */
+        if (nwin_ok++ > 0)
+            m0 += 25;
+        /* búsqueda gruesa de fase (paso de 1 muestra, 20 candidatos) y afinado de ±0,75 en
+         * pasos de 0,25: 26 evaluaciones en vez de 80 (el coste de este bloque dominaba) */
+        double bestS = 0, sum = 0, pb = 0;
+        for (int c = 0; c < 20; c++) {
+            double p0 = 2.0 + c, S = 0;
+            bk_prepare(&tb, p0);
+            for (int m = m0; m < m0 + 50; m += 2) /* símbolos alternos: 25 de cada ventana */
+                S += mag2(bk_corr(&tb, x, 20 * m));
+            sum += S;
+            if (S > bestS) {
+                bestS = S;
+                pb = p0;
+            }
         }
+        double coarse_mean = sum / 20.0;
+        for (int c = -3; c <= 3; c++) {
+            if (!c)
+                continue;
+            double p0 = pb + 0.25 * c, S = 0;
+            if (p0 < 1.5)
+                continue;
+            bk_prepare(&tb, p0);
+            for (int m = m0; m < m0 + 50; m += 2)
+                S += mag2(bk_corr(&tb, x, 20 * m));
+            if (S > bestS) {
+                bestS = S;
+                pb = p0;
+            }
+        }
+        double C = bestS / (coarse_mean + 1e-30);
+        if (nw < 40) {
+            Cw[nw] = C;
+            pbw[nw] = pb;
+            m0w[nw++] = m0;
+        }
+        DBG("win m0=%d C=%.2f\n", m0, C);
+        bestC = MAX(bestC, C);
+        if (C > 3.0) /* alineado inequívoco: no hace falta mirar más ventanas */
+            break;
     }
-    if (bestS < 1.6 * sum / 80.0)
+    if (bestC < 2.3) /* ruido o OFDM: 1,2-2,1; balizas reales a −3 dB: 3,5-6; limpias: 9 */
         return 0;
-    int M = (n - 48) / 20;
+    /* la ventana válida MÁS TEMPRANA (≥ 85 % del mejor contraste): el SFD cae 128 símbolos
+     * tras el inicio de la trama y la búsqueda de SFD arranca 36 símbolos después de ms */
+    for (int i = 0; i < nw; i++)
+        if (Cw[i] >= 0.85 * bestC) {
+            ms = m0w[i];
+            p_best = pbw[i];
+            break;
+        }
+    int M = (n - 64) / 20;
     if (M > BURST_MAX / 20)
         M = BURST_MAX / 20;
     /* ---- despreading con seguimiento temprano/tardío (desde m = 20) ---- */
@@ -792,13 +917,16 @@ static int dsss_try(wifi_t *w, const cf32 *x, int n, double rssi_db)
     bk_prepare(&tp, p0);
     bk_prepare(&te, p0 - dl);
     bk_prepare(&tl, p0 + dl);
-    for (int m = 0; m < M; m++) {
+    for (int m = ms; m < M; m++) {
         cf32 z0 = bk_corr(&tp, x, 20 * m);
         w->z[m] = z0;
-        if (m >= 20) {
+        if (m >= ms + 20 && ((m - ms) & 3) == 0) {
+            /* El reloj deriva ≤ 1 muestra cada ~500 símbolos (±100 ppm): basta mirar temprano/
+             * tardío cada 4 símbolos (con ventana de 16 en vez de 64 = misma constante de
+             * tiempo en símbolos, umbral 10/4) y el coste de DSSS baja un tercio. */
             float e = sqrtf(mag2(bk_corr(&tl, x, 20 * m))) - sqrtf(mag2(bk_corr(&te, x, 20 * m)));
-            acc = acc * (1.0 - 1.0 / 64) + e / (sqrtf(mag2(z0)) + 1e-9);
-            if (acc > 10.0 || acc < -10.0) {
+            acc = acc * (1.0 - 1.0 / 16) + e / (sqrtf(mag2(z0)) + 1e-9);
+            if (acc > 2.5 || acc < -2.5) {
                 p0 += acc > 0 ? step : -step;
                 acc = 0;
                 bk_prepare(&tp, p0);
@@ -809,7 +937,7 @@ static int dsss_try(wifi_t *w, const cf32 *x, int n, double rssi_db)
     }
     /* ---- DBPSK: CFO con d² y decisión diferencial ---- */
     cf32 s2 = {0, 0};
-    for (int m = 24; m < MIN(M, 100); m++) {
+    for (int m = ms + 4; m < MIN(M, ms + 80); m++) {
         cf32 d = {w->z[m].re * w->z[m - 1].re + w->z[m].im * w->z[m - 1].im,
                   w->z[m].im * w->z[m - 1].re - w->z[m].re * w->z[m - 1].im};
         s2.re += d.re * d.re - d.im * d.im;
@@ -820,8 +948,8 @@ static int dsss_try(wifi_t *w, const cf32 *x, int n, double rssi_db)
     uint8_t *bits = w->bits;
     lfsr_t l;
     lfsr_init(&l, 7, 0x48, 0, LFSR_MULTIPLICATIVE);
-    bits[0] = 0;
-    for (int m = 1; m < M; m++) {
+    bits[ms] = 0;
+    for (int m = ms + 1; m < M; m++) {
         cf32 d = {w->z[m].re * w->z[m - 1].re + w->z[m].im * w->z[m - 1].im,
                   w->z[m].im * w->z[m - 1].re - w->z[m].re * w->z[m - 1].im};
         float re = d.re * ct + d.im * st; /* d·e^{-jθ} */
@@ -829,7 +957,7 @@ static int dsss_try(wifi_t *w, const cf32 *x, int n, double rssi_db)
     }
     /* ---- SFD tras unos de sincronía ---- */
     int sfd = -1;
-    for (int m = 40; m + 64 < M; m++) {
+    for (int m = ms + 36; m + 64 < M; m++) {
         int err = 0;
         for (int i = 0; i < 16 && err < 2; i++)
             err += bits[m + i] != ((WIFI_SFD_BITS >> (15 - i)) & 1);
@@ -843,7 +971,7 @@ static int dsss_try(wifi_t *w, const cf32 *x, int n, double rssi_db)
             break;
         }
     }
-    DBG("dsss p_best=%.2f M=%d th=%.3f sfd=%d\n", p_best, M, th, sfd);
+    DBG("dsss ms=%d t=%.4f n=%d p_best=%.2f M=%d th=%.3f sfd=%d\n", ms, (double)w->abs_n / w->fs, n, p_best, M, th, sfd);
     if (sfd < 0)
         return 0;
     DBG("dsss sfd=%d M=%d th=%.3f\n", sfd, M, th);
@@ -878,12 +1006,14 @@ static int dsss_try(wifi_t *w, const cf32 *x, int n, double rssi_db)
     uint32_t r4 = psdu[len - 4] | psdu[len - 3] << 8 | psdu[len - 2] << 16 | (uint32_t)psdu[len - 1] << 24;
     if (fcs == r4)
     {
-        w->sp0 = MAX(0, (int)(20.0 * (sfd - 128) + p0)); /* SYNC de 128 símbolos de 1 µs antes del SFD */
-        w->sp1 = (int)(20.0 * (sfd + 64 + 8 * len) + p0);
+        w->sp0 = MAX(0, (int)(20.0 * (sfd - 128) + p0) + XOFF); /* SYNC de 128 símbolos de 1 µs antes del SFD */
+        w->sp1 = (int)(20.0 * (sfd + 64 + 8 * len) + p0) + XOFF;
         mac_frame(w, psdu, len, "DSSS 1M", rssi_db);
     }
-    else
+    else {
         w->fcs_err++;
+        DBG("DSSS fcs_err t=%.4f len=%d fc0=%02x th=%.3f M=%d snr=%.1f p0=%.2f\n", (double)w->abs_n / w->fs, len, fc0, th, M, w->snr_db, p0);
+    }
     free(psdu);
     return 1;
 }
@@ -891,49 +1021,114 @@ static int dsss_try(wifi_t *w, const cf32 *x, int n, double rssi_db)
 /* ======================================================================== */
 /*  Detector de ráfagas                                                     */
 /* ======================================================================== */
+static int cmp_f(const void *a, const void *b)
+{
+    float x = *(const float *)a, y = *(const float *)b;
+    return (x > y) - (x < y);
+}
+
+/* Cierra la ráfaga: la potencia se estima con la MEDIANA de los bloques de 1 µs (robusta
+ * frente al retardo de apertura de la ventana lenta y a la cola de cierre, que son ruido). */
 static void burst_done(wifi_t *w)
 {
     w->bursts++;
-    int nb = w->burst_blocks > 3 ? w->burst_blocks - 3 : 1;
-    double pw = w->burst_pow / nb - w->noise;
+    int nb = w->burst_blocks;
+    qsort(w->bp, (size_t)nb, sizeof(float), cmp_f);
+    double med = w->bp[nb / 2];
+    double noise = w->noise > 1e-12f ? w->noise : 1e-12f;
+    double pw = med - noise;
     double rssi = 10.0 * log10(pw > 1e-12 ? pw : 1e-12);
-    w->snr_db = 10.0 * log10((pw > 1e-12 ? pw : 1e-12) / (w->noise > 1e-12f ? w->noise : 1e-12f));
+    w->snr_db = 10.0 * log10((pw > 1e-12 ? pw : 1e-12) / noise);
     w->sp0 = w->sp1 = -1;
-    if (ofdm_try(w, w->buf, w->n, rssi) == 0)
+    /* Un tono estrecho (p. ej. un interferente a +9 MHz) también da correlación periódica a
+     * retardo 16: si el camino OFDM no produjo nada (ni trama, ni descarte por subtipo, ni
+     * FCS malo) se prueba también DSSS. */
+    uint64_t before = w->frames + w->skipped + w->fcs_err;
+    if (ofdm_try(w, w->buf, w->n, rssi) == 0 || w->frames + w->skipped + w->fcs_err == before)
         dsss_try(w, w->buf, w->n, rssi);
+}
+
+static void burst_open(wifi_t *w)
+{
+    for (int i = 0; i < PRE; i++)
+        w->buf[i] = w->ring[(w->rpos + i) & (PRE - 1)];
+    w->n = PRE;
+    DBG("open t=%.5f nz=%.0f\n", (double)w->abs_n / w->fs, w->noise * 4194304.0);
+    w->inburst = true;
+    w->lo = 0;
+    w->quiet = 0;
+    w->burst_blocks = 0;
+    w->level = 0;
 }
 
 static void block_end(wifi_t *w)
 {
     float P = w->psum / BLK;
     w->psum = 0;
-    if (!w->noise_init) {
-        w->noise = P; /* el primer bloque inicializa el suelo (rápido hacia abajo después) */
-        w->noise_init = true;
+    /* medias móviles de 8, 16 y 64 bloques (sumas incrementales) */
+    float o64 = w->pw[w->pwi & 63], o16 = w->pw[(w->pwi - 16) & 63], o8 = w->pw[(w->pwi - 8) & 63];
+    w->s64 += P - o64;
+    w->s16 += P - o16;
+    w->s8 += P - o8;
+    w->pw[w->pwi & 63] = P;
+    w->pwi++;
+    if ((w->pwi & 0xFFF) == 0) { /* evita la deriva del acumulador en coma flotante */
+        w->s8 = w->s16 = w->s64 = 0;
+        for (int i = 0; i < 64; i++) {
+            w->s64 += w->pw[i];
+            if (i < 16) w->s16 += w->pw[(w->pwi - 1 - i) & 63];
+            if (i < 8) w->s8 += w->pw[(w->pwi - 1 - i) & 63];
+        }
     }
-    float thr = MAX(4.0f * w->noise, PMIN);
+    float m8 = (float)(w->s8 / 8), m16 = (float)(w->s16 / 16), m64 = (float)(w->s64 / 64);
+    if (w->warm < 64) { /* arranque: se guardan 64 µs y el suelo es su mediana */
+        w->bp[w->warm++] = P;
+        if (w->warm == 64) {
+            qsort(w->bp, 64, sizeof(float), cmp_f);
+            w->noise = w->bp[32]; /* si había señal, m64 < 0,9·suelo lo corrige enseguida */
+        }
+        return;
+    }
+    float nz = MAX(w->noise, PMIN);
+    if (w->hold > 0)
+        w->hold--;
     if (!w->inburst) {
-        if (P <= thr)
-            w->noise += (P < w->noise ? 0.25f : 0.002f) * (P - w->noise);
-        w->hi = P > thr ? w->hi + 1 : 0;
-        if (w->hi >= 2) {
-            for (int i = 0; i < PRE; i++)
-                w->buf[i] = w->ring[(w->rpos + i) & (PRE - 1)];
-            w->n = PRE;
-            w->inburst = true;
-            w->lo = 0;
-            w->burst_pow = 0;
-            w->burst_blocks = 0;
-        }
-    } else {
-        w->burst_pow += P;
-        w->burst_blocks++;
-        w->lo = P < MAX(2.0f * w->noise, PMIN) ? w->lo + 1 : 0;
-        if (w->lo >= 3 || w->n + BLK > BURST_MAX) {
+        /* El suelo se actualiza justo cuando NO se abre ráfaga (complemento de la condición de
+         * apertura): un suelo bajo que se quedaba sin actualizar por una puerta más estricta
+         * dejaba abierta la ráfaga durante ms de ruido puro. Fuera durante la cola de la
+         * ráfaga anterior (hold), que aún contiene señal en las ventanas de 64 µs. */
+        if (w->hold == 0 && m8 <= 1.8f * nz && m64 <= 1.35f * nz)
+            w->noise += (P - w->noise) * (1.0f / 1024.0f);
+        if (m64 < 0.9f * nz) /* el suelo baja de golpe (cambio de ganancia) */
+            w->noise += (m64 - w->noise) * (1.0f / 64.0f);
+        if (w->hold == 0 && w->pwi >= 64 && (m8 > 1.8f * nz || m64 > 1.35f * nz))
+            burst_open(w);
+        return;
+    }
+    w->bp[w->burst_blocks++] = P;
+    if (m8 > w->level)
+        w->level = m8;
+    bool strong = w->level >= 4.0f * nz;
+    w->lo = (strong && P < 0.25f * w->level) ? w->lo + 1 : 0;
+    /* Ráfaga débil: la potencia de ventanas de 16 µs fluctúa ±40 % incluso sin señal (el ruido
+     * real no es blanco ni gaussiano), así que una baliza a SNR < 0 dB se partía en 2-7 trozos.
+     * Solo se cierra tras 64 µs seguidos bajo el umbral; si la señal vuelve, sigue la misma. */
+    w->quiet = m16 < 1.2f * nz ? w->quiet + 1 : 0;
+    bool end = (w->lo >= 3) || (w->quiet >= 64);
+    if (w->n + BLK > BURST_MAX + PRE) {
+        /* demasiado larga: no es una trama; re-aprende el suelo y no procesa */
+        w->overlong++;
+        w->noise = m64;
+        w->inburst = false;
+        w->hold = 256;
+    } else if (end) {
+        DBG("close t=%.5f nz=%.0f lo=%d quiet=%d lvl=%.0f m16=%.0f\n", (double)w->abs_n / w->fs, w->noise * 4194304.0, w->lo, w->quiet, w->level * 4194304.0, m16 * 4194304.0);
+        w->inburst = false;
+        w->hold = 64; /* la ventana de 64 µs aún contiene la ráfaga: no reabrir con su cola */
+        if (w->burst_blocks >= MIN_BLK)
             burst_done(w);
-            w->inburst = false;
-            w->hi = 0;
-        }
+        else
+            w->short_bursts++;
     }
 }
 
@@ -961,16 +1156,14 @@ static void wifi_process_raw(void *st, const int16_t *iq, int n, double now, dec
             float re = xr - dr, im = xi - di;
             if (d)
                 d[j] = (cf32){re, im};
-            else
-                w->ring[(w->rpos + j) & (PRE - 1)] = (cf32){re, im};
+            w->ring[(w->rpos + j) & (PRE - 1)] = (cf32){re, im};
             ps += re * re + im * im;
         }
         w->dcr = dr;
         w->dci = di;
         if (d)
             w->n += m;
-        else
-            w->rpos = (w->rpos + m) & (PRE - 1);
+        w->rpos = (w->rpos + m) & (PRE - 1);
         w->psum += ps;
         w->bfill += m;
         i += m;
@@ -1001,8 +1194,10 @@ static void wifi_state_json(void *st, sb_t *sb, double now)
         net_json(w, sb, n, t, false);
         sb_puts(sb, "}");
     }
-    sb_printf(sb, "],\"bursts\":%llu,\"frames\":%llu,\"fcs_err\":%llu,\"skipped\":%llu,\"noise_dbfs\":%.1f}",
-              (unsigned long long)w->bursts, (unsigned long long)w->frames, (unsigned long long)w->fcs_err,
+    sb_printf(sb, "],\"bursts\":%llu,\"short\":%llu,\"overlong\":%llu,\"ofdm_hdr\":%llu,\"dsss_hdr\":%llu,\"frames\":%llu,\"fcs_err\":%llu,\"skipped\":%llu,\"noise_dbfs\":%.1f}",
+              (unsigned long long)w->bursts, (unsigned long long)w->short_bursts, (unsigned long long)w->overlong, (unsigned long long)w->ofdm_hdr,
+              (unsigned long long)w->dsss_hdr,
+              (unsigned long long)w->frames, (unsigned long long)w->fcs_err,
               (unsigned long long)w->skipped, 10.0 * log10(w->noise + 1e-12));
 }
 
