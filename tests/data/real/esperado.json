@@ -148,6 +148,40 @@
       "unicos": 1,
       "eventos": 1
     },
+    "lte_or10": {
+      "fixture": "lte_or10",
+      "decoder": "lte",
+      "freq": 800000000,
+      "duracion": 6,
+      "filtro": ".",
+      "clave": "\"\\(.msg.pci)\"",
+      "campos": [
+        "\"pci\":44",
+        "\"plmn\":[{\"mcc\":\"231\",\"mnc\":\"01\"",
+        "\"tac\":1807",
+        "\"cell_id\":2854175",
+        "\"band\":3"
+      ],
+      "unicos": 1,
+      "eventos": 1
+    },
+    "lte_tk10": {
+      "fixture": "lte_tk10",
+      "decoder": "lte",
+      "freq": 800000000,
+      "duracion": 6,
+      "filtro": ".",
+      "clave": "\"\\(.msg.pci)\"",
+      "campos": [
+        "\"pci\":348",
+        "\"plmn\":[{\"mcc\":\"231\",\"mnc\":\"02\"",
+        "\"tac\":1",
+        "\"cell_id\":98641",
+        "\"band\":20"
+      ],
+      "unicos": 1,
+      "eventos": 1
+    },
     "wifi": {
       "fixture": "wifi",
       "decoder": "wifi",
@@ -159,6 +193,22 @@
         "\"ssid\":\"UPC8443073.2,4G\"",
         "\"bssid\":\"34:2C:C4:18:95:3B\"",
         "\"channel\":1"
+      ],
+      "unicos": 1,
+      "eventos": 1
+    },
+    "wifi_dsss_aire": {
+      "fixture": "wifi_dsss_aire",
+      "decoder": "wifi",
+      "freq": 2437000000,
+      "duracion": 6,
+      "filtro": ".",
+      "clave": "\"\\(.msg.bssid)\"",
+      "campos": [
+        "\"ssid\":\"MOVISTAR-WIFI6-D458\"",
+        "\"bssid\":\"44:3B:14:8F:D4:58\"",
+        "\"channel\":6",
+        "\"phy\":\"DSSS 1M\""
       ],
       "unicos": 1,
       "eventos": 1

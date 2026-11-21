@@ -2,12 +2,16 @@
 # vectores reales ya versionados en tests/data/ (recortes de grabaciones públicas), salvo
 # flex3200, flex6400 y vdl2, que salen de originales de sigidwiki (MP3 y ZIP de IQ; se descargan a
 # build/fuentes_real y se verifica su sha256; ffmpeg solo se usa para decodificar el MP3).
+# lte_or10 y lte_tk10 salen de los ZIP de 10 MHz de sigidwiki (WAV cu8 a 10 MS/s) con lte_fixtures().
 # Uso: python3 -I tests/data/real/mkfixtures.py   (desde la raíz del repositorio)
+#      MKF_SOLO_LTE=1 MKF_SALIDA=build/d5b/regen python3 -I tests/data/real/mkfixtures.py   (solo LTE, a otro directorio)
 # Requiere numpy, scipy y ffmpeg (solo para regenerar; el test no los necesita).
-import hashlib, json, os, subprocess, urllib.request, numpy as np
+import hashlib, io, json, os, subprocess, urllib.request, wave, zipfile, numpy as np
 from scipy.signal import resample_poly
 
 D = "tests/data"; O = "tests/data/real"
+SAL = os.environ.get("MKF_SALIDA", O)   # destino de save(); por defecto, tests/data/real
+os.makedirs(SAL, exist_ok=True)
 DL = "build/fuentes_real"   # caché de originales descargados (build/ está en .gitignore)
 
 def save(id_, iq, dt, rate, freq, author, desc, shift_hz=None):
@@ -29,12 +33,12 @@ def save(id_, iq, dt, rate, freq, author, desc, shift_hz=None):
     else:
         a = np.empty(2 * len(iq), np.uint8)
         a[0::2] = np.clip(np.round(iq.real * 127.5 + 127.5), 0, 255); a[1::2] = np.clip(np.round(iq.imag * 127.5 + 127.5), 0, 255)
-    a.tofile(f"{O}/{id_}.sigmf-data")
+    a.tofile(f"{SAL}/{id_}.sigmf-data")
     meta = {"global": {"core:datatype": dt, "core:sample_rate": int(rate), "core:version": "1.0.0",
                        "core:author": author, "core:description": desc,
                        "core:license": "CC-BY-SA-3.0 (sigidwiki)" if "sigidwiki" in author else "GPL-2.0 (solo datos de prueba)" if "GPL-2.0" in author else "sin licencia explicita: datos de prueba locales de una grabacion publica; se conserva solo el recorte minimo" if "rs1729" in author else "generada localmente (sin restricciones)"},
             "captures": [{"core:sample_start": 0, "core:frequency": int(freq)}], "annotations": []}
-    json.dump(meta, open(f"{O}/{id_}.sigmf-meta", "w"), indent=2, ensure_ascii=False)
+    json.dump(meta, open(f"{SAL}/{id_}.sigmf-meta", "w"), indent=2, ensure_ascii=False)
 
 def cs8(f): a = np.fromfile(f, np.int8).astype(np.float32); return (a[0::2] + 1j * a[1::2]) / 127
 def cu8(f): a = np.fromfile(f, np.uint8).astype(np.float32); return ((a[0::2] - 127.5) + 1j * (a[1::2] - 127.5)) / 127.5
@@ -48,6 +52,10 @@ FUENTES = {
                          "4fedc3352ffcbac0c14dcf28c2ee433b74338c1a0c5972d87ff1baabbc27c843"),
     "VDL-M2_IQ.zip": ("https://www.sigidwiki.com/images/d/df/VDL-M2_IQ.zip",
                       "c81f78a3b59101eaab0e33739c5b8ea58b9c1b30de688b91b527f85c7399c022"),
+    "LTE_OR_10_downlink.zip": ("https://www.sigidwiki.com/images/b/bc/LTE_OR_10_downlink.zip",
+                               "26eeb602dc190fa1f68b7b19d17e6d6d892764eba3f9b5d5f236d4ac8476e99d"),
+    "LTE_TK_10_downlink.zip": ("https://www.sigidwiki.com/images/9/96/LTE_TK_10_downlink.zip",
+                               "ba0d914ea2eb1975a7bd80c01eea1c0d8a191a11e7f19fcb4053b2e862e26053"),
 }
 
 def fuente(nombre):
@@ -81,9 +89,37 @@ def fm_desde_mp3(nombre, t0, t1, dev_hz):
     ph = 2 * np.pi * np.cumsum(x / pk * dev_hz) / 48000.0
     return 0.8 * np.exp(1j * ph)
 
+# LTE 10 MHz de sigidwiki (CC BY-SA 3.0): WAV estéreo cu8 a 10 MS/s, canal izquierdo = I y derecho = Q
+# (el orden que da el mínimo residuo frente a la fixture anterior). Se toman los primeros 50 ms
+# (0 s de desplazamiento, validado con correlación), se remuestrean a 15,36 MS/s con 1536/1000 y se
+# escalan con GANANCIA_LTE, que es la ganancia de mínimos cuadrados de la fixture anterior.
+# DIFERENCIA CONOCIDA: las fixtures previas se generaron con un remuestreador y una ganancia no
+# documentados. Esta reconstrucción difiere de ellas en ±1 LSB en ~0,03 % de las muestras (no es
+# byte a byte), y da los mismos PCI, PLMN, TAC, ECI y banda; por eso no se exige el sha256 de los .sigmf-data.
+GANANCIA_LTE = 0.56785
+
+def lte_desde_wav(zip_nombre, wav_nombre, id_, desc):
+    with zipfile.ZipFile(fuente(zip_nombre)) as z:
+        w = wave.open(io.BytesIO(z.read(wav_nombre)))
+        assert w.getnchannels() == 2 and w.getsampwidth() == 1 and w.getframerate() == 10000000
+        a = np.frombuffer(w.readframes(w.getnframes()), np.uint8).astype(np.float64)
+    s = (a[0::2] - 127.5) + 1j * (a[1::2] - 127.5)
+    y = resample_poly(s, 1536, 1000)[:768000] * GANANCIA_LTE    # 768000 muestras = 50 ms a 15,36 MS/s
+    # save() multiplica por 127 al cuantizar: se divide aquí para que la escala final sea y.
+    save(id_, y / 127.0, "ci8", 15360000, 1800000000, SIGID, desc, shift_hz=0)
+
+def lte_fixtures():
+    lte_desde_wav("LTE_OR_10_downlink.zip", "LTE_OR_10_downlink.wav", "lte_or10",
+                  "LTE 10 MHz (PCI 44, MCC 231 MNC 01, banda 3, 2 puertos), 50 ms de 'LTE_OR_10_downlink' (10 MS/s) remuestreados a 15,36 MS/s; SIB1 por DCI 1C")
+    lte_desde_wav("LTE_TK_10_downlink.zip", "LTE_TK_10_downlink.wav", "lte_tk10",
+                  "LTE 10 MHz (PCI 348, MCC 231 MNC 02, banda 20, 2 puertos), 50 ms de 'LTE_TK_10_downlink' (10 MS/s) remuestreados a 15,36 MS/s; SIB1 por DCI 1A")
+
 SIGID = "Signal Identification Wiki (sigidwiki.com), CC BY-SA 3.0"
 MM = "multimon-ng test/samples (EliasOenal/multimon-ng), GPL-2.0, solo datos"
 RTL = "rtl_433_tests (merbanan/rtl_433_tests), GPL-2.0, solo datos"
+
+if os.environ.get("MKF_SOLO_LTE"):   # regenerar solo las fixtures LTE (p. ej. en build/) y salir
+    lte_fixtures(); raise SystemExit(0)
 
 save("acars", cs8(f"{D}/acars_sigid_am.cs8"), "ci8", 48000, 131525000, SIGID,
      "ACARS Nueva Zelanda (ZK-OKM, NZ0006), audio AM de 'ACARS sound' remodulado en AM m=0,7, recorte de 2-3,2 s")
@@ -115,6 +151,24 @@ save("lte", cs8(f"{D}/lte_sigid_vf14_1p92M.cs8"), "ci8", 1920000, 800000000, SIG
      "LTE 1,4 MHz (PCI 65), 50 ms de 'LTE_VF_1.4_downlink' remuestreados a 1,92 MS/s")
 save("wifi", cs8(f"{D}/wifi_sigid_beacon_20M.cs8"), "ci8", 20000000, 2437000000, SIGID,
      "Wi-Fi 2,4 GHz canal 1, baliza DSSS 1 Mb/s (SSID UPC8443073.2,4G), 3,8 ms de 'Wi-Fi.zip' a 20 MS/s")
+# Captura PROPIA (bladeRF 2.0 micro, Pamplona, 2026-11-21, canal 6, 20 MS/s, ganancia fija 35 dB): la
+# fuente (ci16, Q11) no va en git, está en build/capturas. Solo hay una red a este nivel (balizas
+# DSSS 1 Mb/s de un AP a SNR por muestra de ~ -3,4 dB; el ruido es de ~23 LSB RMS y las
+# muestras caben en int8 SIN escalar, así que el recorte es sin pérdida). Contiene solo balizas
+# (difusión), nada de datos de usuarios. WIFI_AIRE_MS cambia la duración (50 ms = 2 MB;
+# 500 ms = 20 MB, solo local).
+SRC_AIRE = "build/capturas/20261121_102831_2437.000MHz.sigmf-data"
+if os.path.exists(SRC_AIRE):
+    ms = int(os.environ.get("WIFI_AIRE_MS", "50")); n0 = int(0.5 * 20e6); nn = int(ms * 20e3)
+    a = np.fromfile(SRC_AIRE, "<i2", count=2 * nn, offset=4 * n0).astype(np.float32)
+    assert np.abs(a).max() <= 127, "no cabe en int8 sin escalar"
+    save("wifi_dsss_aire", (a[0::2] + 1j * a[1::2]) / 127, "ci8", 20000000, 2437000000,
+         "captura propia (bladeRF 2.0 micro, Pamplona, 2026-11-21), solo balizas",
+         f"Wi-Fi canal 6 en el aire, {ms} ms desde t=0,5 s de una captura de 4 s con ganancia fija de 35 dB: "
+         "balizas DSSS 1 Mb/s de MOVISTAR-WIFI6-D458 a SNR por muestra de -3,4 dB (valores Q11 crudos, "
+         "sin escalar). Sin datos de usuarios.")
+else:
+    print("(sin", SRC_AIRE, ": se omite wifi_dsss_aire)")
 for n, f in [("acurite592txr", "ism_acurite592txr_rtl433"), ("nexus", "ism_nexus_rtl433"), ("f007th", "ism_f007th_rtl433"),
              ("wh1080", "ism_wh1080_rtl433"), ("oregon_thn132n", "ism_oregon_thn132n_rtl433"),
              ("oregon_thgr122n", "ism_oregon_thgr122n_rtl433"), ("tx141bv2", "ism_tx141bv2_rtl433"), ("tx141bv3", "ism_tx141bv3_rtl433")]:
@@ -141,3 +195,5 @@ save("vdl2", iq.astype(np.complex64), "ci16_le", 105000, 136975000, SIGID,
      "VDL Modo 2 real (aeronaves 47806D y 4BAA41, estaciones 10981A y 234837), 28,5-37,0 s de 'VDL-M2 IQ' (sigidwiki, "
      "WAV de 48 kS/s con I/Q intercambiados) remuestreado a 105 kS/s; dumpvdl2 2.6.0 decodifica 17 tramas AVLC del recorte",
      shift_hz=20000)
+
+lte_fixtures()

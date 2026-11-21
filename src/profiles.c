@@ -48,7 +48,11 @@ const profile_t PROFILES[] = {
     {"meshtastic", "Meshtastic EU", "IoT", MHZ(869.2), 1000000, NULL, 0, 0,
      {{"meshtastic", MHZ(869.525), false, false}}, 1, false},
     {"sonda", "Radiosondas", "Meteorología", MHZ(403.0), 6000000, NULL, 0, 0, {{"rs41", 0, false, true}}, 1, false},
-    {"lte", "LTE banda 20/3", "Celular", MHZ(806.0), 20000000, NULL, 0, 0, {{0}}, 0, false},
+    /* LTE es WIDE: el decodificador exige 1,92·2^n Msps (decoders/lte.c, create). 20 Msps no es
+     * múltiplo entero de 1,92 y el alta fallaría. 15,36 Msps = 1,92·8 es válido. Ojo: la captura
+     * abarca 15,36 MHz, menos que los ~18 MHz ocupados por una portadora de 20 MHz (el SIB1 de
+     * banda 20 puede necesitar más tasa: lo indica 'sib1_min_rate_msps' en el estado). */
+    {"lte", "LTE banda 20/3", "Celular", MHZ(806.0), 15360000, NULL, 0, 0, {{0}}, 0, false},
     {"nr", "5G n78", "Celular", MHZ(3500.0), 30720000, NULL, 0, 0, {{"nr", 0, false, false}}, 1, false},
     {"gsm", "GSM 900", "Celular", MHZ(942.5), 20000000, NULL, 0, 0, {{0}}, 0, false},
     {"wifi", "WiFi 2,4 GHz", "Redes", MHZ(2437.0), 20000000, NULL, 0, 0, {{"wifi", 0, false, false}}, 1, false},

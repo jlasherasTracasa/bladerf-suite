@@ -73,10 +73,10 @@ recortes), descargas en `build/v2/dl/<fuente>/` (datos no fiables, Python siempr
 | lora | `loratx`/`lorarx` instalados | SF7/8/9 de loratx fallaban; CRC de lorarx = error | SF7-12, CR 1-4, BW 125/250 ok en ambos sentidos | **CRC sin blanquear**; decisión de símbolo por bin del máximo y lazo solo con símbolos de extremo |
 | meshtastic | `lorarx -H 4`; fuentes públicas (clave, nonce) | sin contrastar | cabecera 16 B, hash 8 y clave confirmados | nada; **descifrado/protobuf sin validar con aire real** |
 | dab | sigidwiki `DAB.zip` | sin contrastar | ensemble 5001 "Towercom", servicio "Radio Slovensko", 36/36 FIB | nada (punzonado/entrelazado correctos) |
-| lte | sigidwiki LTE 1,4 y 10 MHz | sin contrastar | PCI 65 y PCI 44 con MIB (6 y 50 RB) | nada (PBCH confirmado) |
+| lte | sigidwiki LTE 1,4 y 10 MHz; sigidwiki `LTE_OR_10` (231-01, TAC 1807, banda 3) y `LTE_TK_10` (231-02, TAC 1, banda 20); **en el aire, Pamplona, 2026-11-21: PCI 417, PLMN 214-01, TAC 1792, banda 20, 50 RB, SINR 6 dB** | sin contrastar | PCI 65 y PCI 44 con MIB (6 y 50 RB); SIB1 completo en las dos grabaciones de 10 MHz y en el aire | nada (PBCH confirmado) |
 | gsm | sigidwiki `GSM_downlink_BCCH` | FN del SCH incoherente | 211/211 SCH, BSIC 23, FN avanza bien | **orden de bits T1/T2/T3' del SCH**. **BCCH/SI3 reales siguen sin decodificar** |
 | wifi | sigidwiki `Wi-Fi.zip` | sin contrastar | 8 BSSID reales (DSSS 1 Mb/s) | nada. **OFDM sin validar** |
-| nr | sigidwiki NR 10/40 MHz | — | no apareció celda (centro desconocido) | **sin validar** |
+| nr | sigidwiki NR 10/40 MHz | — | no apareció celda (centro desconocido); **MIB por PBCH solo sintético** | **sin validar con señal real** |
 | dmr | sigidwiki `DMR.zip` | — | 1 sincronía, 0 ráfagas | **sin validar** (no hay evidencia de que sea DMR; sin herramienta de referencia) |
 
 Trampas: las WAV de sigidwiki declaran a veces otra tasa; las grabaciones de RS41 son audio FM, no IQ; los cu8 de rtl_433_tests

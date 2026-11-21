@@ -1,0 +1,17 @@
+{
+  "global": {
+    "core:datatype": "ci8",
+    "core:sample_rate": 20000000,
+    "core:version": "1.0.0",
+    "core:author": "captura propia (bladeRF 2.0 micro, Pamplona, 2026-11-21), solo balizas",
+    "core:description": "Wi-Fi canal 6 en el aire, 50 ms desde t=0,5 s de una captura de 4 s con ganancia fija de 35 dB: balizas DSSS 1 Mb/s de MOVISTAR-WIFI6-D458 a SNR por muestra de -3,4 dB (valores Q11 crudos, sin escalar). Sin datos de usuarios.",
+    "core:license": "generada localmente (sin restricciones)"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 2437000000
+    }
+  ],
+  "annotations": []
+}
