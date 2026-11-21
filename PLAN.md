@@ -90,6 +90,7 @@ de `dec_host_auto_sync`, sin informe de carrera); se revisa en N2.
 | N1 | Detector: excluir el ~5 % de cada borde, fusionar detecciones contiguas dentro del ancho ocupado, histéresis temporal; quitar los parches de la web que lo ocultaban | **Sonnet** | Con la FM sintética y la real: un marcador por emisora, 0 en los bordes; test nuevo |
 | N2 | Perfiles `auto:true`: el host crea y retira instancias sobre señales detectadas (máx. 8), para sondas, DMR, LTE y GSM | **Sonnet** | Test de host con señales que aparecen y desaparecen; web muestra «auto» |
 | N3 | Barrido: adaptar el adelanto de quick-tune a la latencia medida para no caer al modo lento | **Sonnet** | Opus mide en placa: 47 MHz–6 GHz sin pasar a modo lento |
+| H2 (parcial) | 2026-11-21: placa ya en **USB 3 SuperSpeed**. RX SC16 a 20 / 30,72 / 40 / 61,44 Msps: 0 overruns, 0 pérdidas, DSP 2–3 % (GPU). Falta 122,88 Msps (oversample SC8) y el modo espectro de la FPGA en USB 3 | — | — |
 | H2 | Repetir con USB 3 todas las medidas de caudal (RX 30,72 / 61,44 / 122,88 Msps y modo espectro) | **Opus** (placa) + **Haiku** (tablas) | `docs/arquitectura/RENDIMIENTO.md`, `docs/hardware/HARDWARE.md` y `docs/hardware/FIRMWARE.md` con cifras USB 3 |
 | N4 | Segundo canal de recepción (2×2): fuente con RX1+RX2, espectro por canal y selector en la web; base para diversidad y medida de dirección | **Sonnet** | Dos espectros simultáneos en placa; decodificadores eligen canal |
 | N5 | Persistencia: marcadores de frecuencia con nombre, sesión guardada (perfil, canal, decodificadores) y registro de eventos consultable por fecha y protocolo (JSONL rotado, API de consulta paginada) | **Sonnet** | Reiniciar conserva el estado; la web busca en el histórico |
@@ -107,6 +108,7 @@ de `dec_host_auto_sync`, sin informe de carrera); se revisa en N2.
 | D5 | LTE: SIB1 (operador, banda, TAC) y 5G NR: MIB del SSB en n78 (necesita USB 3) | **Sonnet** | Celdas reales con operador identificado |
 | D6 | TDT en el aire con la antena de casa: enganche, vídeo y audio estables 10 min; AC-3 y E-AC-3 por WebCodecs; lista de canales por exploración | **Sonnet** + **Opus** (placa) | 10 min sin cortes, desfase A/V < 40 ms |
 | D7 | DAB+: audio (según la decisión del usuario), texto DLS y carátulas | **Sonnet** | Se oye una emisora de la grabación real |
+| D8✔ | 2026-11-21: BCCH real 42/42 (antes 0), SI1/2/2bis/2ter/3/4; celda de la grabación MCC 231 MNC 02 (Eslovaquia). Falta grabación ≥ 2 s con SI3 real y SI2ter con lista ARFCN no bit map 0 | — | — |
 | D8 | GSM: BCCH con SI3 (MCC, MNC, LAC, celda). Solo difusión, nada de abonados | **Sonnet** | Operador correcto en grabación real |
 | D9 | AIS: mejora PLVA y recepción de los dos canales con un solo DDC ancho | **Sonnet** | Más mensajes que hoy a SNR baja, medido en test |
 | D10 | ADS-B: MLAT no; sí CPR local con la posición del receptor, tabla con procedencia y pista en el mapa | **Sonnet** | Posición con un solo mensaje cuando hay ubicación |
@@ -179,6 +181,7 @@ temporización, solo RAM, nunca la flash). Orden sugerido: F10 y F11 primero
 | F10 | Registro de capacidades y telemetría: versión, mapa de bits de funciones, contadores (desbordes de FIFO, saturación del ADC, tramas emitidas y perdidas); el host negocia y funciona igual con la imagen de serie | **Sonnet** | `lab_probe --regs` y el motor leen las capacidades; ninguna función se activa a ciegas |
 | F11 | Empaquetado de muestras: modo de 12 bits empaquetados (3 bytes por muestra IQ en vez de 4) y modo de 8 bits con ganancia digital, para sacar más ancho de banda por el mismo USB | **Sonnet** | +33 % de Msps sostenidos medidos en placa (≈ 11 → ≈ 15 Msps en USB 2); decodificadores sin pérdida de sensibilidad medible |
 | F11✔ | Lab 1.3 (0.16.103, 2026-11-20/21): SC8 con ganancia digital (`GAIN8`) y recortes contados (`CNT_SAT8`), CAPS 0x10F; el empaquetado de 12 bits ya existe en la 0.16 de serie (`SC16_Q11_PACKED`, libbladeRF lo desempaqueta). Temporización cerrada con semilla 44 (setup ≥ +0,355 ns; también cierra la 22). Probada en placa: CAPS correcto y espectro FPGA sin huecos | — | — |
+| F11c✔ | 2026-11-21, placa USB 3: packed12 a 30,72 y 61,44 Msps sin pérdidas y mismo nivel que SC16; sc8g (lab 1.3) a 61,44 sin pérdidas, `CNT_SAT8` cuenta (58 % de recortes a +18 dB); `auto` elige SC16 en USB 3 | — | — |
 | F11c | Host: usar desde `src/sdr/source.c` los formatos de más caudal (SC16 empaquetado de 12 bits de la 0.16 de serie y SC8 con `GAIN8` de la lab 1.3, con `CNT_SAT8` en `status`) y elegir el formato según la tasa pedida y el enlace USB; orden `config` `format` y selector en la web | **Sonnet** + **Opus** (placa) | ≈ 15 Msps (12 bits) y ≈ 22 Msps (8 bits) sostenidos sin pérdidas por USB 2, medidos en placa |
 | F12 | Motor de espectro configurable: tamaño de FFT 256–8192, ventana (Hann, Blackman-Harris) por ROM, media exponencial, retención de máximo y de mínimo por bin, tasa de imágenes programable | **Sonnet** | Cada modo coincide bit a bit con el modelo C; selector en la web (W16) |
 | F13 | Corrección en la FPGA antes de todo lo demás: bloqueo de continua, corrección de desequilibrio IQ con coeficientes del host y ganancia digital con detección de saturación | **Sonnet** | Pico de continua e imagen ≥ 20 dB más bajos en placa que sin corregir |
@@ -261,6 +264,8 @@ Contribuciones que el artículo debe sostener con medidas:
    etiquetado como fondo, evaluado sobre verdad de terreno inyectada y sobre
    otro receptor.
 
+**Consecuencia del piloto P6 (2026-11-21):** el argumento central pasa a ser la contribución 1 medida: el nivel «desconocido» mejora el entrenamiento (excluirlo de los negativos sube el recall a SNR baja un 40 % relativo), y la calibración por inyección (2) cuantifica cuánto falta por etiquetar. La corrección por propensión (3) queda como experimento secundario con resultado negativo o marginal honesto, salvo que la versión completa con datos reales largos (P4) muestre otra cosa.
+
 **Veredicto P1b (2026-11-20, `paper/related_work.md` §9):** (1) novedosa con
 cautela: no hay conjunto de RF con «energía sin decodificar» como nivel propio;
 (2) incremental: la inyección y recuperación ya existe en SETI (Margot 2023,
@@ -328,6 +333,7 @@ de páginas de terceros.
 | P3 | Calibración completa: probabilidad de etiquetado por protocolo frente a SNR, interferencia y ocupación; error de tiempo y frecuencia; falsos positivos sobre ruido; contraste con decodificadores de referencia | **Sonnet** | Curvas y tabla por protocolo con intervalos de confianza |
 | P4 | Campaña de captura: bandas y horarios planificados, con USB 3 y las antenas adecuadas; registro de condiciones | **Opus** (placa) + usuario (antenas) | ≥ 20 h repartidas en ≥ 8 bandas |
 | P5 | Anonimización y empaquetado del conjunto de datos según 5.3, con ficha de datos y suma de comprobación | **Sonnet** | Revisión de Opus sin identificadores en claro |
+| P6 (piloto)✔ | 2026-11-21, `paper/exp/aprendizaje/PILOTO_P6.md`: la corrección por propensión **no** gana con claridad (AP 0,67–0,72 frente a 0,69); **excluir las regiones `unknown` de los negativos sí**: recall a SNR < 5 dB 0,28 → 0,39. El sintético domina (0,84) pero aquí el hueco sintético→real es nulo | — | — |
 | P6 | Experimentos: detector entrenado (a) tratando lo no etiquetado como fondo, (b) con corrección por propensión, (c) solo con sintético; evaluado en verdad inyectada y en otro receptor (fuera del binario; aquí sí se usan bibliotecas de aprendizaje), con semillas y guiones reproducibles | **Sonnet** | Resultados repetidos con 3 semillas |
 | P7 | Figuras y tablas del artículo, generadas por guion | **Haiku** | Una orden las regenera todas |
 | P8 | Redacción en LaTeX con la plantilla de la revista | **Opus** | Borrador completo; cada cifra enlazada al guion que la produce |
