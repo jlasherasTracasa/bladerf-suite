@@ -11,8 +11,10 @@
  *     4 ráfagas, secuencia de entrenamiento TSC = BCC) y relleno aleatorio en el resto;
  *   - ranuras 1–7: ráfagas normales con datos ALEATORIOS (relleno; no hay tráfico ni
  *     canales de aviso ni identidades de abonado en ninguna parte de la señal).
- * Mensajes del BCCH: SI3 (tipo 0x1B) en TC = (FN div 51) mod 8 = 2 y 6, SI4 en 3 y 7 y
- * relleno de tipo 0x19/0x1A en el resto.
+ * Mensajes del BCCH (45.002 §6.3.1.3, tabla de asignación a TC = (FN div 51) mod 8; los
+ * contenidos son los de 44.018 §9.1.31–9.1.36, ver gsm_phy.c): SI1 en TC 0, SI2 en 1, SI3 en
+ * 2 y 6, SI4 en 3 y 7, SI2ter en 4 y SI2bis en 5. Los octetos del nivel 3 salen con el LSB
+ * primero (45.003 §4.1.1).
  *
  * Modulación: GMSK de BT = 0,3 por integración de fase exacta: φ[n] = (π/2)·Σ_i α_i·q(n −
  * 4i) con α_i = 1 − 2(d_i ⊕ d_{i−1}) (codificación diferencial de 45.004) y q el
@@ -20,8 +22,10 @@
  * 33 muestras de guarda con amplitud cero (rampas de 6 muestras).
  *
  * Parámetros JSON (opcionales):
- *   {"ncc":3,"bcc":5,"fn":816,"frames":161,"mcc":214,"mnc":7,"mnc_digits":2,
- *    "lac":4660,"ci":22136,"seed":1}
+ *   {"ncc":3,"bcc":5,"tsc":5,"fn":816,"frames":161,"mcc":214,"mnc":7,"mnc_digits":2,
+ *    "lac":4660,"ci":22136,"seed":1,"cell_alloc":[1,5,9],"neighbours":[10,20]}
+ * "tsc" (por omisión = bcc) permite probar redes cuya TSC no sea la BCC (la grabación real de
+ * referencia usa TSC 6 con BCC 7).
  * air_ok = false: banda celular licenciada (§6).
  */
 #include "mod.h"
@@ -35,8 +39,9 @@
 #include <string.h>
 
 typedef struct {
-    int ncc, bcc, mcc, mnc, mnc_digits, lac, ci, frames, seed;
+    int ncc, bcc, tsc, mcc, mnc, mnc_digits, lac, ci, frames, seed;
     uint32_t fn;
+    int ca[124], nca, nb[124], nnb;     /* Cell Channel Description (SI1) y vecinas (SI2…) */
 } params_t;
 
 static uint32_t rnd(uint32_t *s)
@@ -49,12 +54,13 @@ static uint32_t rnd(uint32_t *s)
 
 static int parse(const char *js, params_t *p, char *err, size_t errlen)
 {
-    *p = (params_t){.ncc = 3, .bcc = 5, .mcc = 214, .mnc = 7, .mnc_digits = 2, .lac = 4660, .ci = 22136, .frames = 161,
+    *p = (params_t){.ncc = 3, .bcc = 5, .tsc = -1, .nca = 7, .ca = {1, 5, 9, 17, 33, 60, 124}, .nnb = 6,
+                    .nb = {2, 11, 21, 40, 80, 120}, .mcc = 214, .mnc = 7, .mnc_digits = 2, .lac = 4660, .ci = 22136, .frames = 161,
                     .seed = 1, .fn = 816};
     if (!js || !*js)
         return 0;
-    jtok_t t[32];
-    int nt = json_parse(js, strlen(js), t, 32);
+    jtok_t t[400];
+    int nt = json_parse(js, strlen(js), t, 400);
     if (nt < 1 || t[0].type != J_OBJ) {
         snprintf(err, errlen, "parámetros JSON no válidos");
         return -1;
@@ -65,6 +71,7 @@ static int parse(const char *js, params_t *p, char *err, size_t errlen)
     if ((i = json_obj_get(js, t, 0, key)) >= 0 && json_num(js, t, i, &v)) p->field = (int)v
     GETI("ncc", ncc);
     GETI("bcc", bcc);
+    GETI("tsc", tsc);
     GETI("mcc", mcc);
     GETI("mnc", mnc);
     GETI("mnc_digits", mnc_digits);
@@ -75,7 +82,21 @@ static int parse(const char *js, params_t *p, char *err, size_t errlen)
     if ((i = json_obj_get(js, t, 0, "fn")) >= 0 && json_num(js, t, i, &v))
         p->fn = (uint32_t)v;
 #undef GETI
-    if (p->ncc < 0 || p->ncc > 7 || p->bcc < 0 || p->bcc > 7 || p->frames < 1 || p->frames > 2000 ||
+    if ((i = json_obj_get(js, t, 0, "cell_alloc")) >= 0 && t[i].type == J_ARR) {
+        p->nca = 0;
+        for (int k = 0; k < t[i].size && k < 124; k++)
+            if (json_num(js, t, json_arr_get(t, i, k), &v))
+                p->ca[p->nca++] = (int)v;
+    }
+    if ((i = json_obj_get(js, t, 0, "neighbours")) >= 0 && t[i].type == J_ARR) {
+        p->nnb = 0;
+        for (int k = 0; k < t[i].size && k < 124; k++)
+            if (json_num(js, t, json_arr_get(t, i, k), &v))
+                p->nb[p->nnb++] = (int)v;
+    }
+    if (p->tsc < 0)
+        p->tsc = p->bcc;
+    if (p->ncc < 0 || p->ncc > 7 || p->bcc < 0 || p->bcc > 7 || p->tsc > 7 || p->frames < 1 || p->frames > 2000 ||
         p->mcc < 0 || p->mcc > 999 || p->mnc < 0 || p->mnc > 999 || (p->mnc_digits != 2 && p->mnc_digits != 3) ||
         p->lac < 0 || p->lac > 65535 || p->ci < 0 || p->ci > 65535 || p->fn >= 2715648) {
         snprintf(err, errlen, "ncc/bcc 0..7, mcc/mnc 0..999, lac/ci 0..65535, frames 1..2000, fn < 2715648");
@@ -157,15 +178,13 @@ static int gsm_modulate(const char *params, iqbuf_t *out, char *err, size_t errl
                     int tc = (int)((fn / 51) % 8);
                     uint8_t l3[23], c[456];
                     if (tc == 2 || tc == 6)
-                        gsm_si_build(0x1B, p.mcc, p.mnc, p.mnc_digits, p.lac, p.ci, l3);
+                        gsm_si_build(GSM_SI3, p.mcc, p.mnc, p.mnc_digits, p.lac, p.ci, l3);
                     else if (tc == 3 || tc == 7)
-                        gsm_si_build(0x1C, p.mcc, p.mnc, p.mnc_digits, p.lac, p.ci, l3);
-                    else {
-                        memset(l3, 0x2B, 23);
-                        l3[0] = 0x2D;
-                        l3[1] = 0x06;
-                        l3[2] = tc == 0 ? 0x19 : 0x1A;
-                    }
+                        gsm_si_build(GSM_SI4, p.mcc, p.mnc, p.mnc_digits, p.lac, p.ci, l3);
+                    else if (tc == 0)
+                        gsm_si_build_arfcn(GSM_SI1, p.ca, p.nca, l3);
+                    else
+                        gsm_si_build_arfcn(tc == 1 ? GSM_SI2 : tc == 4 ? GSM_SI2TER : GSM_SI2BIS, p.nb, p.nnb, l3);
                     gsm_bcch_encode(l3, c);
                     for (int k = 0; k < 456; k++) {
                         int b, j;
@@ -173,12 +192,12 @@ static int gsm_modulate(const char *params, iqbuf_t *out, char *err, size_t errl
                         blk[b][j] = c[k];
                     }
                 }
-                normal_burst(blk[m - 2], p.bcc, bits);
+                normal_burst(blk[m - 2], p.tsc, bits);
             } else {                                                 /* relleno aleatorio */
                 uint8_t e[114];
                 for (int i = 0; i < 114; i++)
                     e[i] = (uint8_t)(rnd(&seed) & 1);
-                normal_burst(e, p.bcc, bits);
+                normal_burst(e, p.tsc, bits);
             }
             gmsk_burst(bits, o.s + o.n);
             o.n += GSM_SLOT;

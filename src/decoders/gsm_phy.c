@@ -127,7 +127,7 @@ void gsm_bcch_encode(const uint8_t l3[23], uint8_t bits[456])
 {
     uint8_t u[224];
     for (int i = 0; i < 184; i++)
-        u[i] = (uint8_t)((l3[i >> 3] >> (7 - (i & 7))) & 1);
+        u[i] = (uint8_t)((l3[i >> 3] >> (i & 7)) & 1);       /* LSB del octeto primero */
     uint64_t p = crc_rem(u, 184, 40, FIRE_POLY) ^ 0xFFFFFFFFFFULL;
     for (int i = 0; i < 40; i++)
         u[184 + i] = (uint8_t)((p >> (39 - i)) & 1);
@@ -153,34 +153,72 @@ int gsm_bcch_decode(const float *soft, uint8_t l3[23])
         return -1;
     memset(l3, 0, 23);
     for (int i = 0; i < 184; i++)
-        l3[i >> 3] |= (uint8_t)(u[i] << (7 - (i & 7)));
+        l3[i >> 3] |= (uint8_t)(u[i] << (i & 7));
     return 0;
 }
 
 /* ------------------------------------------------------------------------ */
-/*  Nivel 3: System Information 3 y 4 (44.018 §9.1.35 y §9.1.36)             */
+/*  Nivel 3: System Information (44.018 §9.1.31–9.1.36)                      */
 /* ------------------------------------------------------------------------ */
-/* SI3: L2 pseudo length(1), PD/skip(1)=0x06, tipo(1)=0x1B, Cell Identity(2), LAI(5),
- * Control Channel Description(3), Cell Options(1), Cell Selection(2), RACH Control(3),
- * rest octets(4) = 23. LAI (10.5.1.3): MCC2|MCC1, MNC3|MCC3, MNC2|MNC1, LAC(2). */
-int gsm_si_parse(const uint8_t l3[23], gsm_si_t *si)
+/* Todas las SI de la ráfaga BCCH normal son «mensajes con pseudo-longitud L2» de 23 octetos
+ * (44.006 §5.5): octeto 1 = L2 pseudo length (6 bits de longitud + «01»), octeto 2 = skip
+ * indicator|PD (0x06 = RR), octeto 3 = tipo de mensaje y después los IE. Los octetos sobrantes
+ * («rest octets» o relleno 0x2B) no se interpretan salvo en la pseudo-longitud.
+ *
+ *   SI1  (0x19): CCD(16) RACH(3) rest(1)             §9.1.31, IE 10.5.2.1b y 10.5.2.29
+ *   SI2  (0x1A): NCD(16) NCC permitidos(1) RACH(3)   §9.1.32, IE 10.5.2.22 y 10.5.2.27
+ *   SI2bis(0x02): EBCCH list(16) RACH(3) rest(1)     §9.1.33
+ *   SI2ter(0x03): EBCCH list(16) rest(4)             §9.1.34
+ *   SI3  (0x1B): CI(2) LAI(5) CCD(3) opciones(1) selección(2) RACH(3) rest(4)   §9.1.35
+ *   SI4  (0x1C): LAI(5) selección(2) RACH(3) [CBCH] rest                         §9.1.36
+ * LAI (10.5.1.3): MCC2|MCC1, MNC3|MCC3, MNC2|MNC1, LAC(2). */
+
+static int bit(int v, int hi) { return (v >> (hi - 1)) & 1; }    /* bit 'hi' (1..8) de un octeto */
+
+/* Lista de frecuencias «bit map 0» (10.5.2.1b.2 / 10.5.2.22): octeto 1 con bits 8,7 = 00 (y en la
+ * NCD: bit 6 = EXT-IND, bit 5 = BA-IND) y bits 4..1 = ARFCN 124..121; octeto i (2..16):
+ * ARFCN 128−8i+8 … 128−8i+1; es decir, el ARFCN n (1..124) está en el octeto 16−(n−1)/8, bit (n−1)%8+1. */
+static void parse_arfcn_list(const uint8_t *o, gsm_si_t *si, bool ba)
 {
-    memset(si, 0, sizeof *si);
-    si->ci = -1;
-    if ((l3[1] & 0x0F) != 0x06)        /* discriminador de protocolo RR */
-        return -1;
-    si->type = l3[2];
-    int off = -1;
-    if (si->type == 0x1B) {            /* SI3: con Cell Identity */
-        si->ci = (l3[3] << 8) | l3[4];
-        off = 5;
-    } else if (si->type == 0x1C) {     /* SI4: LAI directamente */
-        off = 3;
-    } else {
-        return 0;
-    }
-    int mcc1 = l3[off] & 15, mcc2 = l3[off] >> 4, mcc3 = l3[off + 1] & 15;
-    int mnc3 = l3[off + 1] >> 4, mnc1 = l3[off + 2] & 15, mnc2 = l3[off + 2] >> 4;
+    si->arfcn_fmt = o[0];
+    si->n_arfcn = 0;
+    si->arfcn_ok = false;
+    if ((o[0] & 0xC0) != 0)
+        return;                         /* rangos, 1024, bit map variable: no implementado */
+    si->arfcn_ok = true;
+    if (ba)
+        si->ba_ind = bit(o[0], 5);
+    for (int n = 1; n <= 124; n++)
+        if ((o[15 - (n - 1) / 8] >> ((n - 1) % 8)) & 1)
+            si->arfcn[si->n_arfcn++] = (uint16_t)n;
+}
+
+static void parse_rach(const uint8_t *o, gsm_si_t *si)
+{
+    static const int retr[4] = {1, 2, 4, 7};
+    si->rach_ok = true;
+    si->max_retrans = retr[o[0] >> 6];
+    si->tx_integer = (o[0] >> 2) & 15;       /* ranura de dispersión: 3..12, 14, 16, 20, 25, 32, 50 */
+    si->cell_bar = bit(o[0], 2);
+    si->reest_allowed = !bit(o[0], 1);       /* RE = 1: re-establecimiento NO permitido */
+    si->ac_barred = (unsigned)(o[1] << 8 | o[2]);   /* octeto 2: C15..C8, octeto 3: C7..C0 */
+    /* 10.5.2.29: C10 (bit 3 del octeto 2) es la «emergencia»; aquí se devuelve la máscara tal cual */
+}
+
+static void parse_sel(const uint8_t *o, gsm_si_t *si)
+{
+    si->sel_ok = true;
+    si->hyst_db = 2 * (o[0] >> 5);                 /* CELL-RESELECT-HYSTERESIS: 2 dB por paso */
+    si->txpwr_max_cch = o[0] & 31;
+    si->acs = bit(o[1], 8);
+    si->neci = bit(o[1], 7);
+    si->rxlev_min_dbm = (o[1] & 63) - 110;          /* RXLEV-ACCESS-MIN: −110 + n dBm */
+}
+
+static int parse_lai(const uint8_t *o, gsm_si_t *si)
+{
+    int mcc1 = o[0] & 15, mcc2 = o[0] >> 4, mcc3 = o[1] & 15;
+    int mnc3 = o[1] >> 4, mnc1 = o[2] & 15, mnc2 = o[2] >> 4;
     if (mcc1 > 9 || mcc2 > 9 || mcc3 > 9 || mnc1 > 9 || mnc2 > 9 || (mnc3 > 9 && mnc3 != 15))
         return -1;
     si->mcc = mcc1 * 100 + mcc2 * 10 + mcc3;
@@ -191,24 +229,95 @@ int gsm_si_parse(const uint8_t l3[23], gsm_si_t *si)
         si->mnc = mnc1 * 100 + mnc2 * 10 + mnc3;
         si->mnc_digits = 3;
     }
-    si->lac = (l3[off + 3] << 8) | l3[off + 4];
+    si->lac = (o[3] << 8) | o[4];
     si->lai_ok = true;
     return 0;
 }
 
-void gsm_si_build(int type, int mcc, int mnc, int mnc_digits, int lac, int ci, uint8_t l3[23])
+int gsm_si_parse(const uint8_t l3[23], gsm_si_t *si)
 {
-    memset(l3, 0x2B, 23);              /* relleno ("L2 fill bits" 0x2B) */
-    l3[1] = 0x06;
-    l3[2] = (uint8_t)type;
-    int off = type == 0x1B ? 5 : 3;
-    if (type == 0x1B) {
-        l3[0] = (uint8_t)((18 << 2) | 1);   /* pseudo-longitud */
-        l3[3] = (uint8_t)(ci >> 8);
-        l3[4] = (uint8_t)ci;
-    } else {
-        l3[0] = (uint8_t)((16 << 2) | 1);
+    memset(si, 0, sizeof *si);
+    si->ci = -1;
+    si->ba_ind = -1;
+    si->ncc_permitted = -1;
+    if ((l3[0] & 3) != 1 || (l3[1] & 0x0F) != 0x06)   /* pseudo-longitud L2 y PD de RR */
+        return -1;
+    si->type = l3[2];
+    switch (si->type) {
+    case GSM_SI1:
+        parse_arfcn_list(l3 + 3, si, false);
+        parse_rach(l3 + 19, si);
+        break;
+    case GSM_SI2:
+        parse_arfcn_list(l3 + 3, si, true);
+        si->ncc_permitted = l3[19];
+        parse_rach(l3 + 20, si);
+        break;
+    case GSM_SI2BIS:
+        parse_arfcn_list(l3 + 3, si, true);
+        parse_rach(l3 + 19, si);
+        break;
+    case GSM_SI2TER:
+        parse_arfcn_list(l3 + 3, si, true);
+        break;
+    case GSM_SI3:
+        si->ci = (l3[3] << 8) | l3[4];
+        if (parse_lai(l3 + 5, si) < 0)
+            return -1;
+        si->cc_ok = true;                                 /* 10.5.2.11 */
+        si->att = bit(l3[10], 7);
+        si->bs_ag_blks_res = (l3[10] >> 3) & 7;
+        si->ccch_conf = l3[10] & 7;
+        si->bs_pa_mfrms = (l3[11] & 7) + 2;
+        si->t3212_decih = l3[12];                         /* 0 = periódica desactivada */
+        si->opt_ok = true;                                /* 10.5.2.3 */
+        si->pwrc = bit(l3[13], 7);
+        si->dtx = (l3[13] >> 4) & 3;
+        si->radio_link_timeout = ((l3[13] & 15) + 1) * 4;
+        parse_sel(l3 + 14, si);
+        parse_rach(l3 + 16, si);
+        break;
+    case GSM_SI4:
+        if (parse_lai(l3 + 3, si) < 0)
+            return -1;
+        parse_sel(l3 + 8, si);
+        parse_rach(l3 + 10, si);
+        break;
+    default:
+        break;
     }
+    return 0;
+}
+
+int gsm_arfcn_from_hz(double hz)
+{
+    double m = hz / 1e6;
+    int n;
+    if (m >= 869.0 && m <= 894.0 + 1e-6) {                 /* GSM 850: 128–251 */
+        n = (int)lround((m - 869.2) / 0.2) + 128;
+        return n >= 128 && n <= 251 ? n : -1;
+    }
+    if (m >= 920.0 && m <= 960.0 + 1e-6) {                 /* E/R-GSM 900: 0–124, 955–1023 */
+        n = (int)lround((m - 935.0) / 0.2);
+        if (n >= 0 && n <= 124)
+            return n;
+        n += 1024;                                          /* DL = 935 + 0,2·(n−1024) */
+        return n >= 955 && n <= 1023 ? n : -1;
+    }
+    if (m >= 1805.0 && m <= 1880.0 + 1e-6) {               /* DCS 1800: 512–885 */
+        n = (int)lround((m - 1805.2) / 0.2) + 512;
+        return n >= 512 && n <= 885 ? n : -1;
+    }
+    if (m >= 1930.0 && m <= 1990.0 + 1e-6) {               /* PCS 1900: 512–810 */
+        n = (int)lround((m - 1930.2) / 0.2) + 512;
+        return n >= 512 && n <= 810 ? n : -1;
+    }
+    return -1;
+}
+
+/* ---- Constructor (para el modulador y los tests) ---- */
+static void put_lai(uint8_t *o, int mcc, int mnc, int mnc_digits, int lac)
+{
     int m1 = mcc / 100, m2 = (mcc / 10) % 10, m3 = mcc % 10, n1, n2, n3;
     if (mnc_digits == 3) {
         n1 = mnc / 100;
@@ -219,9 +328,76 @@ void gsm_si_build(int type, int mcc, int mnc, int mnc_digits, int lac, int ci, u
         n2 = mnc % 10;
         n3 = 15;
     }
-    l3[off] = (uint8_t)((m2 << 4) | m1);
-    l3[off + 1] = (uint8_t)((n3 << 4) | m3);
-    l3[off + 2] = (uint8_t)((n2 << 4) | n1);
-    l3[off + 3] = (uint8_t)(lac >> 8);
-    l3[off + 4] = (uint8_t)lac;
+    o[0] = (uint8_t)((m2 << 4) | m1);
+    o[1] = (uint8_t)((n3 << 4) | m3);
+    o[2] = (uint8_t)((n2 << 4) | n1);
+    o[3] = (uint8_t)(lac >> 8);
+    o[4] = (uint8_t)lac;
+}
+
+/* RACH: 7 reintentos (bits 8,7 = 11), TX-integer 9, sin CELL-BAR, RE = 1, clases 0–9, 11–15 libres. */
+static void put_rach(uint8_t *o)
+{
+    o[0] = (uint8_t)((3 << 6) | (9 << 2) | 1);
+    o[1] = 0;
+    o[2] = 0;
+}
+
+void gsm_si_build_arfcn(int type, const int *arfcn, int n, uint8_t l3[23])
+{
+    memset(l3, 0x2B, 23);
+    l3[1] = 0x06;
+    l3[2] = (uint8_t)type;
+    memset(l3 + 3, 0, 16);
+    for (int i = 0; i < n; i++)
+        if (arfcn[i] >= 1 && arfcn[i] <= 124)
+            l3[3 + 15 - (arfcn[i] - 1) / 8] |= (uint8_t)(1 << ((arfcn[i] - 1) % 8));
+    if (type == GSM_SI2)
+        l3[3] |= 0x10;                       /* BA-IND = 1 */
+    if (type == GSM_SI1) {
+        l3[0] = (uint8_t)((19 << 2) | 1);   /* 2 + 16 + 3 octetos antes de los rest octets */
+        put_rach(l3 + 19);
+    } else if (type == GSM_SI2) {
+        l3[0] = (uint8_t)((21 << 2) | 1);
+        l3[19] = 0xFF;                       /* NCC permitidos: todos */
+        put_rach(l3 + 20);
+    } else if (type == GSM_SI2BIS) {
+        l3[0] = (uint8_t)((21 << 2) | 1);
+        put_rach(l3 + 19);
+    } else {
+        l3[0] = (uint8_t)((18 << 2) | 1);
+    }
+}
+
+void gsm_si_build(int type, int mcc, int mnc, int mnc_digits, int lac, int ci, uint8_t l3[23])
+{
+    if (type != GSM_SI3 && type != GSM_SI4) {
+        static const int cell[] = {1, 5, 9, 17, 33, 60, 124};
+        gsm_si_build_arfcn(type, cell, 7, l3);
+        return;
+    }
+    memset(l3, 0x2B, 23);              /* relleno ("L2 fill bits" 0x2B) */
+    l3[1] = 0x06;
+    l3[2] = (uint8_t)type;
+    uint8_t *sel, *rach;
+    if (type == GSM_SI3) {
+        l3[0] = (uint8_t)((18 << 2) | 1);   /* pseudo-longitud */
+        l3[3] = (uint8_t)(ci >> 8);
+        l3[4] = (uint8_t)ci;
+        put_lai(l3 + 5, mcc, mnc, mnc_digits, lac);
+        l3[10] = (uint8_t)((1 << 6) | (1 << 3) | 0);     /* ATT, 1 bloque AGCH reservado, CCCH_CONF 0 */
+        l3[11] = 0;                                       /* BS-PA-MFRMS = 2 */
+        l3[12] = GSM_SI_DEF_T3212;
+        l3[13] = (uint8_t)((2 << 4) | 7);                 /* DTX 2, radio link timeout (7+1)·4 = 32 */
+        sel = l3 + 14;
+        rach = l3 + 16;
+    } else {
+        l3[0] = (uint8_t)((12 << 2) | 1);
+        put_lai(l3 + 3, mcc, mnc, mnc_digits, lac);
+        sel = l3 + 8;
+        rach = l3 + 10;
+    }
+    sel[0] = (uint8_t)(((GSM_SI_DEF_HYST_DB / 2) << 5) | GSM_SI_DEF_TXPWR);
+    sel[1] = (uint8_t)((1 << 6) | (GSM_SI_DEF_RXLEV_MIN_DBM + 110));   /* NECI = 1 */
+    put_rach(rach);
 }

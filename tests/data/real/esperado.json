@@ -125,7 +125,10 @@
       "campos": [
         "\"bsic\":23",
         "\"ncc\":2",
-        "\"bcc\":7"
+        "\"bcc\":7",
+        "\"kind\":\"si2ter\"",
+        "\"tsc\":6",
+        "\"arfcn\":60"
       ],
       "unicos": 1,
       "eventos": 1

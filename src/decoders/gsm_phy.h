@@ -41,7 +41,10 @@ void gsm_sch_encode(int bsic, uint32_t fn, uint8_t bits[78]);
 int gsm_sch_decode(const float *soft, int *bsic, uint32_t *fn);
 
 /* ---- BCCH (45.003 §4.1) ---- */
-/* 23 octetos → 456 bits codificados (Fire(40) + convolucional 1/2), SIN entrelazar. */
+/* 23 octetos → 456 bits codificados (Fire(40) + convolucional 1/2), SIN entrelazar.
+ * Orden de los bits de cada octeto: el bit 1 (LSB) del octeto va PRIMERO (45.003 §4.1.1: d(8i+j) =
+ * bit j+1 del octeto i+1; contrastado con la grabación real, donde el MSB primero daba 0x60 en vez
+ * del discriminador de protocolo 0x06). */
 void gsm_bcch_encode(const uint8_t l3[23], uint8_t bits[456]);
 int gsm_bcch_decode(const float *soft, uint8_t l3[23]);     /* 0 si el código Fire cuadra */
 /* Entrelazado de bloque sobre 4 ráfagas: posición de la ráfaga B (0..3) y bit j (0..113)
@@ -52,14 +55,53 @@ static inline void gsm_interleave_pos(int k, int *b, int *j)
     *j = 2 * ((49 * k) % 57) + ((k & 7) >> 2);
 }
 
-/* ---- Mensajes del nivel 3 (44.018 §9.1) ---- */
+/* ---- Mensajes del nivel 3: System Information (44.018 §9.1.31–9.1.36, IE de §10.5.2) ---- */
+#define GSM_SI1 0x19      /* §9.1.31: Cell Channel Description + RACH */
+#define GSM_SI2 0x1A      /* §9.1.32: BA list (vecinas) + NCC permitidos + RACH */
+#define GSM_SI2BIS 0x02   /* §9.1.33 */
+#define GSM_SI2TER 0x03   /* §9.1.34 */
+#define GSM_SI3 0x1B      /* §9.1.35: Cell Identity, LAI, CCCH, opciones, selección, RACH */
+#define GSM_SI4 0x1C      /* §9.1.36: LAI, selección, RACH */
+
 typedef struct {
     int type;               /* tipo de mensaje RR (0x1B = SI3, 0x1C = SI4, …) */
     int mcc, mnc, mnc_digits, lac, ci;   /* ci = −1 si el mensaje no lo lleva */
     bool lai_ok;
+    /* Cell Selection Parameters (10.5.2.4), SI3/SI4 */
+    bool sel_ok;
+    int hyst_db, txpwr_max_cch, rxlev_min_dbm, acs, neci;
+    /* Control Channel Description (10.5.2.11), SI3 */
+    bool cc_ok;
+    int att, bs_ag_blks_res, ccch_conf, bs_pa_mfrms, t3212_decih;
+    /* Cell Options BCCH (10.5.2.3), SI3 */
+    bool opt_ok;
+    int pwrc, dtx, radio_link_timeout;
+    /* RACH Control Parameters (10.5.2.29) */
+    bool rach_ok;
+    int max_retrans, tx_integer, cell_bar, reest_allowed;
+    unsigned ac_barred;     /* bit n = clase de acceso n restringida (C0..C15) */
+    /* Lista de ARFCN: Cell Channel Description (SI1) o BA/extended (SI2, 2bis, 2ter) */
+    bool arfcn_ok;          /* false: formato distinto del «bit map 0» (no decodificado) */
+    int arfcn_fmt;          /* octeto 1 de la lista (bits de formato) */
+    int ba_ind;             /* −1 si no aplica */
+    int n_arfcn;
+    uint16_t arfcn[124];
+    int ncc_permitted;      /* SI2: máscara de 8 bits; −1 si no aplica */
 } gsm_si_t;
+/* Devuelve −1 si el mensaje no es RR/está corrupto; 0 si lo ha interpretado (o no es SI). */
 int gsm_si_parse(const uint8_t l3[23], gsm_si_t *si);
-/* SI3 (type 0x1B) o SI4 (0x1C) con un LAI dado; rellena el resto con valores típicos. */
+/* SI1/2/2bis/2ter/3/4 con un LAI dado y valores típicos (los de GSM_SI_DEF_*), relleno 0x2B. */
 void gsm_si_build(int type, int mcc, int mnc, int mnc_digits, int lac, int ci, uint8_t l3[23]);
+/* SI1/SI2/SI2bis/SI2ter con una lista de ARFCN (formato bit map 0: 1..124). */
+void gsm_si_build_arfcn(int type, const int *arfcn, int n, uint8_t l3[23]);
+/* ARFCN a partir de la frecuencia de bajada (45.005 §2): GSM 850, P/E/R-GSM 900, DCS 1800, PCS
+ * 1900; −1 si no cae en ninguna banda. */
+int gsm_arfcn_from_hz(double hz);
+
+/* Valores típicos que escribe gsm_si_build (los comprueba el test). */
+#define GSM_SI_DEF_HYST_DB 4
+#define GSM_SI_DEF_TXPWR 5
+#define GSM_SI_DEF_RXLEV_MIN_DBM (-104)
+#define GSM_SI_DEF_T3212 10
 
 #endif
