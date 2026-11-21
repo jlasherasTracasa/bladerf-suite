@@ -30,4 +30,32 @@ void nr_sss_seq(int n_id1, int n_id2, int8_t d[127]);
  * orden ascendente. Devuelve cuántas escribió (≤ max). */
 int nr_gscn_candidates(double lo_hz, double hi_hz, int64_t *out, int max);
 
+/* ---------------------------------------------------------------------- */
+/*  PBCH (MIB): DMRS, polar y MIB                                          */
+/* ---------------------------------------------------------------------- */
+/* Campos del MIB (38.331 §6.2.2) más los 8 bits que añade la capa física (38.212 §7.1.1). */
+typedef struct {
+    int sfn;                    /* 0..1023 (6 bits del MIB + 4 de la capa física) */
+    int hrf;                    /* semitrama: 0 = primera, 1 = segunda */
+    int ssb_idx;                /* i_SSB (se deduce del DMRS; aquí solo para el modulador) */
+    int scs_common;             /* 0 = 15 kHz (FR1), 1 = 30 kHz */
+    int k_ssb;                  /* 0..31: ssb-SubcarrierOffset (4 bits del MIB + MSB de la capa física) */
+    int dmrs_pos;               /* 2 ó 3: dmrs-TypeA-Position */
+    int coreset0, ss0;          /* pdcch-ConfigSIB1: controlResourceSetZero, searchSpaceZero */
+    bool barred;                /* cellBarred = barred */
+    bool intra_freq_not_allowed;
+} nr_mib_t;
+
+#define NR_PBCH_RE 432          /* RE de datos del PBCH en un SSB (E = 864 bits) */
+
+/* Secuencia DMRS del PBCH (38.211 §7.4.1.4.1) para ī_SSB: 144 QPSK, c_init = 2^11(ī+1)(⌊N_ID/4⌋+1) + 2^6(ī+1) + N_ID mod 4. */
+void nr_dmrs_seq(int pci, int ibar, cf32 r[144]);
+/* Codifica el MIB (CRC-24C, entrelazado, polar N = 512, adaptación E = 864, aleatorización con v) en 432 QPSK. */
+void nr_pbch_encode(const nr_mib_t *m, int pci, int v, cf32 sym[NR_PBCH_RE]);
+/* Decodifica 864 valores blandos (positivo = bit 0, antes de desaleatorizar). SCL con lista L = 8 y CRC-24C. */
+bool nr_pbch_decode(const float *soft, int pci, int v, nr_mib_t *m);
+/* Posición (símbolo 1..3, subportadora) del RE n-ésimo de datos del PBCH y del DMRS m-ésimo. */
+void nr_pbch_re_pos(int pci, int n, int *l, int *k);
+void nr_dmrs_re_pos(int pci, int m, int *l, int *k);
+
 #endif

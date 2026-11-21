@@ -62,13 +62,17 @@ typedef struct {
     double cfo_hz, rsrp_dbfs, snr_db, score, r;
     double first_seen, last_seen;
     int hits;
+    int np;                         /* inicio útil de la PSS en el canal xc (no se conserva entre ventanas) */
+    bool mib_ok;
+    nr_mib_t mib;
+    int ssb_idx, lmax;
 } nr_cell_t;
 
 typedef struct nr {
     double fs, period, eff_period;
     int dec, nwin, nc, nout;
     int64_t center;
-    cf32 *win, *xc, *mix;
+    cf32 *win, *xc, *xp, *mix;
     float *cout, *tmp;
     int fill;
     int64_t skip;
@@ -93,18 +97,21 @@ static int cmpf(const void *a, const void *b)
     return (x > y) - (x < y);
 }
 
-/* Mezcla f_g a 0 Hz y diezma a 7,68 Msps toda la ventana. Devuelve nº de muestras. */
-static int channelize(nr_t *st, double df_hz, cf32 *out)
+/* Mezcla f_g a 0 Hz y diezma a 7,68 Msps toda la ventana. Devuelve nº de muestras y, en
+ * *shift (si no es NULL), el retardo del filtro en muestras de entrada (out[m] ≈ x[D·m − shift]). */
+static int channelize_slice(nr_t *st, double df_hz, int in_off, int in_n, cf32 *out, double pass_hz, double *shift)
 {
     firdec_t fd;
-    if (firdec_init(&fd, st->dec, st->fs, 2.4e6, 255) < 0)
+    if (firdec_init(&fd, st->dec, st->fs, pass_hz, 255) < 0)
         return 0;
+    if (shift)
+        *shift = (fd.ntaps - 1) / 2.0 + 1.0 - st->dec;
     double w = -2.0 * M_PI * df_hz / st->fs;
     double cr = 1, ci = 0, dr = cos(w), di = sin(w);
     int total = 0;
-    for (int off = 0; off < st->nwin; off += 4096) {
-        int n = MIN(4096, st->nwin - off);
-        const cf32 *x = st->win + off;
+    for (int off = 0; off < in_n; off += 4096) {
+        int n = MIN(4096, in_n - off);
+        const cf32 *x = st->win + in_off + off;
         for (int i = 0; i < n; i++) {
             st->mix[i].re = (float)(x[i].re * cr - x[i].im * ci);
             st->mix[i].im = (float)(x[i].re * ci + x[i].im * cr);
@@ -120,6 +127,13 @@ static int channelize(nr_t *st, double df_hz, cf32 *out)
     firdec_free(&fd);
     return total;
 }
+
+static int channelize_bw(nr_t *st, double df_hz, cf32 *out, double pass_hz, double *shift)
+{
+    return channelize_slice(st, df_hz, 0, st->nwin, out, pass_hz, shift);
+}
+
+static int channelize(nr_t *st, double df_hz, cf32 *out) { return channelize_bw(st, df_hz, out, 2.4e6, NULL); }
 
 static double noise_power(const cf32 *x, int n)
 {
@@ -146,10 +160,15 @@ static void cell_json(const nr_cell_t *c, sb_t *sb, bool with_text, double now)
 {
     sb_puts(sb, "{");
     if (with_text) {
-        char t[200];
+        char t[400];
         snprintf(t, sizeof t, "5G NR PCI %d (N_ID1 %d, N_ID2 %d) en %.2f MHz, SCS %d kHz, CFO %+.2f kHz, RSRP %.1f dBFS, SNR %.1f dB",
                  c->pci, c->pci / 3, c->pci % 3, (double)c->freq_hz / 1e6, c->scs_khz, c->cfo_hz / 1e3, c->rsrp_dbfs,
                  c->snr_db);
+        if (c->mib_ok) {
+            size_t n = strlen(t);
+            snprintf(t + n, sizeof t - n, ", MIB: SFN %d, SSB %d, k_SSB %d, CORESET0 %d, SS0 %d%s", c->mib.sfn, c->ssb_idx,
+                     c->mib.k_ssb, c->mib.coreset0, c->mib.ss0, c->mib.barred ? ", PROHIBIDA" : "");
+        }
         sb_puts(sb, "\"text\":");
         sb_json_str(sb, t);
         sb_puts(sb, ",");
@@ -164,6 +183,16 @@ static void cell_json(const nr_cell_t *c, sb_t *sb, bool with_text, double now)
     sb_json_num(sb, c->snr_db, 1);
     sb_puts(sb, ",\"sss_corr\":");
     sb_json_num(sb, c->score, 2);
+    sb_printf(sb, ",\"mib\":%s", c->mib_ok ? "true" : "false");
+    if (c->mib_ok) {
+        const nr_mib_t *m = &c->mib;
+        sb_printf(sb, ",\"sfn\":%d,\"ssb_idx\":%d,\"l_max\":%d,\"half_frame\":%d,\"scs_common_khz\":%d,"
+                      "\"k_ssb\":%d,\"dmrs_type_a_pos\":%d,\"coreset0\":%d,\"search_space0\":%d,"
+                      "\"cell_barred\":%s,\"intra_freq_reselection\":\"%s\",\"has_sib1\":%s",
+                  m->sfn, c->ssb_idx, c->lmax, m->hrf, m->scs_common ? 30 : 15, m->k_ssb, m->dmrs_pos, m->coreset0, m->ss0,
+                  m->barred ? "true" : "false", m->intra_freq_not_allowed ? "notAllowed" : "allowed",
+                  m->k_ssb < 24 ? "true" : "false");
+    }
     sb_printf(sb, ",\"hits\":%d", c->hits);
     if (!with_text) {
         sb_puts(sb, ",\"age\":");
@@ -195,9 +224,18 @@ static void cell_update(nr_t *st, const nr_cell_t *cand, double now, dec_emit_fn
     } else {
         hits = c->hits;
         first = c->first_seen;
-        changed = c->scs_khz != cand->scs_khz;
+        changed = c->scs_khz != cand->scs_khz || (cand->mib_ok && !c->mib_ok);
     }
+    bool had_mib = c->mib_ok;
+    nr_mib_t old_mib = c->mib;
+    int old_ssb = c->ssb_idx, old_lmax = c->lmax;
     *c = *cand;
+    if (!cand->mib_ok && had_mib) {
+        c->mib_ok = true;
+        c->mib = old_mib;
+        c->ssb_idx = old_ssb;
+        c->lmax = old_lmax;
+    }
     c->hits = hits + 1;
     c->first_seen = first;
     c->last_seen = now;
@@ -317,6 +355,173 @@ static bool verify_ssb(nr_t *st, int64_t f_g, int ti, int np, double Rv, nr_cell
     return true;
 }
 
+/* ---------------------------------------------------------------------- */
+/*  PBCH: DMRS → i_SSB, canal, soft, polar → MIB (38.211 §7.3.3, 38.212 §7.1)  */
+/* ---------------------------------------------------------------------- */
+typedef struct {
+    cf32 Y[4][NR_SSB_SC];       /* símbolos 0..3 del SSB tras la FFT, con la rampa de fase de la ventana deshecha */
+} ssb_grid_t;
+
+/* Canal por interpolación lineal entre pilotos (k = k0 + 4i, i = 0..np−1) tras retirar la pendiente de fase
+ * (retardo): H(k) para k en [klo, khi). Pilotos ruidosos → suavizado (1,2,1). */
+static void chan_from_pilots(const cf32 *hp, int np, int k0, int klo, int khi, cf32 *H)
+{
+    cf32 z = {0, 0}, hs[64], h[64];
+    for (int i = 1; i < np; i++) {
+        cf32 v = cmulc(hp[i], hp[i - 1]);
+        z.re += v.re;
+        z.im += v.im;
+    }
+    double phi = atan2(z.im, z.re);
+    for (int i = 0; i < np; i++) {
+        double a = -phi * i;
+        h[i] = (cf32){(float)(hp[i].re * cos(a) - hp[i].im * sin(a)), (float)(hp[i].re * sin(a) + hp[i].im * cos(a))};
+    }
+    for (int i = 0; i < np; i++) {
+        cf32 a = h[i > 0 ? i - 1 : 0], b = h[i], c = h[i < np - 1 ? i + 1 : np - 1];
+        hs[i] = (cf32){0.25f * a.re + 0.5f * b.re + 0.25f * c.re, 0.25f * a.im + 0.5f * b.im + 0.25f * c.im};
+    }
+    for (int k = klo; k < khi; k++) {
+        double u = (k - k0) / 4.0, uc = u < 0 ? 0 : (u > np - 1 ? np - 1 : u);
+        int i = (int)floor(uc);
+        if (i > np - 2)
+            i = np - 2;
+        double w = uc - i;
+        cf32 v = {(float)(hs[i].re * (1 - w) + hs[i + 1].re * w), (float)(hs[i].im * (1 - w) + hs[i + 1].im * w)};
+        double a = phi * u;
+        H[k] = (cf32){(float)(v.re * cos(a) - v.im * sin(a)), (float)(v.re * sin(a) + v.im * cos(a))};
+    }
+}
+
+/* Intenta el PBCH de un SSB cuya PSS empieza (útil) en t0 de xp. true si el CRC-24C cuadra. */
+static bool pbch_try(nr_t *st, const cf32 *xp, int nxp, double t0, int scs, double f_tot, int pci, int lmax,
+                     nr_cell_t *c)
+{
+    int N = (int)lround(FS_D / (scs * 1000.0)), cp = (int)lround(N * 9.0 / 128.0);
+    double bias = cp / 2.0;
+    int plan = scs == 30 ? 0 : 1;
+    ssb_grid_t *g = malloc(sizeof *g);
+    if (!g)
+        return false;
+    bool ok = false;
+    for (int l = 0; l < 4; l++) {
+        double s0 = t0 + (double)l * (N + cp) - bias;
+        int is = (int)floor(s0);
+        if (is < 0 || is + N > nxp)
+            goto out;
+        double sh = bias + (s0 - is), w = -2.0 * M_PI * f_tot / FS_D;
+        cf32 buf[512];
+        for (int n = 0; n < N; n++) {
+            double a = w * (is + n);
+            cf32 r = {(float)cos(a), (float)sin(a)}, v = xp[is + n];
+            buf[n] = (cf32){v.re * r.re - v.im * r.im, v.re * r.im + v.im * r.re};
+        }
+        fft_exec(st->plan[plan], buf);
+        for (int k = 0; k < NR_SSB_SC; k++) {
+            int f = k - NR_SSB_REF, b = f >= 0 ? f : N + f;
+            double a = 2.0 * M_PI * f * sh / N;
+            cf32 r = {(float)cos(a), (float)sin(a)};
+            g->Y[l][k] = (cf32){buf[b].re * r.re - buf[b].im * r.im, buf[b].re * r.im + buf[b].im * r.re};
+        }
+    }
+    /* hipótesis de ī_SSB: autocoherencia de Y·conj(r) entre pilotos contiguos */
+    double met[8];
+    for (int ib = 0; ib < 8; ib++) {
+        cf32 r[144];
+        nr_dmrs_seq(pci, ib, r);
+        cf32 z[4] = {{0, 0}, {0, 0}, {0, 0}, {0, 0}};
+        cf32 prev = {0, 0};
+        int pl = -1, region = -1;
+        for (int m = 0; m < 144; m++) {
+            int l, k;
+            nr_dmrs_re_pos(pci, m, &l, &k);
+            int rg = l == 1 ? 0 : (l == 3 ? 3 : (k < 48 ? 1 : 2));
+            cf32 h = cmulc(g->Y[l][k], r[m]);
+            if (rg == region && l == pl) {
+                cf32 v = cmulc(h, prev);
+                z[rg].re += v.re;
+                z[rg].im += v.im;
+            }
+            region = rg;
+            pl = l;
+            prev = h;
+        }
+        met[ib] = 0;
+        for (int q = 0; q < 4; q++)
+            met[ib] += sqrt((double)cabs2(z[q]));
+    }
+    int ord[8] = {0, 1, 2, 3, 4, 5, 6, 7};
+    for (int a = 0; a < 3; a++)
+        for (int b = a + 1; b < 8; b++)
+            if (met[ord[b]] > met[ord[a]]) {
+                int t = ord[a];
+                ord[a] = ord[b];
+                ord[b] = t;
+            }
+    for (int hy = 0; hy < 3 && !ok; hy++) {
+        int ib = ord[hy];
+        cf32 r[144], H[3][NR_SSB_SC];
+        nr_dmrs_seq(pci, ib, r);
+        int v4 = pci % 4;
+        cf32 hp[64];
+        for (int l = 1; l <= 3; l += 2) {             /* símbolos 1 y 3: 60 pilotos */
+            for (int i = 0; i < 60; i++) {
+                int m = l == 1 ? i : 84 + i;
+                hp[i] = cmulc(g->Y[l][4 * i + v4], r[m]);
+            }
+            chan_from_pilots(hp, 60, v4, 0, NR_SSB_SC, H[l - 1]);
+        }
+        for (int i = 0; i < 12; i++)
+            hp[i] = cmulc(g->Y[2][4 * i + v4], r[60 + i]);
+        chan_from_pilots(hp, 12, v4, 0, 48, H[1]);
+        for (int i = 0; i < 12; i++)
+            hp[i] = cmulc(g->Y[2][192 + 4 * i + v4], r[72 + i]);
+        chan_from_pilots(hp, 12, 192 + v4, 192, NR_SSB_SC, H[1]);
+        float soft[864];
+        for (int n = 0; n < NR_PBCH_RE; n++) {
+            int l, k;
+            nr_pbch_re_pos(pci, n, &l, &k);
+            cf32 x = cmulc(g->Y[l][k], H[l - 1][k]);
+            soft[2 * n] = x.re;
+            soft[2 * n + 1] = x.im;
+        }
+        int ssb_idx = lmax == 4 ? (ib & 3) : ib, vs = ssb_idx;
+        nr_mib_t mib;
+        if (nr_pbch_decode(soft, pci, vs, &mib)) {
+            if (lmax == 4 && mib.hrf != (ib >> 2))
+                continue;                           /* ī = i_SSB + 4·n_hf debe coincidir con el bit HRF */
+            ok = true;
+            c->mib_ok = true;
+            c->mib = mib;
+            c->mib.ssb_idx = ssb_idx;
+            c->ssb_idx = ssb_idx;
+            c->lmax = lmax;
+        }
+    }
+out:
+    free(g);
+    return ok;
+}
+
+/* Reencauza la ventana con ancho suficiente para los 240 RE del PBCH (±3,6 MHz con SCS de 30 kHz) y la
+ * posición de la PSS corregida por la diferencia de retardo de los dos filtros. */
+static void pbch_decode(nr_t *st, int64_t f_g, nr_cell_t *c, double shift_c)
+{
+    int lmax = f_g < 3000000000LL ? 4 : 8;
+    if (c->scs_khz != 30) {     /* 15 kHz: 240 RE = 3,6 MHz caben en el canal de la detección */
+        pbch_try(st, st->xc, st->nc, (double)c->np, c->scs_khz, c->cfo_hz, c->pci, lmax, c);
+        return;
+    }
+    /* solo el trozo del SSB (≈ 400 salidas antes de la PSS y 4 símbolos + margen después) */
+    double shift_p = 0;
+    int m0 = c->np > 400 ? c->np - 400 : 0, m1 = MIN(st->nc, c->np + 2200);
+    int np_n = channelize_slice(st, (double)(f_g - st->center), m0 * st->dec, (m1 - m0) * st->dec, st->xp, 3.65e6, &shift_p);
+    if (np_n < 1000)
+        return;
+    double t0 = (c->np - m0) + (shift_p - shift_c) / st->dec;
+    pbch_try(st, st->xp, np_n, t0, c->scs_khz, c->cfo_hz, c->pci, lmax, c);
+}
+
 static void analyze(nr_t *st, double now, dec_emit_fn emit, void *ctx)
 {
     st->n_windows++;
@@ -357,8 +562,25 @@ static void analyze(nr_t *st, double now, dec_emit_fn emit, void *ctx)
         if (bestR < R_THR)
             continue;
         nr_cell_t c;
-        if (verify_ssb(st, cand[ci], bt, bidx, bestR, &c))
+        if (verify_ssb(st, cand[ci], bt, bidx, bestR, &c)) {
+            c.np = bidx;
+            double sc_shift = 0;
+            if (c.scs_khz) {
+                /* retardo del filtro de 2,4 MHz usado en la detección (mismo cálculo que channelize_bw) */
+                firdec_t fd;
+                if (firdec_init(&fd, st->dec, st->fs, 2.4e6, 255) == 0)
+                    sc_shift = (fd.ntaps - 1) / 2.0 + 1.0 - st->dec;
+                firdec_free(&fd);
+            }
+            /* el MIB casi no cambia: tras decodificarlo se refresca solo cada 8 detecciones (SFN, cellBarred) */
+            const nr_cell_t *known = NULL;
+            for (int k = 0; k < st->ncells; k++)
+                if (st->cells[k].pci == c.pci && st->cells[k].freq_hz == c.freq_hz)
+                    known = &st->cells[k];
+            if (!known || !known->mib_ok || known->hits % 8 == 0)
+                pbch_decode(st, cand[ci], &c, sc_shift);
             cell_update(st, &c, now, emit, ctx);
+        }
     }
 }
 
@@ -370,6 +592,7 @@ static void nr_destroy(void *p)
         return;
     free(st->win);
     free(st->xc);
+    free(st->xp);
     free(st->mix);
     free(st->tmp);
     free(st->cout);
@@ -409,13 +632,14 @@ static void *nr_create(const dec_cfg_t *cfg, char *err, size_t errlen)
     int ncmax = st->nwin / dec + 64;
     st->win = malloc(sizeof(cf32) * (size_t)st->nwin);
     st->xc = malloc(sizeof(cf32) * (size_t)ncmax);
+    st->xp = malloc(sizeof(cf32) * (size_t)ncmax);
     st->mix = malloc(sizeof(cf32) * 4096);
     st->tmp = malloc(sizeof(float) * (size_t)(ncmax / 5 + 8));
     st->cout = malloc(sizeof(float) * 6 * (size_t)ncmax);
     st->sss = malloc(sizeof(int8_t) * 3 * 336 * 127);
     st->plan[0] = fft_plan_create(256);
     st->plan[1] = fft_plan_create(512);
-    if (!st->win || !st->xc || !st->mix || !st->tmp || !st->cout || !st->sss || !st->plan[0] || !st->plan[1]) {
+    if (!st->win || !st->xc || !st->xp || !st->mix || !st->tmp || !st->cout || !st->sss || !st->plan[0] || !st->plan[1]) {
         nr_destroy(st);
         snprintf(err, errlen, "sin memoria");
         return NULL;
@@ -507,7 +731,7 @@ const decoder_desc_t DEC_NR = {
     .id = "nr",
     .name = "5G NR",
     .group = "Celular",
-    .desc = "Búsqueda de SSB de 5G NR (PSS/SSS → PCI) en la rejilla GSCN.",
+    .desc = "Búsqueda de SSB de 5G NR en la rejilla GSCN: PSS/SSS → PCI y PBCH (DMRS, polar) → MIB.",
     .kind = DEC_WIDE,
     .rate = 0,
     .bw_hz = 0,

@@ -8,7 +8,7 @@
  *
  * Cada SSB son 4 símbolos OFDM con prefijo cíclico normal (CP = N·9/128, N = rate/SCS):
  *   símbolo 0: PSS (127 BPSK en las subportadoras 56..182 del SSB)
- *   símbolo 1: PBCH (aquí QPSK aleatorio, sin polar ni DMRS) en 0..239
+ *   símbolo 1: PBCH (con DMRS cada 4 subportadoras) en 0..239
  *   símbolo 2: SSS en 56..182 y PBCH en 0..47 y 192..239
  *   símbolo 3: PBCH en 0..239
  * Los SSB de una ráfaga van seguidos (no se reproduce la disposición exacta de los
@@ -16,8 +16,11 @@
  *
  * Parámetros JSON (opcionales):
  *   {"pci":123,"scs":30,"rate":15360000,"nssb":2,"periods":3,"period_ms":20,
- *    "start_ms":1.5,"seed":1}
- * "rate" debe ser múltiplo de scs. No hay PBCH real (polar): no se emite MIB.
+ *    "start_ms":1.5,"seed":1,"sfn":0,"lmax":8,"k_ssb":0,"coreset0":5,"ss0":0,"dmrs_pos":2,"barred":false}
+ * "rate" debe ser múltiplo de scs.
+ * PBCH real: MIB de 38.331 (sfn, k_ssb, coreset0, ss0, dmrs_pos, barred), DMRS (38.211 §7.4.1.4.1), CRC-24C,
+ * polar N = 512 y E = 864 (38.212 §7.1), aleatorización y QPSK. Cada SSB de la ráfaga lleva i_SSB = su índice
+ * ("lmax": 4 ó 8, según la banda).
  * air_ok = false: bandas celulares licenciadas (§6).
  */
 #include "mod.h"
@@ -32,20 +35,14 @@
 typedef struct {
     int pci, scs, nssb, periods, seed;
     double rate, period_ms, start_ms;
+    int sfn, lmax, k_ssb, coreset0, ss0, dmrs_pos;
+    bool barred;
 } params_t;
-
-static uint32_t rnd(uint32_t *s)
-{
-    *s ^= *s << 13;
-    *s ^= *s >> 17;
-    *s ^= *s << 5;
-    return *s;
-}
 
 static int parse(const char *js, params_t *p, char *err, size_t errlen)
 {
     *p = (params_t){.pci = 321, .scs = 30, .nssb = 2, .periods = 3, .seed = 1, .rate = 15360000, .period_ms = 20,
-                    .start_ms = 1.5};
+                    .start_ms = 1.5, .sfn = 0, .lmax = 8, .k_ssb = 0, .coreset0 = 5, .ss0 = 0, .dmrs_pos = 2};
     if (!js || !*js)
         return 0;
     jtok_t t[32];
@@ -72,8 +69,23 @@ static int parse(const char *js, params_t *p, char *err, size_t errlen)
         p->start_ms = v;
     if ((i = json_obj_get(js, t, 0, "seed")) >= 0 && json_num(js, t, i, &v))
         p->seed = (int)v;
+    if ((i = json_obj_get(js, t, 0, "sfn")) >= 0 && json_num(js, t, i, &v))
+        p->sfn = (int)v & 1023;
+    if ((i = json_obj_get(js, t, 0, "lmax")) >= 0 && json_num(js, t, i, &v))
+        p->lmax = (int)v;
+    if ((i = json_obj_get(js, t, 0, "k_ssb")) >= 0 && json_num(js, t, i, &v))
+        p->k_ssb = (int)v & 31;
+    if ((i = json_obj_get(js, t, 0, "coreset0")) >= 0 && json_num(js, t, i, &v))
+        p->coreset0 = (int)v & 15;
+    if ((i = json_obj_get(js, t, 0, "ss0")) >= 0 && json_num(js, t, i, &v))
+        p->ss0 = (int)v & 15;
+    if ((i = json_obj_get(js, t, 0, "dmrs_pos")) >= 0 && json_num(js, t, i, &v))
+        p->dmrs_pos = (int)v == 3 ? 3 : 2;
+    bool bv;
+    if ((i = json_obj_get(js, t, 0, "barred")) >= 0 && json_bool(js, t, i, &bv))
+        p->barred = bv;
     if (p->pci < 0 || p->pci > 1007 || (p->scs != 15 && p->scs != 30) || p->nssb < 1 || p->nssb > 8 ||
-        p->periods < 1 || p->periods > 50 || p->rate < 4e6 || p->rate > 130e6 ||
+        p->periods < 1 || p->periods > 50 || (p->lmax != 4 && p->lmax != 8) || p->rate < 4e6 || p->rate > 130e6 ||
         fabs(p->rate / (p->scs * 1000.0) - round(p->rate / (p->scs * 1000.0))) > 1e-9) {
         snprintf(err, errlen, "pci 0..1007, scs 15|30, rate múltiplo del SCS, nssb 1..8, periods 1..50");
         return -1;
@@ -125,7 +137,6 @@ static int nr_modulate(const char *params, iqbuf_t *out, char *err, size_t errle
     int8_t pss[127], sss[127];
     nr_pss_seq(p.pci % 3, pss);
     nr_sss_seq(p.pci / 3, p.pci % 3, sss);
-    uint32_t seed = (uint32_t)p.seed * 2654435761u + 1u;
     int per = (int)lround(p.period_ms * 1e-3 * p.rate);
     int start = (int)lround(p.start_ms * 1e-3 * p.rate);
     int total = start + (p.periods - 1) * per + p.nssb * 4 * symlen + (int)(0.001 * p.rate);
@@ -136,18 +147,29 @@ static int nr_modulate(const char *params, iqbuf_t *out, char *err, size_t errle
         int t0 = start + pr * per;
         while (o.n < t0)
             o.s[o.n++] = (cf32){0, 0};
-        for (int s = 0; s < p.nssb; s++)
+        for (int s = 0; s < p.nssb; s++) {
+            /* PBCH real de este SSB: MIB (SFN avanza 2 tramas por periodo de 20 ms), DMRS y polar */
+            nr_mib_t mib = {.sfn = (p.sfn + 2 * pr) & 1023, .hrf = 0, .ssb_idx = s, .scs_common = p.scs == 30 ? 1 : 0,
+                            .k_ssb = p.k_ssb, .dmrs_pos = p.dmrs_pos, .coreset0 = p.coreset0, .ss0 = p.ss0,
+                            .barred = p.barred};
+            int ibar = p.lmax == 4 ? ((s & 3) + 4 * mib.hrf) : (s & 7), vscr = p.lmax == 4 ? (s & 3) : (s & 7);
+            cf32 pb[NR_PBCH_RE], dm[144], grid[4][NR_SSB_SC];
+            nr_pbch_encode(&mib, p.pci, vscr, pb);
+            nr_dmrs_seq(p.pci, ibar, dm);
+            memset(grid, 0, sizeof grid);
+            for (int n = 0; n < NR_PBCH_RE; n++) {
+                int l, k;
+                nr_pbch_re_pos(p.pci, n, &l, &k);
+                grid[l][k] = pb[n];
+            }
+            for (int m = 0; m < 144; m++) {
+                int l, k;
+                nr_dmrs_re_pos(p.pci, m, &l, &k);
+                grid[l][k] = dm[m];
+            }
             for (int sym = 0; sym < 4; sym++) {
                 cf32 a[NR_SSB_SC];
-                memset(a, 0, sizeof a);
-                const float q = 0.70710678f;
-                for (int k = 0; k < NR_SSB_SC; k++) {
-                    bool pbch = sym == 1 || sym == 3 || (sym == 2 && (k < 48 || k >= 192));
-                    if (pbch) {
-                        uint32_t r = rnd(&seed);
-                        a[k] = (cf32){(r & 1) ? -q : q, (r & 2) ? -q : q};
-                    }
-                }
+                memcpy(a, grid[sym], sizeof a);
                 if (sym == 0)
                     for (int n = 0; n < 127; n++)
                         a[NR_PSS_K0 + n] = (cf32){(float)pss[n], 0};
@@ -156,6 +178,7 @@ static int nr_modulate(const char *params, iqbuf_t *out, char *err, size_t errle
                         a[NR_PSS_K0 + n] = (cf32){(float)sss[n], 0};
                 put_symbol(&o, a, N, ncp, tw);
             }
+        }
     }
     while (o.n < total)
         o.s[o.n++] = (cf32){0, 0};

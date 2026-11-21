@@ -1,0 +1,17 @@
+{
+  "global": {
+    "core:datatype": "ci8",
+    "core:sample_rate": 15360000,
+    "core:version": "1.0.0",
+    "core:author": "Signal Identification Wiki (sigidwiki.com), CC BY-SA 3.0",
+    "core:description": "LTE 10 MHz (PCI 348, MCC 231 MNC 02, banda 20, 2 puertos), 50 ms de 'LTE_TK_10_downlink' (10 MS/s) remuestreados a 15,36 MS/s; SIB1 por DCI 1A",
+    "core:license": "CC-BY-SA-3.0 (sigidwiki)"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 1800000000
+    }
+  ],
+  "annotations": []
+}

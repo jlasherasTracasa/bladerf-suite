@@ -51,7 +51,9 @@
 #include "decoder.h"
 
 #include "lte_phy.h"
+#include "lte_rx.h"
 #include "../dsp/fft.h"
+#include "../dsp/filter.h"
 #include "../util/json.h"
 
 #include <stdio.h>
@@ -79,6 +81,12 @@ typedef struct {
     double rsrp_dbfs, sinr_db, cfo_hz, rho;
     double first_seen, last_seen;
     int hits;
+    int mib_q;                      /* trama (índice en la ventana) donde se leyó la MIB (no se conserva) */
+    bool sib1_ok;
+    lte_sib1_t sib1;
+    double sib1_rate_needed;        /* Msps que exige el ancho de la MIB si la captura no llega (0 = bien) */
+    int dci_seen;                   /* DCI de SI-RNTI hallados (aunque el PDSCH no se decodificara) */
+    int sib1_tries;
 } lte_cell_t;
 
 typedef struct {
@@ -94,7 +102,18 @@ typedef struct {
 } crs_row_t;
 
 typedef struct lte {
-    double fs, period;
+    double fs_in, fs, period;
+    int dstore_pre;                 /* diezmado previo si la entrada supera 30,72 Msps */
+    int dstore;                     /* de la tasa de almacén a 1,92 Msps */
+    double wstore;                  /* tasa del almacén (≤ 30,72 Msps) */
+    cf32 *store;                    /* ventana a tasa wstore (WIN·dstore muestras) */
+    cf32 *x2, *xd2;                 /* ventana a la tasa de SIB1 y su versión sin CFO */
+    int x2_d;                       /* factor de diezmado de x2 (0 = no calculada) */
+    double x2_shift;                /* retardo de grupo del diezmador a x2 (muestras de almacén) */
+    double s1_shift;                /* idem del diezmador a 1,92 Msps */
+    firdec_t pre;
+    cf32 *tmpc;
+    unsigned long n_sib1, n_dci;
     int64_t freq_hz;
     cf32 *win, *xd;
     int fill;
@@ -712,6 +731,17 @@ static void cell_text(const lte_t *st, const lte_cell_t *c, sb_t *sb)
         sb_printf(sb, ", MIB: %d RB, PHICH %s/%s, SFN %d", c->mib.bw_rb, c->mib.phich_ext ? "ext" : "norm",
                   c->mib.phich_res == 0 ? "1/6" : (c->mib.phich_res == 1 ? "1/2" : (c->mib.phich_res == 2 ? "1" : "2")),
                   c->sfn);
+    if (c->sib1_ok) {
+        const lte_sib1_t *b = &c->sib1;
+        const lte_plmn_t *p = &b->plmn[0];
+        sb_printf(sb, ", SIB1: PLMN %d%d%d-%d%d%s, TAC %d, ECI %u (eNB %u/%u), banda %d%s", p->mcc[0], p->mcc[1],
+                  p->mcc[2], p->mnc[0], p->mnc[1], p->mnc_len == 3 ? "x" : "", b->tac, b->cell_id,
+                  b->cell_id >> 8, b->cell_id & 255, b->band, b->barred ? ", PROHIBIDA" : "");
+        if (p->mnc_len == 3)
+            sb_printf(sb, " (MNC %d%d%d)", p->mnc[0], p->mnc[1], p->mnc[2]);
+    } else if (c->sib1_rate_needed > 0) {
+        sb_printf(sb, ", SIB1 exige %.2f Msps", c->sib1_rate_needed);
+    }
     (void)st;
 }
 
@@ -743,6 +773,42 @@ static void cell_json(const lte_t *st, const lte_cell_t *c, sb_t *sb, bool with_
         sb_puts(sb, ",\"bw_mhz\":");
         sb_json_num(sb, c->mib.bw_rb == 6 ? 1.4 : (c->mib.bw_rb == 15 ? 3 : c->mib.bw_rb / 5.0), 1);
     }
+    sb_printf(sb, ",\"sib1\":%s", c->sib1_ok ? "true" : "false");
+    if (c->sib1_ok) {
+        const lte_sib1_t *b = &c->sib1;
+        sb_puts(sb, ",\"plmn\":[");
+        for (int i = 0; i < b->nplmn; i++) {
+            const lte_plmn_t *p = &b->plmn[i];
+            sb_printf(sb, "%s{\"mcc\":\"%d%d%d\",\"mnc\":\"", i ? "," : "", p->mcc[0], p->mcc[1], p->mcc[2]);
+            for (int d = 0; d < p->mnc_len; d++)
+                sb_printf(sb, "%d", p->mnc[d]);
+            sb_printf(sb, "\",\"reserved\":%s}", p->reserved ? "true" : "false");
+        }
+        sb_printf(sb, "],\"mcc\":\"%d%d%d\",\"mnc\":\"", b->plmn[0].mcc[0], b->plmn[0].mcc[1], b->plmn[0].mcc[2]);
+        for (int d = 0; d < b->plmn[0].mnc_len; d++)
+            sb_printf(sb, "%d", b->plmn[0].mnc[d]);
+        sb_printf(sb, "\",\"tac\":%d,\"cell_id\":%u,\"enb_id\":%u,\"cell_local\":%u,\"band\":%d,"
+                      "\"cell_barred\":%s,\"intra_freq_reselection\":\"%s\",\"csg\":%s,\"q_rxlevmin_dbm\":%d",
+                  b->tac, b->cell_id, b->cell_id >> 8, b->cell_id & 255, b->band, b->barred ? "true" : "false",
+                  b->intra_freq_not_allowed ? "notAllowed" : "allowed", b->csg_ind ? "true" : "false",
+                  b->q_rxlevmin * 2);
+        if (b->has_pmax)
+            sb_printf(sb, ",\"p_max_dbm\":%d", b->p_max);
+        sb_printf(sb, ",\"si_window_ms\":%d,\"value_tag\":%d,\"sched\":[", lte_si_window_ms(b->si_window_idx),
+                  b->value_tag);
+        for (int i = 0; i < b->nsched; i++) {
+            sb_printf(sb, "%s{\"period_rf\":%d,\"sibs\":[", i ? "," : "", lte_si_period_rf(b->sched[i].period_idx));
+            for (int j = 0; j < b->sched[i].nsib; j++)
+                sb_printf(sb, "%s%d", j ? "," : "", b->sched[i].sib[j]);
+            sb_puts(sb, "]}");
+        }
+        sb_puts(sb, "]");
+    } else {
+        if (c->sib1_rate_needed > 0)
+            sb_printf(sb, ",\"sib1_min_rate_msps\":%.2f", c->sib1_rate_needed);
+        if (c->dci_seen)
+            sb_printf(sb, ",\"dci_si_seen\":%d", c->dci_seen);
+    }
     sb_printf(sb, ",\"hits\":%d", c->hits);
     if (!with_text) {
         sb_puts(sb, ",\"age\":");
@@ -773,10 +839,13 @@ static void cell_update(lte_t *st, const lte_cell_t *cand, double now, dec_emit_
         changed = true;
     } else {
         if (c->grid != cand->grid || c->ports != cand->ports || (cand->mib_ok && !c->mib_ok) ||
+            (cand->sib1_ok && !c->sib1_ok) ||
             (cand->mib_ok && c->mib_ok && c->mib.bw_rb != cand->mib.bw_rb))
             changed = true;
     }
-    bool had_mib = c->mib_ok;
+    bool had_mib = c->mib_ok, old_sib_ok = c->sib1_ok;
+    lte_sib1_t old_sib = c->sib1;
+    int old_tries = c->sib1_tries, old_dci = c->dci_seen;
     lte_mib_t old = c->mib;
     int old_sfn = c->sfn;
     int hits = c->hits;
@@ -785,6 +854,12 @@ static void cell_update(lte_t *st, const lte_cell_t *cand, double now, dec_emit_
     c->first_seen = fs;
     c->hits = hits + 1;
     c->last_seen = now;
+    if (!cand->sib1_ok && old_sib_ok) {
+        c->sib1_ok = true;
+        c->sib1 = old_sib;
+    }
+    c->sib1_tries += old_tries;
+    c->dci_seen += old_dci;
     if (!cand->mib_ok && had_mib) {              /* conserva la última MIB */
         c->mib_ok = true;
         c->mib = old;
@@ -795,6 +870,100 @@ static void cell_update(lte_t *st, const lte_cell_t *cand, double now, dec_emit_
         cell_json(st, c, &st->evsb, true, now);
         st->n_events++;
         emit(ctx, st->evsb.data, st->evsb.len);
+    }
+}
+
+/* ---------------------------------------------------------------------- */
+/*  Etapa 5: SIB1 a la tasa que exige el ancho de banda de la MIB           */
+/* ---------------------------------------------------------------------- */
+/* Tasa necesaria, en múltiplos de 1,92 Msps: la FFT de 128·m con 12·N_RB subportadoras de
+ * 15 kHz (75 RB = 13,5 MHz caben en 15,36 Msps). */
+static int sib_rate_mult(int nrb)
+{
+    switch (nrb) {
+    case 6: return 1;
+    case 15: return 2;
+    case 25: return 4;
+    case 50:
+    case 75: return 8;
+    default: return 16;
+    }
+}
+
+/* Diezmador de grupo de retardo conocido: out[m] ≈ x[D·m − shift]. Devuelve el nº de salidas. */
+static int decimate_win(const cf32 *in, int n, int D, double pass_hz, double fs_in, cf32 *out, double *shift)
+{
+    if (D <= 1) {
+        memcpy(out, in, sizeof(cf32) * (size_t)n);
+        *shift = 0;
+        return n;
+    }
+    firdec_t f;
+    if (firdec_init(&f, D, fs_in, pass_hz, 4001) < 0) {
+        firdec_free(&f);
+        return 0;
+    }
+    int m = firdec_process(&f, in, n, out);
+    *shift = (f.ntaps - 1) / 2.0 + 1.0 - D;
+    firdec_free(&f);
+    return m;
+}
+
+static lte_cell_t *find_cell(lte_t *st, int pci)
+{
+    for (int i = 0; i < st->ncells; i++)
+        if (st->cells[i].pci == pci)
+            return &st->cells[i];
+    return NULL;
+}
+
+static void try_sib1(lte_t *st, lte_cell_t *c, const lgrid_t *g, double f_tot)
+{
+    lte_cell_t *old = find_cell(st, c->pci);
+    if (old && old->sib1_ok) {          /* ya conocido: no se repite el coste */
+        c->sib1_ok = true;
+        c->sib1 = old->sib1;
+        return;
+    }
+    if (g->ext || lte_grid_tdd(g->grid) || c->ports > 2 || c->mib.phich_ext)
+        return;
+    int req = sib_rate_mult(c->mib.bw_rb);
+    if (req > st->dstore) {
+        c->sib1_rate_needed = req * LTE_FS / 1e6;
+        return;
+    }
+    int Dx = st->dstore / req;
+    int n2 = WIN * req;
+    if (st->x2_d != Dx) {
+        int m = decimate_win(st->store, WIN * st->dstore, Dx, c->mib.bw_rb * 90e3 + 150e3, st->wstore, st->x2,
+                             &st->x2_shift);
+        if (m < n2 - 16)
+            return;
+        st->x2_d = Dx;
+    }
+    derot(st->x2, st->xd2, n2, f_tot, LTE_FS * req);
+    lte_rxcfg_t cfg = {.pci = c->pci, .nrb = c->mib.bw_rb, .ports = c->ports, .phich_res = c->mib.phich_res,
+                       .fft = 128 * req};
+    int qmax = (int)(WIN / (LTE_FRAME * g->ratio)) + 1;
+    for (int q = -1; q <= qmax && !c->sib1_ok; q++) {
+        int sfn = c->sfn + (q - c->mib_q);
+        if (sfn & 1)
+            continue;                 /* SIB1 solo en tramas pares */
+        double m1 = gpos(g, q, 10, 0);
+        double P = m1 * st->dstore - st->s1_shift;
+        double m2 = (P + st->x2_shift) / Dx;
+        lte_sib1_t sib;
+        lte_rx_info_t info;
+        cfg.sfn = sfn;
+        c->sib1_tries++;
+        int r = lte_rx_sib1(&cfg, st->xd2, n2, m2, &sib, &info);
+        if (info.dci_fmt)
+            c->dci_seen++;
+        if (r > 0) {
+            c->sib1_ok = true;
+            c->sib1 = sib;
+            st->n_sib1++;
+        }
     }
 }
 
@@ -845,8 +1014,11 @@ static void analyze(lte_t *st, double now, dec_emit_fn emit, void *ctx)
                     c.mib_ok = true;
                     c.mib = mib;
                     c.sfn = (mib.sfn8 << 2) | seg;
+                    c.mib_q = q;
                 }
             }
+            if (c.mib_ok)
+                try_sib1(st, &c, &g, f_tot);
         }
         cell_update(st, &c, now, emit, ctx);
     }
@@ -864,6 +1036,11 @@ static void lte_destroy(void *p)
         free(st->pss_f[u]);
     free(st->win);
     free(st->xd);
+    free(st->store);
+    free(st->x2);
+    free(st->xd2);
+    free(st->tmpc);
+    firdec_free(&st->pre);
     free(st->fold);
     free(st->cnt);
     free(st->ene);
@@ -876,16 +1053,27 @@ static void lte_destroy(void *p)
     free(st);
 }
 
+#define STORE_MAX_RATE 30720000.0
+#define RAW_CHUNK 4096
+
 static void *lte_create(const dec_cfg_t *cfg, char *err, size_t errlen)
 {
-    if (fabs(cfg->rate - LTE_FS) > 1.0) {
-        snprintf(err, errlen, "LTE requiere exactamente 1,92 Msps");
+    /* La tasa de captura debe ser 1,92·2^m Msps (m = 0..5): así 1,92 Msps (búsqueda de celda y
+     * SIB1 de 1,4 MHz) sale por diezmado entero de cualquiera de las tasas de LTE. */
+    int mult = (int)lround(cfg->rate / LTE_FS);
+    if (mult < 1 || mult > 32 || (mult & (mult - 1)) || fabs(cfg->rate - mult * LTE_FS) > 2.0) {
+        snprintf(err, errlen, "LTE requiere 1,92·2^n Msps (1,92 / 3,84 / 7,68 / 15,36 / 30,72 / 61,44; ahora %.3f)",
+                 cfg->rate / 1e6);
         return NULL;
     }
     lte_t *st = calloc(1, sizeof *st);
     if (!st)
         return NULL;
-    st->fs = cfg->rate;
+    st->fs_in = cfg->rate;
+    st->dstore_pre = cfg->rate > STORE_MAX_RATE + 1 ? (int)lround(cfg->rate / STORE_MAX_RATE) : 1;
+    st->wstore = cfg->rate / st->dstore_pre;
+    st->dstore = (int)lround(st->wstore / LTE_FS);
+    st->fs = LTE_FS;
     st->freq_hz = cfg->freq_hz;
     st->period = 1.0;
     if (cfg->opts && *cfg->opts) {
@@ -897,8 +1085,13 @@ static void *lte_create(const dec_cfg_t *cfg, char *err, size_t errlen)
             json_num(cfg->opts, t, i, &v))
             st->period = CLAMP(v, 0.0, 60.0);
     }
+    size_t nstore = (size_t)WIN * (size_t)st->dstore;
     st->win = malloc(sizeof(cf32) * WIN);
     st->xd = malloc(sizeof(cf32) * WIN);
+    st->store = malloc(sizeof(cf32) * nstore);
+    st->x2 = malloc(sizeof(cf32) * nstore);
+    st->xd2 = malloc(sizeof(cf32) * nstore);
+    st->tmpc = malloc(sizeof(cf32) * RAW_CHUNK);
     st->fold = malloc(sizeof(float) * NHYP * 3 * LTE_HALF);
     st->cnt = malloc(sizeof(uint16_t) * NHYP * LTE_HALF);
     st->ene = malloc(sizeof(double) * (WIN + 1));
@@ -909,8 +1102,14 @@ static void *lte_create(const dec_cfg_t *cfg, char *err, size_t errlen)
     st->pos = fft_plan_create(OSN);
     for (int u = 0; u < 3; u++)
         st->pss_f[u] = malloc(sizeof(cf32) * OSN);
-    if (!st->win || !st->xd || !st->fold || !st->cnt || !st->ene || !st->blk || !st->acc || !st->rows ||
-        !st->p128 || !st->pos || !st->pss_f[0] || !st->pss_f[1] || !st->pss_f[2]) {
+    if (!st->win || !st->xd || !st->store || !st->x2 || !st->xd2 || !st->tmpc || !st->fold || !st->cnt ||
+        !st->ene || !st->blk || !st->acc || !st->rows || !st->p128 || !st->pos || !st->pss_f[0] ||
+        !st->pss_f[1] || !st->pss_f[2]) {
+        lte_destroy(st);
+        snprintf(err, errlen, "sin memoria");
+        return NULL;
+    }
+    if (st->dstore_pre > 1 && firdec_init(&st->pre, st->dstore_pre, cfg->rate, 9.6e6, 2001) < 0) {
         lte_destroy(st);
         snprintf(err, errlen, "sin memoria");
         return NULL;
@@ -943,10 +1142,34 @@ static void *lte_create(const dec_cfg_t *cfg, char *err, size_t errlen)
     return st;
 }
 
-static void lte_process(void *p, const cf32 *iq, int n, double now, dec_emit_fn emit, void *ctx)
+/* Ventana completa: quita la continua, diezma a 1,92 Msps para la búsqueda y analiza. */
+static void finish_window(lte_t *st, double now, dec_emit_fn emit, void *ctx)
+{
+    size_t n = (size_t)WIN * (size_t)st->dstore;
+    double mr = 0, mi = 0;
+    for (size_t i = 0; i < n; i++) {
+        mr += st->store[i].re;
+        mi += st->store[i].im;
+    }
+    float ar = (float)(mr / (double)n), ai = (float)(mi / (double)n);
+    for (size_t i = 0; i < n; i++) {
+        st->store[i].re -= ar;
+        st->store[i].im -= ai;
+    }
+    int m = decimate_win(st->store, (int)n, st->dstore, 0.8e6, st->wstore, st->win, &st->s1_shift);
+    if (m < WIN - 16)
+        return;
+    for (int i = m; i < WIN; i++)
+        st->win[i] = (cf32){0, 0};
+    st->x2_d = 0;
+    analyze(st, now, emit, ctx);
+}
+
+static void lte_process_raw(void *p, const int16_t *iq, int n, double now, dec_emit_fn emit, void *ctx)
 {
     lte_t *st = p;
     st->last_now = now;
+    const size_t nstore = (size_t)WIN * (size_t)st->dstore;
     int i = 0;
     while (i < n) {
         if (st->skip > 0) {
@@ -955,16 +1178,38 @@ static void lte_process(void *p, const cf32 *iq, int n, double now, dec_emit_fn 
             i += (int)k;
             continue;
         }
-        if (st->fill == 0)
-            st->win_t0 = now + (double)i / st->fs;
-        int k = MIN(n - i, WIN - st->fill);
-        memcpy(st->win + st->fill, iq + i, sizeof(cf32) * (size_t)k);
-        st->fill += k;
+        if (st->fill == 0) {
+            st->win_t0 = now + (double)i / st->fs_in;
+            if (st->dstore_pre > 1) {
+                memset(st->pre.hist, 0, sizeof(cf32) * 2 * (size_t)st->pre.ntaps);
+                st->pre.pos = 0;
+                st->pre.phase = 0;
+            }
+        }
+        int k = MIN(n - i, RAW_CHUNK);
+        for (int j = 0; j < k; j++)
+            st->tmpc[j] = (cf32){(float)iq[2 * (i + j)] * (1.0f / 2048.0f), (float)iq[2 * (i + j) + 1] * (1.0f / 2048.0f)};
         i += k;
-        if (st->fill == WIN) {
-            analyze(st, st->win_t0 + (double)WIN / st->fs, emit, ctx);
+        const cf32 *src = st->tmpc;
+        int ns = k;
+        cf32 *dec = NULL;
+        if (st->dstore_pre > 1) {
+            dec = malloc(sizeof(cf32) * (size_t)(k / st->dstore_pre + 2));
+            if (!dec)
+                return;
+            ns = firdec_process(&st->pre, st->tmpc, k, dec);
+            src = dec;
+        }
+        int room = (int)(nstore - (size_t)st->fill);
+        int take = MIN(ns, room);
+        memcpy(st->store + st->fill, src, sizeof(cf32) * (size_t)take);
+        st->fill += take;
+        free(dec);
+        if ((size_t)st->fill >= nstore) {
+            /* la tasa de entrada de las muestras sobrantes del trozo se descarta (≤ un trozo) */
+            finish_window(st, st->win_t0 + (double)WIN / st->fs, emit, ctx);
             st->fill = 0;
-            st->skip = (int64_t)(st->period * st->fs);
+            st->skip = (int64_t)(st->period * st->fs_in);
         }
     }
 }
@@ -991,15 +1236,15 @@ const decoder_desc_t DEC_LTE = {
     .id = "lte",
     .name = "LTE",
     .group = "Celular",
-    .desc = "Búsqueda de celda LTE (PSS/SSS → PCI, CFO, RSRP; MIB del PBCH).",
-    .kind = DEC_NARROW,
-    .rate = 1920000,
-    .bw_hz = 1500000,
+    .desc = "Celda LTE: PSS/SSS → PCI, CFO, RSRP; MIB (PBCH) y SIB1 (operador, banda, TAC, ECI).",
+    .kind = DEC_WIDE,
+    .rate = 0,
+    .bw_hz = 0,
     .wide_rate = 0,
-    .wide_min_rate = 0,
+    .wide_min_rate = 1920000,
     .freqs = {0LL, 0LL, 0LL, 0LL},
     .create = lte_create,
     .destroy = lte_destroy,
-    .process = lte_process,
+    .process_raw = lte_process_raw,
     .state_json = lte_state,
 };
