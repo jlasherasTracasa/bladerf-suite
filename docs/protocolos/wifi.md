@@ -127,7 +127,7 @@ partir de sus **balizas (Beacon)** y **respuestas de sondeo (Probe Response)**.
    bloques > 6 dB sobre el suelo abren una ráfaga (con 256 muestras de pre-roll),
    3 bloques bajos la cierran (máx. 10 ms). Todo el DSP posterior solo corre
    sobre ráfagas.
-1. **OFDM 802.11a/g** (Bloessl et al., SRIF 2013; IEEE 802.11-2016 cl. 17):
+1. **OFDM 802.11a/g** (Bloessl et al., SRIF 2013; IEEE 802.11-2020 cl. 17, 6–54 Mb/s):
    - Schmidl-Cox sobre el STF: `P(n)=Σ x[n+k]·x*[n+k+16]`, `M=|P|²/R²` > 0,5
      sostenido 24 muestras → inicio; CFO grueso `f=−arg(P)·fs/(2π·16)` (±625 kHz).
    - Correlación cruzada con el LTF conocido (dos picos separados 64) → inicio de
@@ -136,10 +136,15 @@ partir de sus **balizas (Beacon)** y **respuestas de sondeo (Probe Response)**.
      Por símbolo, ajuste LS de la fase de los 4 pilotos `θ₀+b·k` (error común/CFO
      residual y deriva de reloj). Las ventanas FFT arrancan 4 muestras antes del
      final del GI para tolerar ecos.
-   - SIGNAL: BPSK 1/2 → Viterbi K=7 (133,171) → paridad par, RATE (6/9/12/18),
-     LENGTH. Después, prefijo → control de trama → resto.
+   - SNR: de los dos LTF idénticos, `E|Y₁−Y₂|²=2N` y `E|Y₁+Y₂|²/4=|H|²+N/2`.
+   - SIGNAL: BPSK 1/2 → Viterbi K=7 (133,171) → paridad par, RATE (Tabla 17-6, las
+     8 tasas), LENGTH. Después, prefijo → control de trama → resto.
+   - Demapeo blando (§17.3.5.8, Gray): por eje, bit 1 = nivel x, bit 2 = 2−|x| (16-QAM)
+     o 4−|x| (64-QAM), bit 3 = 2−||x|−4|; **el peso de fiabilidad |H|²/media se aplica
+     después** de estas no linealidades (aplicarlo antes deformaba los umbrales y dejaba
+     un suelo de error con multitrayecto en 16/64-QAM).
    - Datos: desentrelazado (dos permutaciones), reinserción de borrados
-     (punzonado 3/4: `A0 B0 A1 · · B2`), Viterbi con cola, desaleatorizado
+     (punzonado 3/4: `A0 B0 A1 · · B2`; 2/3 de 48 Mb/s: `A0 B0 A1 ·`), Viterbi con cola, desaleatorizado
      (semilla de los 7 primeros bits de SERVICE, que son 0), FCS CRC-32.
 2. **DSSS 802.11b 1 Mb/s** (si no hay STF): la correlación Barker-11 se evalúa
    directamente a 20 Msps con interpolación de Catmull-Rom en las posiciones de
@@ -165,15 +170,20 @@ Parameter Set; si falta, del IE HT Operation o de la frecuencia central.
 `security`: `open`, `WEP`, `WPA`, `WPA2`, `WPA2-EAP`, `WPA3`, `WPA2/WPA3`
 (+`+WPA` si también hay IE de proveedor WPA); `std`: `b`, `g`/`a` (según banda),
 `n`, `ac`, `ax` (por presencia de IEs HT/VHT/HE). `rssi` en dBFS (potencia de
-ráfaga menos suelo).
+ráfaga menos suelo); `snr` en dB (OFDM: de los LTF; DSSS: potencia de ráfaga/suelo);
+`band` `"2.4"`/`"5"` según la frecuencia central; `freq` = frecuencia de captura (Hz);
+`country` del IE 7; `last` = hora Unix de la última baliza. En 5 GHz no existe el IE DS
+Parameter Set: el canal sale del IE HT Operation o, si no, de la frecuencia central
+(5180 MHz → 36). **Posición** (`dec_emit_span`): `sample` = primer símbolo modulado (inicio
+del STF; en DSSS, 128 µs de SYNC antes del SFD) y `sample_end` = último símbolo de datos.
 
-**state_json**: `{"nets":[{ssid,bssid,channel,band,security,std,phy,rates,rssi,
-beacon_ms,count,age}],"bursts","frames","fcs_err","skipped","noise_dbfs"}`.
+**state_json**: `{"nets":[{ssid,bssid,channel,band,freq,security,std,phy,rates,rssi,
+snr,beacon_ms,count,country?,last,age}],"bursts","frames","fcs_err","skipped","noise_dbfs"}`.
 Las redes caducan a los 300 s; tabla de 64.
 
 Modulador (`mod_wifi.c`, `--gen wifi`): dos redes de ejemplo (OFDM 6 Mb/s WPA2 y
-DSSS 1 Mb/s abierta); `{"std":"g|b|gb","ssid","bssid","channel","security",
-"rate":6|9|12|18,"ht","repeat","gap_us","frame":"beacon|probe_resp|data"}`.
+DSSS 1 Mb/s abierta); `{"std":"g|a|b|gb" (a = 5 GHz, sin IE DS),"ssid","bssid","channel","security",
+"rate":6|9|12|18|24|36|48|54,"ht","repeat","gap_us","frame":"beacon|probe_resp|data"}`.
 `air_ok=false`.
 
 ## Pruebas (`tests/test_wifi.c`)
@@ -181,21 +191,30 @@ DSSS 1 Mb/s abierta); `{"std":"g|b|gb","ssid","bssid","channel","security",
 Independientes del modulador: secuencia PRBS del aleatorizador (56 primeros bits),
 polaridad de pilotos p₀…p₁₅, CRC-32 de "123456789", posiciones de portadoras de
 datos, entrelazador. De sistema (SNR de potencia media): OFDM y DSSS con
-CFO ±100…150 kHz, ±100 ppm, 2 ecos (OFDM), 10–15 dB (los barridos manuales
-decodifican incluso a 4 dB); 9/12/18 Mb/s; seguridad; probe-resp y datos (ética);
+CFO ±100…150 kHz, ±100 ppm, 2 ecos (OFDM), 10–15 dB; **las 8 tasas OFDM con CFO de
+±¼ del espaciado (78,1 kHz), ±100 ppm y 2 ecos (−6 y −10 dB, 150 y 350 ns)**; SNR de
+prueba por tasa 10 dB (6/9/12), 12 (18), 14 (24), 22 (36), 26 (48), 28 (54). Barrido
+medido (mismo canal, CFO 78 kHz, 100 ppm): 6–12 Mb/s decodifican desde 8 dB, 18–24 desde
+10, 36 desde 18, 48 desde 20–24 y 54 desde 24 dB, coherente con la sensibilidad de la Tabla
+17-18 de la norma; las tasas altas no pueden exigirse a 10 dB. También 5 GHz (canal 36 y
+100), continua del receptor de 0,05 FS, posición `smp0`/`smp1`, seguridad; probe-resp y datos (ética);
 solo ruido; coste: ~0,10 s de CPU/s con ≈25 % de ocupación del aire, ~0,45 s/s con
 el canal 100 % saturado (peor caso no realista; domina el Viterbi de las balizas).
 
 ## Limitaciones y riesgos
 
-- **No hay IQ real ni vector de trama de la norma contrastado** aquí: las tablas
-  (STF, LTF, entrelazador, punzonado 3/4, polaridad, orden de bits del SIGNAL,
+- **No hay IQ real OFDM contrastado** aquí (pendiente de capturar con el bladeRF en el
+  aire, ver más abajo): las tablas
+  (STF, LTF, entrelazador, punzonado 3/4 y 2/3, polaridad, orden de bits del SIGNAL,
   CRC-16 PLCP transmitido MSB primero, orden de bits del SFD) están escritas de la
   norma de memoria y verificadas solo por coherencia con el modulador y por los
   vectores citados. **Riesgos principales**: punzonado 3/4 (9 y 18 Mb/s) y el orden
   de bits de la paridad CRC-16 DSSS. 6 Mb/s OFDM y la cadena BPSK/Viterbi son lo
   mejor contrastado (PRBS y polaridad coinciden con la norma).
-- Solo 6/9/12/18 Mb/s OFDM y 1 Mb/s DSSS; no 2/5,5/11 Mb/s ni 24–54 Mb/s.
+- OFDM 6–54 Mb/s y DSSS 1 Mb/s; no 2/5,5/11 Mb/s (CCK). Solo se decodifican por completo
+  balizas y respuestas de sondeo; HT/VHT/HE (802.11n/ac/ax) solo se identifican por sus IEs
+  (el preámbulo legado de las balizas siempre es 802.11a/g).
+- Se resta la continua del receptor con un seguidor de un polo (τ ≈ 0,2 ms).
 - Ráfagas pegadas (SIFS) no se separan; ráfaga máxima de 10 ms (≈ 1200 bytes a
   1 Mb/s).
 - Con ruido de fondo muy alto o interferencia continua el suelo adaptativo puede
@@ -216,3 +235,18 @@ Grabación: sigidwiki.com `Wi-Fi.zip` (IQ 8 bit a 18 MS/s, 0,3 s; routers UPC de
 reales** en 802.11b DSSS 1 Mb/s (SSID `UPC5035941`, `UPC8443073.2,4G`, `UPC Wi-Free`…, canal 1 del IE DS, seguridad WPA2/WPA2-EAP, 102,4 ms de intervalo):
 **preámbulo/SFD, CRC-16 del PLCP, DBPSK/Barker, aleatorizador y FCS confirmados**. Fixture: `tests/data/wifi_sigid_beacon_20M.cs8` (152 kB).
 Sin validar: **OFDM** (6 Mb/s, punzonado 3/4 y CRC de SIGNAL): esta grabación no contiene tramas OFDM decodificables.
+
+## Captura en el aire (orden para el usuario)
+
+20 Msps exactos, un canal por captura (la tasa fija el ancho). Canal 6 de 2,4 GHz y canal 36 /
+100 de 5 GHz (ganancia manual ≈ 40 dB; con USB 3 no hay pérdidas a 20 Msps):
+
+```
+build/bladerf-lab --freq 2437000000 --rate 20000000 --decode wifi@2437000000 --print --duration 60
+build/bladerf-lab --freq 5180000000 --rate 20000000 --decode wifi@5180000000 --print --duration 60
+build/bladerf-lab --freq 5500000000 --rate 20000000 --decode wifi@5500000000 --print --duration 60
+build/bladerf-lab --profile wifi          # servidor + web: 2437 MHz; luego cambiar a 5180 MHz en la web
+```
+Para validar OFDM con aire real: grabar con el botón de grabación de la web (SigMF, orden `record`) y repetir con `--replay`.
+En 2,4 GHz esperar balizas DSSS (1 Mb/s) y OFDM (la mayoría de AP modernos); en 5 GHz solo OFDM
+a 6 Mb/s (tasa básica): ahí `std` sale `a` (o `n/ac/ax` por los IEs) y el canal 36/100.

@@ -6,8 +6,12 @@
  *     48 primeros bits 0000111011110010110010010000001000100110001011 10…;
  *   - polaridad de pilotos p0..p15 (§17.3.5.10) = 1,1,1,1,-1,-1,-1,1,-1,-1,-1,-1,1,1,-1,1;
  *   - CRC-32 de "123456789" = 0xCBF43926 (FCS de 802.11 es el CRC-32 de IEEE 802.3).
- * Pruebas de sistema: modulador → canal (AWGN con SNR de potencia MEDIA, CFO,
- * deriva de reloj ±100 ppm y, en OFDM, 2 ecos) → decodificador.
+ *   - OFDM 802.11a/g de 6 a 54 Mb/s (BPSK/QPSK/16-QAM/64-QAM, códigos 1/2, 2/3 y 3/4; IEEE
+ *     802.11-2020 §17.3.5, Tabla 17-4): tasa 48 Mb/s = 2/3 (patrón A0 B0 A1) comprobada contra
+ *     NDBPS de la norma (192 bits/símbolo) y los códigos RATE de la Tabla 17-6.
+ * Pruebas de sistema: modulador → canal (AWGN con SNR de potencia MEDIA, CFO de hasta ±¼ del
+ * espaciado de subportadora (78,125 kHz) y más, deriva de reloj ±100 ppm y, en OFDM, 2 ecos
+ * de −6 y −10 dB con 150 y 350 ns) → decodificador. Posición (smp0/smp1) contra la verdad.
  * VECTOR REAL: tests/data/wifi_sigid_beacon_20M.cs8 = 3,8 ms (8 bit con signo, 20 MS/s) de la
  * grabación pública "Wi-Fi.zip" de sigidwiki.com (IQ 8 bit a 18 MS/s, remuestreada a 20 MS/s):
  * una baliza 802.11b DSSS 1 Mb/s de "UPC8443073.2,4G" (BSSID 34:2C:C4:18:95:3B, canal 1,
@@ -24,6 +28,8 @@
 
 #include <time.h>
 
+static double g_dc = 0;                  /* continua añadida (parte de fondo de escala) */
+static int64_t g_center = 2437000000LL; /* frecuencia central de captura de run_case */
 extern const decoder_desc_t DEC_WIFI;
 extern const modulator_desc_t MOD_WIFI;
 
@@ -97,10 +103,14 @@ static int run_case(const char *params, double snr, double cfo, double ppm, bool
         chan_cfo(x, n, WIFI_FS, cfo);
     uint32_t seed = 12345u + (uint32_t)(snr * 10);
     awgn_avg(x, n, snr, &seed);
+    for (int i = 0; i < n && g_dc != 0; i++) {
+        x[i].re += (float)g_dc;
+        x[i].im -= (float)(0.7 * g_dc);
+    }
     int16_t *q = malloc(sizeof(int16_t) * 2 * (size_t)n);
     cf32_to_q11(x, n, 1.0, q);
     clock_t t0 = clock();
-    run_wide(&DEC_WIFI, q, n, WIFI_FS, 2437000000LL, NULL, evs);
+    run_wide(&DEC_WIFI, q, n, WIFI_FS, g_center, NULL, evs);
     if (cpu_s_per_s)
         *cpu_s_per_s = (double)(clock() - t0) / CLOCKS_PER_SEC / ((double)n / WIFI_FS);
     free(q);
@@ -196,17 +206,83 @@ int main(void)
     CHECK(ev_has(&ev, "\"ssid\":\"Cafe-Retro\""));
     evs_free(&ev);
 
-    /* ---- 4. Otras tasas OFDM y seguridad WPA/open/HT ---- */
-    static const int rates[3] = {9, 12, 18};
-    for (int i = 0; i < 3; i++) {
+    /* ---- 4. Las 8 tasas OFDM (6-54 Mb/s) y seguridad WPA/open/HT ----
+     * SNR por tasa: 10 dB (BPSK/QPSK, lo exigido) y, para 16/64-QAM, algo por encima de la
+     * sensibilidad típica de la norma (Tabla 17-18: 16-QAM ≈ 16-19 dB, 64-QAM ≈ 22-25 dB). Con
+     * CFO de +40 kHz (¼ de subportadora = 78 kHz, probado aparte), +60 ppm y 2 ecos. */
+    static const struct { int mbps; double snr; } rates[8] = {{6, 10}, {9, 10}, {12, 10}, {18, 12},
+                                                               {24, 14}, {36, 22}, {48, 26}, {54, 28}};
+    for (int i = 0; i < 8; i++) {
         char p[200];
         snprintf(p, sizeof p, "{\"std\":\"g\",\"ssid\":\"R%d\",\"rate\":%d,\"repeat\":1,\"security\":\"wpa\",\"ht\":true}",
-                 rates[i], rates[i]);
-        run_case(p, 15, 40e3, 60, true, &ev, NULL);
+                 rates[i].mbps, rates[i].mbps);
+        double sgn = (i & 1) ? -1 : 1;
+        run_case(p, rates[i].snr, sgn * 78125.0, sgn * 100, true, &ev, NULL);
         char needle[40];
-        snprintf(needle, sizeof needle, "\"phy\":\"OFDM %dM\"", rates[i]);
+        snprintf(needle, sizeof needle, "\"phy\":\"OFDM %dM\"", rates[i].mbps);
+        if (!ev_has(&ev, needle))
+            printf("  tasa %d Mb/s con %.0f dB: sin decodificar\n", rates[i].mbps, rates[i].snr);
         CHECK(ev_has(&ev, needle));
         CHECK(ev_has(&ev, "\"security\":\"WPA\"") && ev_has(&ev, "\"std\":\"n\""));
+        evs_free(&ev);
+    }
+    /* sin canal ni ruido, las 8 tasas con CFO grande (±150 kHz): coherencia pura de la cadena */
+    for (int i = 0; i < 8; i++) {
+        char p[200], needle[40];
+        snprintf(p, sizeof p, "{\"std\":\"g\",\"ssid\":\"L%d\",\"rate\":%d,\"repeat\":1}", rates[i].mbps, rates[i].mbps);
+        run_case(p, 45, (i & 1) ? -150e3 : 150e3, 0, false, &ev, NULL);
+        snprintf(needle, sizeof needle, "\"phy\":\"OFDM %dM\"", rates[i].mbps);
+        CHECK(ev_has(&ev, needle));
+        evs_free(&ev);
+    }
+
+    /* continua del receptor (0,05 FS, ≈ −26 dBFS; la señal media ronda −14 dBFS) + IQ en 24 Mb/s */
+    g_dc = 0.05;
+    run_case("{\"std\":\"g\",\"ssid\":\"Continua\",\"rate\":24,\"repeat\":1}", 16, 30e3, 30, true, &ev, NULL);
+    CHECK(ev_has(&ev, "\"phy\":\"OFDM 24M\""));
+    evs_free(&ev);
+    run_case("{\"std\":\"b\",\"ssid\":\"ContinuaB\",\"repeat\":1}", 14, 30e3, 30, false, &ev, NULL);
+    CHECK(ev_has(&ev, "\"phy\":\"DSSS 1M\""));
+    evs_free(&ev);
+    g_dc = 0;
+
+    /* ---- 4b. 5 GHz (802.11a): sin «DS Parameter Set»; canal por HT Operation o por la frecuencia ---- */
+    g_center = 5180000000LL;
+    run_case("{\"std\":\"a\",\"ssid\":\"Cinco\",\"rate\":24,\"channel\":36,\"security\":\"wpa2\",\"repeat\":1}", 16,
+             60e3, 50, true, &ev, NULL);
+    CHECK(ev_has(&ev, "\"channel\":36") && ev_has(&ev, "\"band\":\"5\"") && ev_has(&ev, "\"std\":\"a\"") &&
+          ev_has(&ev, "\"ssid\":\"Cinco\"") && ev_has(&ev, "\"snr\":"));
+    evs_free(&ev);
+    g_center = 5500000000LL;
+    run_case("{\"std\":\"a\",\"ssid\":\"CincoN\",\"rate\":6,\"channel\":100,\"ht\":true,\"repeat\":1}", 10, -70e3, -80, true, &ev,
+             NULL);
+    CHECK(ev_has(&ev, "\"channel\":100") && ev_has(&ev, "\"std\":\"n\"") && ev_has(&ev, "\"band\":\"5\""));
+    evs_free(&ev);
+    g_center = 2437000000LL;
+
+    /* ---- 4c. Posición: smp0 = inicio del STF (hueco inicial de 4000 muestras), smp1 = fin del último símbolo ---- */
+    {
+        const struct { int mbps, len_syms_min; } pos[2] = {{6, 15}, {54, 2}};
+        for (int i = 0; i < 2; i++) {
+            char p[160];
+            snprintf(p, sizeof p, "{\"std\":\"g\",\"ssid\":\"Pos\",\"rate\":%d,\"repeat\":1}", pos[i].mbps);
+            run_case(p, 30, 0, 0, false, &ev, NULL);
+            long s0 = -1, s1 = -1;
+            const char *a = ev.data ? strstr(ev.data, "\"smp0\":") : NULL;
+            if (a && sscanf(a, "\"smp0\":%ld,\"smp1\":%ld", &s0, &s1) != 2)
+                s0 = s1 = -1;
+            CHECK(s0 >= 3990 && s0 <= 4010);
+            CHECK(s1 - s0 >= 320 + 80 * pos[i].len_syms_min && s1 - s0 < 320 + 80 * 40);
+            evs_free(&ev);
+        }
+        /* DSSS: SYNC de 128 µs antes del SFD → inicio ≈ 4000 */
+        run_case("{\"std\":\"b\",\"ssid\":\"PosB\",\"repeat\":1}", 25, 0, 0, false, &ev, NULL);
+        long s0 = -1, s1 = -1;
+        const char *a = ev.data ? strstr(ev.data, "\"smp0\":") : NULL;
+        if (a && sscanf(a, "\"smp0\":%ld,\"smp1\":%ld", &s0, &s1) != 2)
+            s0 = s1 = -1;
+        CHECK(s0 >= 3900 && s0 <= 4100);
+        CHECK(s1 - s0 > 20 * (192 + 8 * 60));
         evs_free(&ev);
     }
 

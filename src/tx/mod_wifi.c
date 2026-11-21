@@ -6,8 +6,9 @@
  * capacidades, elementos de información SSID / tasas / DS / TIM / RSN…, y FCS
  * CRC-32) y la modula como la emitiría un punto de acceso:
  *
- *  - OFDM 802.11a/g (cláusula 17): STF + LTF + SIGNAL + datos a 6, 9, 12 o
- *    18 Mb/s (BPSK/QPSK, K=7 1/2 o 3/4). Pasos del transmisor: SERVICE (16
+ *  - OFDM 802.11a/g (IEEE 802.11-2020 cláusula 17): STF + LTF + SIGNAL + datos
+ *    a 6, 9, 12, 18, 24, 36, 48 o 54 Mb/s (BPSK/QPSK/16-QAM/64-QAM, K=7 con
+ *    tasas 1/2, 2/3 y 3/4; Tabla 17-4). Pasos del transmisor: SERVICE (16
  *    ceros) + PSDU (LSB primero) + cola (6 ceros) + relleno → aleatorizador
  *    x⁷+x⁴+1 (con los 6 bits de cola puestos a cero después) → convolucional
  *    → punzonado → entrelazado → constelación → 48 datos + 4 pilotos (polaridad
@@ -20,8 +21,10 @@
  * Parámetros JSON (todos opcionales; sin parámetros emite dos redes de ejemplo,
  * una OFDM 6 Mb/s y una DSSS 1 Mb/s):
  *   {"ssid":"BladeRF-Lab","bssid":"02:00:5e:10:00:01","channel":6,
- *    "std":"g"|"b"|"gb","security":"open|wep|wpa|wpa2|wpa3","rate":6,
+ *    "std":"g"|"a"|"b"|"gb","security":"open|wep|wpa|wpa2|wpa3","rate":6,
  *    "ht":false,"repeat":2,"gap_us":300,"frame":"beacon|probe_resp|data"}
+ * ("a" = OFDM de 5 GHz: sin elemento «DS Parameter Set» (solo lo lleva 2,4 GHz), el
+ * canal lo da el «HT Operation» si "ht":true y si no, la frecuencia de captura.)
  * ("frame" solo sirve para probar el decodificador: probe_resp pone una MAC de
  * cliente ficticia en la dirección 1 y data genera una trama de datos de relleno).
  *
@@ -44,7 +47,7 @@ typedef struct {
     char ssid[33];
     uint8_t bssid[6];
     int channel;
-    char std;           /* 'g' OFDM, 'b' DSSS */
+    char std;           /* 'g' y 'a' OFDM, 'b' DSSS */
     char security[8];
     int rate;
     bool ht;
@@ -110,7 +113,8 @@ static int build_beacon(const ap_t *a, uint8_t *f, uint16_t seq)
     else
         n += ie_put(f + n, 1, rg, 8);
     uint8_t ch = (uint8_t)a->channel;
-    n += ie_put(f + n, 3, &ch, 1);
+    if (a->std != 'a')
+        n += ie_put(f + n, 3, &ch, 1); /* en 5 GHz no existe */
     static const uint8_t tim[] = {0, 1, 0, 0};
     n += ie_put(f + n, 5, tim, 4);
     if (!strcmp(a->security, "wpa2") || !strcmp(a->security, "wpa3")) {
@@ -129,6 +133,10 @@ static int build_beacon(const ap_t *a, uint8_t *f, uint16_t seq)
     if (a->ht) {
         uint8_t htc[26] = {0x2C, 0x01, 0x17};
         n += ie_put(f + n, 45, htc, 26);
+        if (a->std == 'a') {
+            uint8_t hto[22] = {ch}; /* HT Operation: canal primario */
+            n += ie_put(f + n, 61, hto, 22);
+        }
     }
 fcs:;
     static crc_t c;
@@ -170,19 +178,31 @@ static void push_sym(iqbuf_t *o, const cf32 *x, int gi)
         iqbuf_push(o, x[i]);
 }
 
+/* Nivel PAM de Gray (§17.3.5.8, Tablas 17-9..17-11) para el grupo de bits b[0..m-1]
+ * (m = 1, 2 o 3): el primer bit decide el signo y los demás refinan la amplitud. */
+static float pam_level(const float *b, int m)
+{
+    int b0 = b[0] > 0.5f, b1 = m > 1 && b[1] > 0.5f, b2 = m > 2 && b[2] > 0.5f;
+    if (m == 1)
+        return b0 ? 1.0f : -1.0f;
+    if (m == 2)
+        return b0 ? (b1 ? 1.0f : 3.0f) : (b1 ? -1.0f : -3.0f);
+    if (b0)
+        return b1 ? (b2 ? 3.0f : 1.0f) : (b2 ? 5.0f : 7.0f);
+    return b1 ? (b2 ? -3.0f : -1.0f) : (b2 ? -5.0f : -7.0f);
+}
+
 static void put_symbol(iqbuf_t *o, const fft_plan_t *pl, const float *bitsoft, const wifi_rate_t *r, int polarity)
 {
-    /* bitsoft: ncbps bits (0/1) ya entrelazados de este símbolo. */
+    /* bitsoft: ncbps bits (0/1) ya entrelazados de este símbolo; la subportadora i
+     * usa los bits [i·nbpsc, (i+1)·nbpsc): la mitad para I y la otra mitad para Q. */
+    static const float KMOD[7] = {0, 1.0f, 0.70710678f, 0, 0.31622777f, 0, 0.15430335f}; /* 1, 1/√2, 1/√10, 1/√42 */
     cf32 X[64] = {{0}}, x[64];
+    int m = r->nbpsc == 1 ? 1 : r->nbpsc / 2;
     for (int i = 0; i < 48; i++) {
         int k = wifi_data_carrier(i);
-        float re, im = 0;
-        if (r->nbpsc == 1) {
-            re = bitsoft[i] ? 1.0f : -1.0f;
-        } else {
-            re = (bitsoft[2 * i] ? 1.0f : -1.0f) * 0.70710678f;
-            im = (bitsoft[2 * i + 1] ? 1.0f : -1.0f) * 0.70710678f;
-        }
+        const float *b = bitsoft + i * r->nbpsc;
+        float re = pam_level(b, m) * KMOD[r->nbpsc], im = r->nbpsc == 1 ? 0.0f : pam_level(b + m, m) * KMOD[r->nbpsc];
         X[wifi_bin(k)] = (cf32){re, im};
     }
     for (int p = 0; p < 4; p++)
@@ -381,13 +401,13 @@ static int parse_params(const char *js, params_t *p, char *err, size_t errlen)
     if ((i = json_obj_get(js, t, 0, "gap_us")) >= 0 && json_num(js, t, i, &v))
         p->gap_us = (int)CLAMP(v, 50, 100000);
     const wifi_rate_t *r = wifi_rate_by_mbps(a.rate);
-    if (!r || r->nbpsc > 2) {
-        snprintf(err, errlen, "rate debe ser 6, 9, 12 o 18");
+    if (!r) {
+        snprintf(err, errlen, "rate debe ser 6, 9, 12, 18, 24, 36, 48 o 54");
         return -1;
     }
     p->nap = 0;
     for (const char *c = std; *c && p->nap < 2; c++) {
-        if (*c != 'g' && *c != 'b')
+        if (*c != 'g' && *c != 'b' && *c != 'a')
             continue;
         p->ap[p->nap] = a;
         p->ap[p->nap].std = *c;
@@ -398,7 +418,7 @@ static int parse_params(const char *js, params_t *p, char *err, size_t errlen)
         p->nap++;
     }
     if (!p->nap) {
-        snprintf(err, errlen, "std debe ser g, b o gb");
+        snprintf(err, errlen, "std debe ser g, a, b o gb");
         return -1;
     }
     return 0;
@@ -423,10 +443,15 @@ static int wifi_modulate(const char *params, iqbuf_t *out, char *err, size_t err
             gap(out, p.gap_us * 20);
         }
     gap(out, 2000);
-    for (int i = 0; i < out->n; i++) { /* margen de seguridad frente al recorte del DAC */
-        out->s[i].re = CLAMP(out->s[i].re, -0.9f, 0.9f);
-        out->s[i].im = CLAMP(out->s[i].im, -0.9f, 0.9f);
-    }
+    /* |x| ≤ 0,9: se escala todo (sin recortar, para no deformar 64-QAM) si algún pico lo supera. */
+    float pk = 0;
+    for (int i = 0; i < out->n; i++)
+        pk = MAX(pk, MAX(fabsf(out->s[i].re), fabsf(out->s[i].im)));
+    if (pk > 0.9f)
+        for (int i = 0; i < out->n; i++) {
+            out->s[i].re *= 0.9f / pk;
+            out->s[i].im *= 0.9f / pk;
+        }
     return 0;
 }
 

@@ -11,8 +11,13 @@
  *     paridad par, cola 6) en un símbolo BPSK 1/2; después los símbolos de
  *     datos con prefijo cíclico de 16 muestras (símbolo = 80 muestras = 4 µs).
  *   - Código convolucional K=7, g0=133₈ (salida A), g1=171₈ (salida B). Las
- *     tasas 2/3 y 3/4 se obtienen por punzonado; 3/4 = patrón A0 B0 A1 · · B2
- *     (se pierden B1 y A2) según §17.3.5.6.
+ *     tasas 2/3 y 3/4 se obtienen por punzonado (§17.3.5.6, Fig. 17-9);
+ *     2/3 = patrón A0 B0 A1 · (se pierde B1) y 3/4 = A0 B0 A1 · · B2 (se
+ *     pierden B1 y A2). Tabla de tasas: Tabla 17-4 (6, 9, 12, 18, 24, 36, 48, 54).
+ *   - Constelaciones Gray (§17.3.5.8, Tabla 17-9..17-11): BPSK, QPSK (1/√2),
+ *     16-QAM (1/√10: 00→−3 01→−1 11→+1 10→+3) y 64-QAM (1/√42:
+ *     000→−7 001→−5 011→−3 010→−1 110→+1 111→+3 101→+5 100→+7); el primer
+ *     bit de cada grupo va al eje I y el siguiente grupo al Q.
  *   - Aleatorizador x⁷+x⁴+1 (lfsr_init_wifi); la secuencia de polaridad de los
  *     pilotos es la misma con estado inicial 1111111 (0→+1, 1→−1), periodo 127.
  *
@@ -33,10 +38,11 @@
 typedef struct {
     int mbps;
     int code;   /* RATE R1..R4: R1 es el bit 3 (6 Mb/s = 1101) */
-    int nbpsc;  /* bits por subportadora: 1 BPSK, 2 QPSK */
+    int nbpsc;  /* bits por subportadora: 1 BPSK, 2 QPSK, 4 16-QAM, 6 64-QAM */
     int ncbps;  /* bits codificados por símbolo */
     int ndbps;  /* bits de datos por símbolo */
     int r34;    /* 1 si la tasa del código es 3/4 */
+    int r23;    /* 1 si la tasa del código es 2/3 (solo 48 Mb/s) */
 } wifi_rate_t;
 
 const wifi_rate_t *wifi_rate_by_code(int code);

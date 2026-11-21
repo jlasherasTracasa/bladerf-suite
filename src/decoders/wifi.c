@@ -20,7 +20,7 @@
  *     cierran. Todo lo demás solo se hace SOBRE LA RÁFAGA, lo que mantiene el
  *     coste en ~0,05 s de CPU por segundo de señal aunque el canal esté ocupado.
  *  1. OFDM 802.11a/g (Bloessl et al., "An IEEE 802.11a/g/p OFDM Receiver for GNU
- *     Radio", SRIF 2013), 6/9/12/18 Mb/s:
+ *     Radio", SRIF 2013), 6-54 Mb/s:
  *      a. Schmidl-Cox sobre el STF: P(n)=Σ x[n+k]·x*[n+k+16], M=|P|²/R²; el
  *         umbral M>0,5 sostenido marca el inicio. CFO grueso
  *         f = −arg(P)·fs/(2π·16) (rango ±625 kHz).
@@ -34,7 +34,7 @@
  *         muestras antes del final del prefijo cíclico para tolerar eco.
  *      d. SIGNAL (BPSK 1/2): Viterbi, paridad par, RATE, LENGTH.
  *      e. Prefijo del PSDU → control de trama; si es baliza/probe-resp se
- *         decodifica entero: desentrelazado, destruncado, Viterbi K=7
+ *         decodifica entero: desentrelazado, reinserción de borrados (2/3 y 3/4), Viterbi K=7
  *         (133,171) con cola, desaleatorizado (la semilla sale de los 7 primeros
  *         bits del campo SERVICE, que son ceros), FCS = CRC-32.
  *  2. DSSS 802.11b a 1 Mb/s (si no hay STF): Barker-11 evaluado directamente a
@@ -49,8 +49,7 @@
  * canal, seguridad o estándar. state_json lista las redes vistas (caducan a los
  * 300 s). air_ok=false para el modulador.
  *
- * LIMITACIONES: solo OFDM BPSK/QPSK (6-18 Mb/s) y DSSS 1 Mb/s; no 2/5,5/11 Mb/s
- * ni 24-54 Mb/s (las balizas casi siempre van a la tasa básica); no se
+ * LIMITACIONES: OFDM 6-54 Mb/s y DSSS 1 Mb/s; no 2/5,5/11 Mb/s (CCK); no se
  * recombinan ráfagas pegadas (SIFS); sin 802.11n/ac/ax salvo identificar su IE.
  * No hay vectores públicos con IQ real de referencia: ver docs/protocolos/wifi.md.
  */
@@ -87,8 +86,8 @@ typedef struct {
     uint8_t bssid[6];
     char ssid[40];
     int channel;
-    char sec[28], std[8], phy[16], rates[64];
-    double rssi, first, last, interval_ms;
+    char sec[28], std[8], phy[16], rates[64], country[4];
+    double rssi, snr, first, last, interval_ms;
     uint32_t sig, count;
 } wnet_t;
 
@@ -110,6 +109,11 @@ typedef struct {
     double burst_pow;
     int burst_blocks;
     double t_now;                /* hora de la muestra siguiente */
+    int64_t abs_n;               /* muestras consumidas desde el principio (índice absoluto) */
+    int64_t call0;               /* abs_n al empezar la llamada en curso a process_raw */
+    int sp0, sp1;                /* inicio y fin de la trama dentro de buf (muestras; −1 = ?) */
+    double snr_db;               /* SNR de la ráfaga en curso */
+    float dcr, dci;              /* estimación de la continua del receptor (se resta) */
     /* DSSS */
     cf32 *z;
     float *soft;
@@ -238,9 +242,12 @@ static void net_json(wifi_t *w, sb_t *sb, const wnet_t *n, double now, bool full
     sb_json_str(sb, n->phy);
     sb_puts(sb, ",\"rates\":");
     sb_json_str(sb, n->rates);
-    sb_printf(sb, ",\"rssi\":%.1f,\"beacon_ms\":%.1f,\"count\":%u", n->rssi, n->interval_ms, n->count);
+    sb_printf(sb, ",\"freq\":%lld,\"rssi\":%.1f,\"snr\":%.1f,\"beacon_ms\":%.1f,\"count\":%u",
+              (long long)w->center_hz, n->rssi, n->snr, n->interval_ms, n->count);
+    if (n->country[0])
+        sb_printf(sb, ",\"country\":\"%s\"", n->country);
     if (!full_event)
-        sb_printf(sb, ",\"age\":%.0f", now - n->last);
+        sb_printf(sb, ",\"last\":%.3f,\"age\":%.0f", n->last, now - n->last);
 }
 
 static void mac_frame(wifi_t *w, const uint8_t *f, int len, const char *phy, double rssi_db)
@@ -276,6 +283,12 @@ static void mac_frame(wifi_t *w, const uint8_t *f, int len, const char *phy, dou
                 if (r == 0x7F)
                     continue; /* selector BSS membership */
                 rp += snprintf(rp, 8, "%s%g", rp == t.rates ? "" : ",", r * 0.5);
+            }
+            break;
+        case 7:
+            if (l >= 2 && d[0] >= 'A' && d[0] <= 'Z' && d[1] >= 'A' && d[1] <= 'Z') {
+                t.country[0] = (char)d[0];
+                t.country[1] = (char)d[1];
             }
             break;
         case 3:
@@ -319,6 +332,7 @@ static void mac_frame(wifi_t *w, const uint8_t *f, int len, const char *phy, dou
              he ? "ax" : vht ? "ac" : ht ? "n" : !ofdm ? "b" : w->center_hz > 4000000000LL ? "a" : "g");
     snprintf(t.phy, sizeof t.phy, "%s", phy);
     t.rssi = rssi_db;
+    t.snr = w->snr_db;
     /* hash FNV-1a de lo que, si cambia, merece un evento nuevo */
     uint32_t h = 2166136261u;
     for (const char *c = t.ssid; *c; c++)
@@ -352,7 +366,7 @@ static void mac_frame(wifi_t *w, const uint8_t *f, int len, const char *phy, dou
         n->count = 0;
     } else {
         changed = n->sig != t.sig;
-        double c = n->rssi;
+        double c = n->rssi, snr_old = n->snr;
         uint32_t cnt = n->count;
         double first = n->first;
         *n = t;
@@ -360,6 +374,7 @@ static void mac_frame(wifi_t *w, const uint8_t *f, int len, const char *phy, dou
         n->first = first;
         n->count = cnt;
         n->rssi = 0.7 * c + 0.3 * rssi_db;
+        n->snr = 0.7 * snr_old + 0.3 * w->snr_db;
     }
     n->count++;
     n->last = w->t_now;
@@ -375,7 +390,11 @@ static void mac_frame(wifi_t *w, const uint8_t *f, int len, const char *phy, dou
                   is_new ? "new" : "changed");
         net_json(w, &sb, n, w->t_now, true);
         sb_puts(&sb, "}");
-        w->emit(w->ctx, sb.data, sb.len);
+        int64_t base = w->abs_n - w->n - w->call0; /* buf[0] respecto al inicio de la llamada */
+        if (w->sp0 >= 0)
+            dec_emit_span(w->emit, w->ctx, base + w->sp0, w->sp1 >= w->sp0 ? base + w->sp1 : -1, sb.data, sb.len);
+        else
+            w->emit(w->ctx, sb.data, sb.len);
         sb_free(&sb);
     }
 }
@@ -411,8 +430,10 @@ typedef struct {
     float wgt[64];  /* |H|²/media */
 } chan_t;
 
-/* Demodula un símbolo: devuelve I/Q ecualizados y rotados de los 48 datos. */
-static void ofdm_symbol(wifi_t *w, const cf32 *y, int start, int pol, const chan_t *ch, float *si, float *sq)
+/* Demodula un símbolo: devuelve I/Q ecualizados y rotados de los 48 datos y el peso de
+ * fiabilidad de cada uno (|H|²/media: una subportadora en un nulo del canal vale poco). */
+static void ofdm_symbol(wifi_t *w, const cf32 *y, int start, int pol, const chan_t *ch, float *si, float *sq,
+                        float *wt)
 {
     cf32 X[64];
     memcpy(X, y + start, sizeof X);
@@ -439,22 +460,41 @@ static void ofdm_symbol(wifi_t *w, const cf32 *y, int start, int pol, const chan
         cf32 z = {X[b].re * ch->hinv[b].re - X[b].im * ch->hinv[b].im,
                   X[b].re * ch->hinv[b].im + X[b].im * ch->hinv[b].re};
         float a = th0 + bsl * (float)k, c = cosf(a), s = sinf(a);
-        si[i] = (z.re * c + z.im * s) * ch->wgt[b];
-        sq[i] = (z.im * c - z.re * s) * ch->wgt[b];
+        si[i] = z.re * c + z.im * s;
+        sq[i] = z.im * c - z.re * s;
+        wt[i] = ch->wgt[b];
     }
 }
 
-/* Escribe en out[ncbps] los bits blandos desentrelazados de un símbolo. */
-static void soft_symbol(const wifi_rate_t *r, const int *jk, const float *si, const float *sq, float *out)
+/* Bits blandos de un nivel PAM x (ya escalado a niveles enteros ±1, ±3, ±5, ±7) con la
+ * constelación de Gray de §17.3.5.8 (aproximación max-log por tramos): el primer bit
+ * es el signo, el segundo vale 1 cerca del centro y el tercero distingue {±3,±5} de {±1,±7}.
+ * Convención de fec.h: signo positivo = bit 1. */
+static void pam_soft(float x, int m, float *o)
 {
+    o[0] = x;
+    if (m > 1)
+        o[1] = (m == 2 ? 2.0f : 4.0f) - fabsf(x);
+    if (m > 2)
+        o[2] = 2.0f - fabsf(fabsf(x) - 4.0f);
+}
+
+/* Escribe en out[ncbps] los bits blandos desentrelazados de un símbolo. La
+ * subportadora i aporta los bits [i·nbpsc, (i+1)·nbpsc): mitad para I y mitad para Q. */
+static void soft_symbol(const wifi_rate_t *r, const int *jk, const float *si, const float *sq, const float *wt,
+                        float *out)
+{
+    static const float INV[7] = {0, 1.0f, 1.41421356f, 0, 3.16227766f, 0, 6.48074070f}; /* 1, √2, √10, √42 */
     float in[288];
+    int m = r->nbpsc == 1 ? 1 : r->nbpsc / 2;
+    float g = INV[r->nbpsc];
     for (int i = 0; i < 48; i++) {
-        if (r->nbpsc == 1) {
-            in[i] = si[i];
-        } else {
-            in[2 * i] = si[i];
-            in[2 * i + 1] = sq[i];
-        }
+        pam_soft(si[i] * g, m, in + i * r->nbpsc);
+        if (r->nbpsc > 1)
+            pam_soft(sq[i] * g, m, in + i * r->nbpsc + m);
+        /* el peso se aplica DESPUÉS de las no linealidades (umbrales de 16/64-QAM) */
+        for (int j = 0; j < r->nbpsc; j++)
+            in[i * r->nbpsc + j] *= wt[i];
     }
     for (int k = 0; k < r->ncbps; k++)
         out[k] = in[jk[k]];
@@ -586,6 +626,21 @@ static int ofdm_try(wifi_t *w, const cf32 *x, int n, double rssi_db)
         hsum += H[b].re * H[b].re + H[b].im * H[b].im;
     }
     float hmean = hsum / 52.0f + 1e-30f;
+    /* SNR por subportadora con los dos LTF idénticos: E|Y1−Y2|² = 2N (solo ruido) y
+     * E|Y1+Y2|²/4 = |H|² + N/2, de modo que SNR = (E|Y1+Y2|²/4 − N/2)/N. */
+    {
+        double dn = 0, sg = 0;
+        for (int k = -26; k <= 26; k++) {
+            if (!k)
+                continue;
+            int b = wifi_bin(k);
+            float dr = Y1[b].re - Y2[b].re, di = Y1[b].im - Y2[b].im, sr = Y1[b].re + Y2[b].re, si2 = Y1[b].im + Y2[b].im;
+            dn += (double)dr * dr + (double)di * di;
+            sg += ((double)sr * sr + (double)si2 * si2) / 4.0;
+        }
+        double N = dn / 2.0 / 52.0, S = sg / 52.0 - N / 2.0;
+        w->snr_db = 10.0 * log10((S > 1e-12 ? S : 1e-12) / (N > 1e-12 ? N : 1e-12));
+    }
     for (int b = 0; b < 64; b++) {
         float p = H[b].re * H[b].re + H[b].im * H[b].im;
         float inv = 1.0f / (p + 1e-3f * hmean);
@@ -593,12 +648,12 @@ static int ofdm_try(wifi_t *w, const cf32 *x, int n, double rssi_db)
         ch.wgt[b] = p / hmean;
     }
     /* ---- d. SIGNAL ---- */
-    float si[48], sq[48];
+    float si[48], sq[48], wt[48];
     const wifi_rate_t *r6 = wifi_rate_by_mbps(6);
     int jk6[288], jk[288];
     wifi_interleave_table(r6, jk6);
-    ofdm_symbol(w, y, t1 + 128 + 16 - DELTA, wifi_pilot_polarity(0), &ch, si, sq);
-    soft_symbol(r6, jk6, si, sq, w->soft);
+    ofdm_symbol(w, y, t1 + 128 + 16 - DELTA, wifi_pilot_polarity(0), &ch, si, sq, wt);
+    soft_symbol(r6, jk6, si, sq, wt, w->soft);
     uint8_t sg[24];
     if (viterbi_decode_f(w->vit, w->soft, 48, 18, CONV_TERM_ZERO, NULL, sg) < 0)
         return 1;
@@ -612,7 +667,7 @@ static int ofdm_try(wifi_t *w, const cf32 *x, int n, double rssi_db)
     for (int i = 0; i < 12; i++)
         len |= sg[5 + i] << i;
     const wifi_rate_t *r = wifi_rate_by_code(code);
-    if (par || sg[4] || !r || r->nbpsc > 2 || len < 30 || len > MAX_PSDU)
+    if (par || sg[4] || !r || len < 30 || len > MAX_PSDU)
         return 1;
     wifi_interleave_table(r, jk);
     int nsym = (16 + 8 * len + 6 + r->ndbps - 1) / r->ndbps;
@@ -621,8 +676,8 @@ static int ofdm_try(wifi_t *w, const cf32 *x, int n, double rssi_db)
     /* ---- e. Prefijo → control de trama → resto ---- */
     int nsym1 = (16 + 64 + r->ndbps - 1) / r->ndbps;
     for (int s = 0; s < nsym1; s++) {
-        ofdm_symbol(w, y, t1 + 128 + 80 * (s + 1) + 16 - DELTA, wifi_pilot_polarity(s + 1), &ch, si, sq);
-        soft_symbol(r, jk, si, sq, w->soft + s * r->ncbps);
+        ofdm_symbol(w, y, t1 + 128 + 80 * (s + 1) + 16 - DELTA, wifi_pilot_polarity(s + 1), &ch, si, sq, wt);
+        soft_symbol(r, jk, si, sq, wt, w->soft + s * r->ncbps);
     }
     uint8_t *bits = w->bits;
     if (ofdm_viterbi(w, r, 80, CONV_TERM_NONE, bits) < 0)
@@ -636,8 +691,8 @@ static int ofdm_try(wifi_t *w, const cf32 *x, int n, double rssi_db)
         return 1;
     }
     for (int s = nsym1; s < nsym; s++) {
-        ofdm_symbol(w, y, t1 + 128 + 80 * (s + 1) + 16 - DELTA, wifi_pilot_polarity(s + 1), &ch, si, sq);
-        soft_symbol(r, jk, si, sq, w->soft + s * r->ncbps);
+        ofdm_symbol(w, y, t1 + 128 + 80 * (s + 1) + 16 - DELTA, wifi_pilot_polarity(s + 1), &ch, si, sq, wt);
+        soft_symbol(r, jk, si, sq, wt, w->soft + s * r->ncbps);
     }
     int ninfo = 16 + 8 * len;
     uint8_t *full = malloc((size_t)ninfo + 8);
@@ -653,6 +708,8 @@ static int ofdm_try(wifi_t *w, const cf32 *x, int n, double rssi_db)
             if (fcs == rx) {
                 char phy[16];
                 snprintf(phy, sizeof phy, "OFDM %dM", r->mbps);
+                w->sp0 = t1 - 192;                           /* primer símbolo modulado: inicio del STF */
+                w->sp1 = t1 + 128 + 80 * (nsym + 1);          /* fin del último símbolo de datos */
                 mac_frame(w, psdu, len, phy, rssi_db);
             } else {
                 w->fcs_err++;
@@ -820,7 +877,11 @@ static int dsss_try(wifi_t *w, const cf32 *x, int n, double rssi_db)
     uint32_t fcs = crc_compute(&w->crc32, psdu, (size_t)len - 4);
     uint32_t r4 = psdu[len - 4] | psdu[len - 3] << 8 | psdu[len - 2] << 16 | (uint32_t)psdu[len - 1] << 24;
     if (fcs == r4)
+    {
+        w->sp0 = MAX(0, (int)(20.0 * (sfd - 128) + p0)); /* SYNC de 128 símbolos de 1 µs antes del SFD */
+        w->sp1 = (int)(20.0 * (sfd + 64 + 8 * len) + p0);
         mac_frame(w, psdu, len, "DSSS 1M", rssi_db);
+    }
     else
         w->fcs_err++;
     free(psdu);
@@ -836,6 +897,8 @@ static void burst_done(wifi_t *w)
     int nb = w->burst_blocks > 3 ? w->burst_blocks - 3 : 1;
     double pw = w->burst_pow / nb - w->noise;
     double rssi = 10.0 * log10(pw > 1e-12 ? pw : 1e-12);
+    w->snr_db = 10.0 * log10((pw > 1e-12 ? pw : 1e-12) / (w->noise > 1e-12f ? w->noise : 1e-12f));
+    w->sp0 = w->sp1 = -1;
     if (ofdm_try(w, w->buf, w->n, rssi) == 0)
         dsss_try(w, w->buf, w->n, rssi);
 }
@@ -880,30 +943,38 @@ static void wifi_process_raw(void *st, const int16_t *iq, int n, double now, dec
     w->emit = emit;
     w->ctx = ctx;
     w->t_now = now;
+    w->call0 = w->abs_n;
     const float k = 1.0f / 2048.0f;
     int i = 0;
     while (i < n) {
         int m = MIN(n - i, BLK - w->bfill);
         float ps = 0;
-        if (w->inburst) {
-            cf32 *d = w->buf + w->n;
-            for (int j = 0; j < m; j++) {
-                float re = (float)iq[2 * (i + j)] * k, im = (float)iq[2 * (i + j) + 1] * k;
+        /* Se resta la continua del receptor (pico del LO en la subportadora 0): seguidor de
+         * un polo (τ ≈ 4096 muestras = 0,2 ms), mucho más lento que cualquier trama útil. */
+        const float ad = 1.0f / 4096.0f;
+        float dr = w->dcr, di = w->dci;
+        cf32 *d = w->inburst ? w->buf + w->n : NULL;
+        for (int j = 0; j < m; j++) {
+            float xr = (float)iq[2 * (i + j)] * k, xi = (float)iq[2 * (i + j) + 1] * k;
+            dr += (xr - dr) * ad;
+            di += (xi - di) * ad;
+            float re = xr - dr, im = xi - di;
+            if (d)
                 d[j] = (cf32){re, im};
-                ps += re * re + im * im;
-            }
-            w->n += m;
-        } else {
-            for (int j = 0; j < m; j++) {
-                float re = (float)iq[2 * (i + j)] * k, im = (float)iq[2 * (i + j) + 1] * k;
-                w->ring[w->rpos] = (cf32){re, im};
-                w->rpos = (w->rpos + 1) & (PRE - 1);
-                ps += re * re + im * im;
-            }
+            else
+                w->ring[(w->rpos + j) & (PRE - 1)] = (cf32){re, im};
+            ps += re * re + im * im;
         }
+        w->dcr = dr;
+        w->dci = di;
+        if (d)
+            w->n += m;
+        else
+            w->rpos = (w->rpos + m) & (PRE - 1);
         w->psum += ps;
         w->bfill += m;
         i += m;
+        w->abs_n = w->call0 + i;
         w->t_now = now + (double)i / w->fs;
         if (w->bfill == BLK) {
             w->bfill = 0;

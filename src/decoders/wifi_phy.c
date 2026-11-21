@@ -6,8 +6,8 @@
 #include "../dsp/bits.h"
 
 static const wifi_rate_t RATES[] = {
-    {6, 0xD, 1, 48, 24, 0},  {9, 0xF, 1, 48, 36, 1},  {12, 0x5, 2, 96, 48, 0},  {18, 0x7, 2, 96, 72, 1},
-    {24, 0x9, 4, 192, 96, 0}, {36, 0xB, 4, 192, 144, 1}, {48, 0x1, 6, 288, 192, 0}, {54, 0x3, 6, 288, 216, 1},
+    {6, 0xD, 1, 48, 24, 0, 0},    {9, 0xF, 1, 48, 36, 1, 0},    {12, 0x5, 2, 96, 48, 0, 0},   {18, 0x7, 2, 96, 72, 1, 0},
+    {24, 0x9, 4, 192, 96, 0, 0},  {36, 0xB, 4, 192, 144, 1, 0}, {48, 0x1, 6, 288, 192, 0, 1}, {54, 0x3, 6, 288, 216, 1, 0},
 };
 
 const wifi_rate_t *wifi_rate_by_code(int code)
@@ -97,7 +97,9 @@ const conv_punct_t *wifi_punct(const wifi_rate_t *r)
 {
     static const uint8_t keep34[6] = {1, 1, 1, 0, 0, 1}; /* [t][A,B]: A0 B0 A1 · · B2 */
     static const conv_punct_t p34 = {3, 2, keep34};
-    return r->r34 ? &p34 : NULL;
+    static const uint8_t keep23[4] = {1, 1, 1, 0};       /* A0 B0 A1 · */
+    static const conv_punct_t p23 = {2, 2, keep23};
+    return r->r34 ? &p34 : r->r23 ? &p23 : NULL;
 }
 
 int wifi_coded_bits(int ninfo, const conv_punct_t *p)
