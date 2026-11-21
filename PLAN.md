@@ -104,7 +104,9 @@ de `dec_host_auto_sync`, sin informe de carrera); se revisa en N2.
 | D1✔ | (Hecho 2026-11-20: 38/41 tramas de dumpvdl2; el fallo era de tramado, no ISI) VDL2: ecualizador adaptativo (la grabación real tiene mucha interferencia entre símbolos) y validación contra `dumpvdl2` | **Sonnet** | ≥ 90 % de las tramas que saca la referencia |
 | D2 | DMR: columnas de Hamming y matriz QR de la norma ETSI, validación con grabación pública | **Sonnet** | Origen y destino coinciden con la referencia |
 | D3✔ | FLEX 3200/6400 hecho (2026-11-20): 6400/4 real 24/24 = multimon-ng; 3200/4 real 15 mensajes sin referencia; 3200/2 solo sintético | **Sonnet** | Igual que `multimon-ng` en grabación real |
+| D4✔ | 2026-11-21: OFDM 6–54 Mb/s completo; en el aire (antena VHF/UHF ANT500 probable) solo 1 AP en DSSS a −3 dB de SNR; D4b arregla la recepción débil (captura propia 0 → 43 tramas). OFDM en el aire pendiente de una antena de 2,4/5 GHz con conector **SMA** | — | — |
 | D4 | WiFi OFDM 6–54 Mb/s en el aire y 5 GHz (necesita USB 3) | **Sonnet** | SSID reales en canal 6 y en un canal de 5 GHz |
+| D5✔ | 2026-11-21: LTE SIB1 en el aire en Pamplona (PCI 417, PLMN 214-01, TAC 1792, banda 20) y en 2 grabaciones; NR MIB solo sintético (falta antena para 3,5 GHz) | — | — |
 | D5 | LTE: SIB1 (operador, banda, TAC) y 5G NR: MIB del SSB en n78 (necesita USB 3) | **Sonnet** | Celdas reales con operador identificado |
 | D6 | TDT en el aire con la antena de casa: enganche, vídeo y audio estables 10 min; AC-3 y E-AC-3 por WebCodecs; lista de canales por exploración | **Sonnet** + **Opus** (placa) | 10 min sin cortes, desfase A/V < 40 ms |
 | D7 | DAB+: audio (según la decisión del usuario), texto DLS y carátulas | **Sonnet** | Se oye una emisora de la grabación real |
@@ -191,6 +193,7 @@ temporización, solo RAM, nunca la flash). Orden sugerido: F10 y F11 primero
 | F17 | Emisión desde la FPGA: reproductor en bucle de una forma de onda guardada en BRAM, generador de tono y de barrido para calibrar (T1), y emisión programada por marca de tiempo. Solo se prueba en `loopback` o por cable con permiso | **Sonnet** + **Opus** (placa) | Tono y barrido usados por la calibración de TX; nada sale por antena en las pruebas |
 | F18 | Verificación más dura: bancos autoverificables con estímulos aleatorios y semilla, aserciones en las interfaces (válido/listo, cruces de reloj), cobertura de registros y revisión de cruces de dominio | **Sonnet** | Cada bloque nuevo con ≥ 1 000 tramas aleatorias sin discrepancias; informe de cruces de reloj sin avisos sin justificar |
 | F19 | Compilación y carga cómodas: `firmware/build.sh` reproducible con suma publicada, imagen comprimida, tiempo de carga medido y orden `--fpga-lab` del servidor que la carga en RAM solo con confirmación | **Haiku** (guiones) + **Sonnet** (servidor) | Dos compilaciones dan la misma suma; la web muestra qué imagen hay y nunca escribe la flash |
+| F19✔ | 2026-11-21, placa: el servidor carga la lab 0.16.103 en RAM al arrancar (sha256 verificada, la flash nunca se toca; `--no-fpga-lab` para no hacerlo) y cambia lab/stock desde la web cerrando y reabriendo el dispositivo; recepción correcta en todos los pasos | — | — |
 
 ### Fase 6 — Emisión y cierre
 
