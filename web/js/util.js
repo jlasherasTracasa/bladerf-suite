@@ -90,7 +90,7 @@ export function toast(msg, kind = '') {
   const box = $('#toasts');
   if (!box) return;
   if ([...box.children].some((x) => x.textContent === msg)) return;   // no repetir un aviso idéntico al que ya está visible
-  const t = h('div', { class: 'toast ' + kind, role: 'status', text: msg });
+  const t = h('div', { class: 'toast ' + kind, text: msg });   // sin role propio: el contenedor #toasts ya es aria-live=polite (un role=status anidado se leería dos veces)
   box.append(t);
   setTimeout(() => t.remove(), kind === 'err' ? 7000 : 3500);
 }

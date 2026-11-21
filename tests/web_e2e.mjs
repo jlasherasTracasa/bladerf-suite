@@ -14,6 +14,8 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
 export const CHROME = process.env.CHROME || path.join(process.env.HOME || '', '.cache/ms-playwright/chromium-1234/chrome-linux64/chrome');
+// Desplazamiento de puertos (WEB_PORT_OFF=100): permite ejecutar la batería en paralelo con la de otro agente.
+const PO = +process.env.WEB_PORT_OFF || 0;
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ---------- procesos auxiliares ---------- */
@@ -139,7 +141,7 @@ export class Page {
     await this.front();
     const code = { ArrowLeft: 37, ArrowRight: 39, ArrowUp: 38, ArrowDown: 40, Enter: 13, Escape: 27, Tab: 9, Backspace: 8, ' ': 32 }[key] || (key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0);
     const base = { key, code: key.length === 1 ? (/[a-z]/i.test(key) ? 'Key' + key.toUpperCase() : /\d/.test(key) ? 'Digit' + key : '') : key, windowsVirtualKeyCode: code, ...opts };
-    await this.send('Input.dispatchKeyEvent', { type: 'keyDown', ...base, text: key.length === 1 ? key : undefined });
+    await this.send('Input.dispatchKeyEvent', { type: 'keyDown', ...base, text: key.length === 1 ? key : key === 'Enter' ? '\r' : undefined });   // Intro lleva texto «\r»: sin él Chromium no activa botones ni envía formularios
     await this.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
   }
   async type(text) { for (const ch of text) await this.send('Input.dispatchKeyEvent', { type: 'char', text: ch, key: ch }); }
@@ -292,7 +294,7 @@ suites.pestanas = async (ctx) => {
 // controles: se recorren todos los visibles de cada panel y se accionan (salvo los destructivos)
 suites.controles = async (ctx) => {
   const pg = ctx.pg;
-  const SKIP = '#tx-send,#tp-send,#tc-run,#rec-btn,#sw-go,#hw-bias,#tv-play,#tv-tune,#tv-scan,#tv-stop,#tv-fs,#btn-listen,#hw-geo';
+  const SKIP = '#hw-pal,#tx-send,#tp-send,#tc-run,#rec-btn,#sw-go,#hw-bias,#tv-play,#tv-tune,#tv-scan,#tv-stop,#tv-fs,#btn-listen,#hw-geo';
   await pg.ev(`window.confirm=()=>true;window.alert=()=>{};0`);
   for (const t of await visibleTabs(pg)) {
     await pg.ev(`location.hash='${t}'`); await sleep(200);
@@ -803,8 +805,8 @@ suites.tv = async (ctx) => {
 };
 
 suites.reconexion = async (ctx) => {
-  const srv = startServer(8806, 'fm'); await waitHttp('http://127.0.0.1:8806/');
-  const pg = await openApp(ctx.br, 8806);
+  const srv = startServer(8806 + PO, 'fm'); await waitHttp(`http://127.0.0.1:${8806 + PO}/`);
+  const pg = await openApp(ctx.br, 8806 + PO);
   await pg.fill('#freq-input', '99.6'); await sleep(200);
   // estado de sesión que debe sobrevivir: decodificador manual (RDS@99,6), modo, anchura y audio
   await pg.ev(`location.hash='decoders';(()=>{const s=document.querySelector('#da-proto');s.value='rds';s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
@@ -824,7 +826,7 @@ suites.reconexion = async (ctx) => {
   const n1 = await S_(pg, 'S.retry.n'); await sleep(2500);
   check('los reintentos se espacian (espera creciente)', (await S_(pg, 'S.retry.n')) >= n1 && (await S_(pg, 'S.retry.at - Date.now()')) > -1000);
   await pg.shot(`${shotsDir()}/16_sin_conexion.png`);
-  const srv2 = startServer(8806, 'fm'); await waitHttp('http://127.0.0.1:8806/');
+  const srv2 = startServer(8806 + PO, 'fm'); await waitHttp(`http://127.0.0.1:${8806 + PO}/`);
   await pg.waitFor(`__app.S.connected`, 12000).then(() => check('reconecta solo al volver el servidor', true), () => check('reconecta solo al volver el servidor', false));
   const n0 = await pg.ev('__t.fr'); await sleep(1500);
   check('el espectro vuelve a llegar', (await pg.ev('__t.fr')) > n0 + 5);
@@ -891,9 +893,9 @@ suites.estado_avisos = async (ctx) => {
 /* W10: con una fuente de fichero estrecha (48 kHz) la tasa no es «0.00 Msps» y el canal no sale «FUERA» */
 suites.fichero_estrecho = async (ctx) => {
   const rec = path.join(ROOT, 'build/webtest/rec_w10'); fs.mkdirSync(rec, { recursive: true });
-  const srv = launch(BIN, ['--port', '8812', '--replay', path.join(ROOT, 'tests/data/real/ais.sigmf-meta'), '--config', 'none', '--recdir', rec, '--web', path.join(ROOT, 'web')]);
-  await waitHttp('http://127.0.0.1:8812/');
-  const pg = await openApp(ctx.br, 8812);
+  const srv = launch(BIN, ['--port', String(8812 + PO), '--replay', path.join(ROOT, 'tests/data/real/ais.sigmf-meta'), '--config', 'none', '--recdir', rec, '--web', path.join(ROOT, 'web')]);
+  await waitHttp(`http://127.0.0.1:${8812 + PO}/`);
+  const pg = await openApp(ctx.br, 8812 + PO);
   const r0 = await pg.ev(`document.querySelector('#st-rate').textContent`);
   check('fichero 48 kHz: tasa legible desde el primer momento', /48\.0 ksps/.test(r0) || /47\.\d ksps/.test(r0), r0);
   await pg.key(' '); await sleep(2500);
@@ -996,6 +998,282 @@ suites.accesibilidad = async (ctx) => {
   check('el diálogo de ayuda tiene etiqueta', await pg.ev(`document.querySelector('#help-dlg').getAttribute('aria-labelledby')!==null`));
   check('los canvas interactivos tienen nombre y son enfocables', await pg.ev(`(()=>{const c=document.querySelector('canvas.ov');return !!c.getAttribute('aria-label')&&c.tabIndex>=0})()`));
   check('los estados dinámicos usan roles live (toasts/status)', await pg.ev(`!!document.querySelector('[aria-live],[role=status]')`));
+};
+
+/* ================= W13: accesibilidad (teclado, roles, contraste, zoom, movimiento) ================= */
+/** Auditoría de contraste WCAG 2.x sobre estilos computados: cada nodo de texto visible, color efectivo (con alfa y opacidad
+ *  de los ancestros) frente al fondo compuesto de sus ancestros. AA: 4,5:1 (3:1 si texto grande: ≥ 24 px o ≥ 18,66 px en negrita).
+ *  Se omiten lienzos (se dibujan aparte), controles deshabilitados (exentos en WCAG 1.4.3) y fondos con imagen/degradado. */
+export const CONTRAST_JS = `(()=>{
+  const parse=c=>{const m=c.match(/rgba?\\(([^)]+)\\)/);if(!m)return null;const p=m[1].split(/[ ,\\/]+/).filter(Boolean).map(parseFloat);return{r:p[0],g:p[1],b:p[2],a:p.length>3?p[3]:1}};
+  const lin=v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)};
+  const lum=c=>.2126*lin(c.r)+.7152*lin(c.g)+.0722*lin(c.b);
+  const over=(f,b)=>({r:f.r*f.a+b.r*(1-f.a),g:f.g*f.a+b.g*(1-f.a),b:f.b*f.a+b.b*(1-f.a),a:1});
+  const bgOf=e=>{const layers=[];let x=e;while(x){const cs=getComputedStyle(x);if(cs.backgroundImage!=='none')return null;const c=parse(cs.backgroundColor);if(c&&c.a>0){layers.push(c);if(c.a>=1)break}x=x.parentElement}
+    let acc={r:20,g:18,b:24,a:1};for(let i=layers.length-1;i>=0;i--)acc=over(layers[i],acc);return acc};
+  const out=[];const seen=new Set();let n=0;
+  const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
+  for(let t;(t=walker.nextNode());){
+    if(t.textContent.trim().length<1)continue;const e=t.parentElement;if(!e||e.closest('canvas,script,style,.sr,[hidden]'))continue;
+    if(!e.getClientRects().length)continue;const cs=getComputedStyle(e);if(cs.visibility==='hidden'||cs.display==='none')continue;
+    const dis=e.closest('button:disabled,input:disabled,select:disabled,textarea:disabled,fieldset:disabled,[aria-disabled=true]');if(dis)continue;
+    let op=1,y=e;while(y){op*=parseFloat(getComputedStyle(y).opacity);y=y.parentElement}
+    const fg=parse(cs.color);if(!fg)continue;const bg=bgOf(e);if(!bg)continue;
+    const fgc=over({...fg,a:fg.a*op},bg);const L1=lum(fgc),L2=lum(bg),r=(Math.max(L1,L2)+.05)/(Math.min(L1,L2)+.05);
+    const size=parseFloat(cs.fontSize),bold=parseInt(cs.fontWeight)>=700,large=size>=24||(size>=18.66&&bold);n++;
+    if(r<(large?3:4.5)){const k=(e.id||e.className||e.tagName)+'|'+cs.color+'|'+r.toFixed(1);if(!seen.has(k)){seen.add(k);out.push((e.id||(typeof e.className==='string'?e.className:'')||e.tagName).toString().slice(0,26)+' '+r.toFixed(2)+':1 «'+t.textContent.trim().slice(0,16)+'»')}}
+  }
+  return{n,bad:out}})()`;
+
+/** Pulsa Tab hasta que `pred` (expresión JS sobre document.activeElement `e`) sea cierta; devuelve nº de pulsaciones o −1. */
+async function tabTo(pg, pred, max = 40, shift = false) {
+  for (let i = 1; i <= max; i++) {
+    await pg.key('Tab', shift ? { modifiers: 8 } : {});
+    if (await pg.ev(`(()=>{const e=document.activeElement;return !!(e&&e!==document.body&&(${pred}))})()`)) return i;
+  }
+  return -1;
+}
+const focusInfo = (pg) => pg.ev(`(()=>{const e=document.activeElement;return e?(e.id||e.getAttribute('aria-label')||e.tagName)+'':'-'})()`);
+
+suites.a11y_teclado = async (ctx) => {
+  // Tres tareas de ux_audit (T01 escuchar FM y ver el RDS, T02 modo y ancho, T05 decodificar una señal) SIN ratón, solo teclado.
+  let pg = await openApp(ctx.br, ctx.fm.port); const mouse0 = { m: 0 }; const sm = pg.send.bind(pg);
+  pg.send = (method, params) => { if (method === 'Input.dispatchMouseEvent' || method === 'Input.dispatchTouchEvent') mouse0.m++; return sm(method, params); };
+  await sleep(1500);
+  // — T01 —
+  await pg.ev(`document.querySelector('#spec-wrap canvas.ov').focus();0`);
+  await pg.key('k', { modifiers: 2 }); await sleep(250);
+  check('T01 teclado: Ctrl+K abre la paleta con el foco en el campo', (await pg.ev(`document.querySelector('#palette').open&&document.activeElement.id==='pal-input'`)) === true);
+  await pg.type('perfil comercial'); await sleep(150);
+  check('T01 teclado: la paleta ofrece «Perfil: FM comercial»', /FM comercial/.test(await pg.ev(`document.querySelector('#pal-list .sel')?.textContent||''`)), await pg.ev(`document.querySelector('#pal-list .sel')?.textContent||''`));
+  await pg.key('Enter'); await sleep(600);
+  check('T01 teclado: al cerrar la paleta el foco vuelve al espectro donde estaba', await pg.ev(`!document.querySelector('#palette').open&&document.activeElement.classList.contains('ov')`), await focusInfo(pg));
+  await pg.ev(`document.activeElement.blur();0`);
+  await pg.key('g'); await sleep(80); await pg.key('a', { modifiers: 2 }); await pg.type('100.4'); await pg.key('Enter'); await sleep(300);
+  check('T01 teclado: G + «100.4» + Intro sintoniza 100,4 MHz', (await S_(pg, 'S.chan.freq')) === 100400000, await S_(pg, 'S.chan.freq'));
+  const nTab = await tabTo(pg, `e.id==='btn-listen'`, 8);
+  check('T01 teclado: Escuchar se alcanza con Tab desde la frecuencia (orden lógico, ≤ 8 pasos)', nTab > 0, nTab);
+  const au0 = await S_(pg, 'S.chan.audio');   // el perfil «FM comercial» ya puede haberlo activado (follow)
+  await pg.key('Enter'); await sleep(2500);
+  check('T01 teclado: Intro en «Escuchar» alterna el audio', (await S_(pg, 'S.chan.audio')) === !au0, `${au0} → ${await S_(pg, 'S.chan.audio')}`);
+  if (!(await S_(pg, 'S.chan.audio'))) { await pg.key('Enter'); await sleep(1500); }
+  await pg.waitFor(`Object.values(__app.S.decState).some(s=>s.proto==='rds'&&s.state&&s.state.ps&&s.state.ps.trim().length>0)`, 20000, 'RDS PS por teclado').then(() => check('T01 teclado: aparece el RDS', true), () => check('T01 teclado: aparece el RDS', false, 'sin PS'));
+  // — T02 —
+  await pg.ev(`document.activeElement.blur();0`);
+  await pg.key('m'); await sleep(200);
+  check('T02 teclado: M cambia a NFM', (await S_(pg, 'S.chan.mode')) === 'nfm', await S_(pg, 'S.chan.mode'));
+  const bw0 = await S_(pg, 'S.chan.bw');
+  for (let i = 0; i < 3; i++) { await pg.key(']'); await sleep(60); }
+  const bw1 = await S_(pg, 'S.chan.bw');
+  check('T02 teclado: «]» ×3 ensancha el filtro de 12,5 a ≈ 25 kHz', bw0 === 12500 && Math.abs(bw1 - 25000) <= 2500, `${bw0} → ${bw1}`);
+  await pg.key('['); await sleep(60);
+  check('T02 teclado: «[» lo estrecha', (await S_(pg, 'S.chan.bw')) < bw1);
+  if (await S_(pg, 'S.chan.audio')) { await pg.key(' '); await sleep(300); }
+  check('T01/T02 teclado: ninguna orden usó el ratón ni el tacto', mouse0.m === 0, mouse0.m);
+  pg.close();
+  // — T05 —
+  pg = await openApp(ctx.br, ctx.marine.port); const m1 = { m: 0 }; const sm2 = pg.send.bind(pg);
+  pg.send = (method, params) => { if (method === 'Input.dispatchMouseEvent' || method === 'Input.dispatchTouchEvent') m1.m++; return sm2(method, params); };
+  await sleep(2800);
+  const nc = await tabTo(pg, `e.classList.contains('ov')`, 40);
+  check('T05 teclado: el espectro es alcanzable con Tab', nc > 0, nc);
+  check('T05 teclado: el lienzo se anuncia como aplicación con nombre y descripción', await pg.ev(`(()=>{const c=document.querySelector('canvas.ov');return c.getAttribute('role')==='application'&&c.getAttribute('aria-label').length>20&&!!document.getElementById(c.getAttribute('aria-describedby'))})()`));
+  let got = false;
+  for (let i = 0; i < 16 && !got; i++) { await pg.key('n'); await sleep(250); got = Math.abs((await S_(pg, 'S.chan.freq')) - 161975000) < 15000; }
+  check('T05 teclado: N recorre las señales detectadas hasta AIS 161,975 MHz', got, await S_(pg, 'S.chan.freq'));
+  await pg.key('i'); await sleep(400);
+  check('T05 teclado: I abre «¿Qué es esta señal?» y el foco entra en el panel', await pg.ev(`!document.querySelector('#sig-panel').hidden&&document.querySelector('#sig-panel').contains(document.activeElement)`));
+  let escaped = 0; for (let i = 0; i < 14; i++) { await pg.key('Tab'); if (!(await pg.ev(`document.querySelector('#sig-panel').contains(document.activeElement)`))) escaped++; }
+  check('T05 teclado: el foco queda atrapado en el panel (14 × Tab)', escaped === 0, escaped);
+  let esc2 = 0; for (let i = 0; i < 6; i++) { await pg.key('Tab', { modifiers: 8 }); if (!(await pg.ev(`document.querySelector('#sig-panel').contains(document.activeElement)`))) esc2++; }
+  check('T05 teclado: y también hacia atrás (Mayús+Tab)', esc2 === 0, esc2);
+  await pg.key('Escape'); await sleep(200);
+  check('T05 teclado: Escape cierra el panel y devuelve el foco al espectro', await pg.ev(`document.querySelector('#sig-panel').hidden&&document.activeElement.classList.contains('ov')`), await focusInfo(pg));
+  await pg.key('Enter'); await sleep(400);
+  check('T05 teclado: Intro sobre el espectro también abre el panel', await pg.ev(`!document.querySelector('#sig-panel').hidden`));
+  const nd = await tabTo(pg, `/Decodificar como AIS/.test(e.getAttribute('aria-label')||'')`, 14);
+  check('T05 teclado: «Decodificar como AIS» alcanzable con Tab', nd > 0, nd);
+  await pg.shot(`${shotsDir()}/20_a11y_panel_senal.png`);
+  await pg.key('Enter'); await sleep(700);
+  check('T05 teclado: Intro crea la instancia AIS', await pg.ev(`__app.S.decList.some(i=>i.proto==='ais'&&Math.abs(i.freq-161975000)<15000)`));
+  check('T05 teclado: el panel se cierra y el foco no se pierde en <body>', await pg.ev(`document.querySelector('#sig-panel').hidden&&document.activeElement!==document.body`), await focusInfo(pg));
+  check('T05 teclado: ninguna orden usó el ratón ni el tacto', m1.m === 0, m1.m);
+  // — diálogos: ayuda, paleta, avisos —
+  await pg.ev(`document.querySelector('#tab-receptor').click();document.querySelector('#freq-input').focus();0`);
+  await pg.key('Escape'); await pg.ev(`document.querySelector('#btn-help').focus();0`);
+  await pg.key('Enter'); await sleep(250);
+  check('ayuda: se abre con Intro desde su botón y el foco queda dentro', await pg.ev(`document.querySelector('#help-dlg').open&&document.querySelector('#help-dlg').contains(document.activeElement)`));
+  let out = 0; for (let i = 0; i < 12; i++) { await pg.key('Tab'); if (!(await pg.ev(`document.querySelector('#help-dlg').contains(document.activeElement)`))) out++; }
+  check('ayuda: el foco no escapa del diálogo (12 × Tab)', out === 0, out);
+  await pg.key('Escape'); await sleep(250);
+  check('ayuda: Escape la cierra y el foco vuelve al botón «?»', await pg.ev(`!document.querySelector('#help-dlg').open&&document.activeElement.id==='btn-help'`), await focusInfo(pg));
+  await pg.ev(`document.querySelector('#btn-palette').focus();0`); await pg.key('Enter'); await sleep(250);
+  check('paleta: se abre con Intro desde su botón', await pg.ev(`document.querySelector('#palette').open&&document.activeElement.id==='pal-input'`));
+  await pg.key('Escape'); await sleep(250);
+  check('paleta: Escape la cierra y el foco vuelve al botón', await pg.ev(`!document.querySelector('#palette').open&&document.activeElement.id==='btn-palette'`), await focusInfo(pg));
+  await pg.ev(`import('/js/status.js').then(m=>m.notice({id:'a11y',level:'warn',title:'Aviso de prueba',body:'cuerpo',ttl:0})).then(()=>{document.querySelector('.notice [aria-label="Cerrar aviso"]').focus()})`); await sleep(200);
+  check('avisos: región con nombre y rol de estado/alerta', await pg.ev(`document.querySelector('#notices').getAttribute('aria-label')==='Avisos'&&!!document.querySelector('.notice[role=status],.notice[role=alert]')`));
+  await pg.key('Escape'); await sleep(200);
+  check('avisos: Escape cierra el aviso y devuelve el foco al espectro', await pg.ev(`!document.querySelector('.notice')&&document.activeElement.classList.contains('ov')`), await focusInfo(pg));
+  pg.close();
+};
+
+suites.a11y_pestanas = async (ctx) => {
+  const pg = await openApp(ctx.br, ctx.fm.port); await sleep(800);
+  const tabs = await visibleTabs(pg);
+  check('tablist: rol, nombre y pestañas con aria-controls y aria-selected', await pg.ev(`(()=>{const l=document.querySelector('[role=tablist]');return !!l&&!!l.getAttribute('aria-label')&&[...l.querySelectorAll('[role=tab]')].every(t=>t.getAttribute('aria-controls')&&document.getElementById(t.getAttribute('aria-controls')).getAttribute('role')==='tabpanel'&&document.getElementById(t.getAttribute('aria-controls')).getAttribute('aria-labelledby')===t.id)})()`));
+  check('tablist: tabindex itinerante (solo la activa es tabulable)', await pg.ev(`[...document.querySelectorAll('[role=tab]')].filter(t=>t.tabIndex===0).length===1`));
+  await pg.ev(`document.querySelector('#tab-${tabs[0]}').focus();0`);
+  await pg.key('End'); await sleep(120);
+  check('tablist: Fin va a la última pestaña', (await pg.ev(`document.activeElement.id`)) === 'tab-' + tabs[tabs.length - 1] && (await pg.ev(`document.activeElement.getAttribute('aria-selected')`)) === 'true', await focusInfo(pg));
+  await pg.key('ArrowRight'); await sleep(120);
+  check('tablist: → desde la última da la vuelta a la primera', (await pg.ev(`document.activeElement.id`)) === 'tab-' + tabs[0]);
+  await pg.key('ArrowLeft'); await sleep(120);
+  check('tablist: ← desde la primera da la vuelta a la última', (await pg.ev(`document.activeElement.id`)) === 'tab-' + tabs[tabs.length - 1]);
+  await pg.key('Home'); await sleep(120);
+  check('tablist: Inicio va a la primera', (await pg.ev(`document.activeElement.id`)) === 'tab-' + tabs[0]);
+  await pg.key('Tab'); await sleep(100);
+  check('tablist: Tab desde la pestaña entra en el contenido del panel (no recorre las otras pestañas)', await pg.ev(`!!document.activeElement.closest('.panel')`), await focusInfo(pg));
+  pg.close();
+};
+
+suites.a11y_roles = async (ctx) => {
+  const pg = await openApp(ctx.br, ctx.marine.port); await sleep(1500);
+  await pg.ev(`document.querySelector('.pcard[data-id=maritimo]')?.click();0`);
+  for (const t of ['decoders', 'mapa', 'mensajes', 'protocolos', 'hardware']) { await pg.ev(`location.hash='${t}'`); await sleep(1200); }
+  const r = await pg.ev(`(()=>{const o={};
+    o.landmarks={banner:!!document.querySelector('header[role=banner],[role=banner]'),main:!!document.querySelector('main'),named:[...document.querySelectorAll('main section,[role=region]')].every(e=>e.getAttribute('aria-label')||e.getAttribute('aria-labelledby')),h1:document.querySelectorAll('h1').length};
+    o.tablesNoTh=[...document.querySelectorAll('table')].filter(t=>!t.querySelector('th')).length;
+    o.noName=[...document.querySelectorAll('button,a[href],input,select,textarea,[role=button],[role=tab]')].filter(e=>!(e.getAttribute('aria-label')||e.getAttribute('aria-labelledby')||(e.labels&&e.labels.length&&[...e.labels].some(l=>l.textContent.trim()))||e.textContent.trim()||e.title)).map(e=>e.tagName+'#'+e.id);
+    o.live=[...document.querySelectorAll('[aria-live]')].map(e=>e.id+':'+e.getAttribute('aria-live'));
+    return o})()`);
+  check('landmarks: banner, main y regiones con nombre; un solo h1', r.landmarks.banner && r.landmarks.main && r.landmarks.named && r.landmarks.h1 === 1, JSON.stringify(r.landmarks));
+  check('todas las tablas (incluidas las dinámicas y la ayuda) tienen celdas de cabecera', r.tablesNoTh === 0, r.tablesNoTh);
+  check('todo control y pestaña tiene nombre accesible (todas las pestañas visitadas)', r.noName.length === 0, r.noName.join());
+  check('hay regiones vivas educadas para frecuencia, conexión y avisos', ['live-freq', 'live-conn', 'toasts'].every((id) => r.live.includes(id + ':polite')) , r.live.join());
+  check('la región de conexión dice «Conectado»', /Conectado/.test(await pg.ev(`document.querySelector('#live-conn').textContent`)));
+  // la frecuencia se anuncia UNA vez tras una ráfaga de pulsaciones
+  await pg.ev(`location.hash='receptor';document.activeElement.blur();(()=>{const r=document.querySelector('#live-freq');window.__lf=[];new MutationObserver(()=>__lf.push(r.textContent)).observe(r,{childList:true,characterData:true,subtree:true})})();0`);
+  for (let i = 0; i < 6; i++) { await pg.key('ArrowRight'); await sleep(60); }
+  await sleep(1300);
+  const lf = await pg.ev(`({n:__lf.length,t:__lf[__lf.length-1],f:__app.S.chan.freq})`);
+  check('la frecuencia se anuncia una sola vez tras 6 pulsaciones (sin inundar)', lf.n === 1 && /MHz/.test(lf.t), JSON.stringify(lf));
+  // estado no solo por color: icono/texto en los estados de instancias y resultados
+  const ic = await pg.ev(`(()=>{const out={};for(const [sel,k] of [['.st.ok','ok'],['.st.waiting','wait'],['.st.error','err']]){const e=document.querySelector(sel);if(e)out[k]=getComputedStyle(e,'::before').content+'|'+e.textContent}
+    const t=document.createElement('div');t.className='result err';document.body.append(t);out.rerr=getComputedStyle(t,'::before').content;t.className='result ok';out.rok=getComputedStyle(t,'::before').content;t.remove();
+    const d=document.querySelector('#st-conn');out.conn=d.textContent.trim();return out})()`);
+  check('el rojo/verde de los resultados lleva icono (✓/✕) además de color', /✓/.test(ic.rok) && /✕/.test(ic.rerr), JSON.stringify(ic));
+  check('los estados de las instancias llevan icono y texto', Object.entries(ic).filter(([k]) => ['ok', 'wait', 'err'].includes(k)).every(([, v]) => !/^none|^normal/.test(v) && v.split('|')[1].length > 2), JSON.stringify(ic));
+  check('el estado de conexión se dice con texto («Conectado»)', /Conectado/.test(ic.conn), ic.conn);
+  pg.close();
+};
+
+suites.a11y_contraste = async (ctx) => {
+  // Un solo tema (oscuro, color-scheme: dark): se mide en él. Elementos de texto visibles de todas las pestañas, con datos reales.
+  const pg = await openApp(ctx.br, ctx.marine.port); await sleep(1500);
+  await pg.ev(`document.querySelector('.pcard[data-id=maritimo]')?.click();0`); await sleep(2500);
+  const all = [];
+  for (const t of await visibleTabs(pg)) {
+    await pg.ev(`location.hash='${t}'`); await sleep(500);
+    const r = await pg.ev(CONTRAST_JS);
+    check(`contraste AA · pestaña ${t} (${r.n} nodos de texto)`, r.bad.length === 0, r.bad.slice(0, 6).join(' ; '));
+    all.push(r.n);
+  }
+  // diálogos y paneles flotantes
+  await pg.ev(`location.hash='receptor';document.querySelector('#btn-help').click()`); await sleep(250);
+  { const r = await pg.ev(CONTRAST_JS); check(`contraste AA · ayuda (${r.n})`, r.bad.length === 0, r.bad.slice(0, 6).join(' ; ')); }
+  await pg.key('Escape'); await pg.key('k', { modifiers: 2 }); await sleep(250); await pg.type('a'); await sleep(150);
+  { const r = await pg.ev(CONTRAST_JS); check(`contraste AA · paleta de órdenes (${r.n})`, r.bad.length === 0, r.bad.slice(0, 6).join(' ; ')); }
+  await pg.key('Escape'); await sleep(150);
+  await pg.ev(`document.querySelector('#spec-wrap canvas.ov').focus();0`); await pg.key('i'); await sleep(400);
+  { const r = await pg.ev(CONTRAST_JS); check(`contraste AA · «¿Qué es esta señal?» (${r.n})`, r.bad.length === 0, r.bad.slice(0, 6).join(' ; ')); }
+  await pg.key('Escape');
+  await pg.ev(`import('/js/status.js').then(m=>{m.notice({id:'c1',level:'warn',title:'Aviso',body:'texto del aviso',ttl:0});m.notice({id:'c2',level:'err',title:'Error',body:'texto',ttl:0});m.notice({id:'c3',level:'info',title:'Info',body:'texto',ttl:0})});0`);
+  await pg.ev(`import('/js/util.js').then(m=>{m.toast('Mensaje ok','ok');m.toast('Mensaje de error','err')});0`); await sleep(300);
+  { const r = await pg.ev(CONTRAST_JS); check(`contraste AA · avisos y toasts (${r.n})`, r.bad.length === 0, r.bad.slice(0, 6).join(' ; ')); }
+  await pg.shot(`${shotsDir()}/21_a11y_avisos.png`);
+  // anillo de foco: color del contorno frente al fondo (≥ 3:1) en una muestra de controles
+  const ring = await pg.ev(`(()=>{const parse=c=>{const m=c.match(/rgba?\\(([^)]+)\\)/);const p=m[1].split(',').map(parseFloat);return{r:p[0],g:p[1],b:p[2]}};const lin=v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)};const L=c=>.2126*lin(c.r)+.7152*lin(c.g)+.0722*lin(c.b);
+    const out=[];for(const sel of ['#btn-listen','#z-in','#freq-input','#tab-receptor','canvas.ov','#rx-bw','#btn-help']){const e=document.querySelector(sel);if(!e||!e.offsetParent)continue;e.focus({focusVisible:true});const cs=getComputedStyle(e);
+      let b=parseFloat(cs.outlineOffset)>=0?e.parentElement:e;let bg=null;while(b){const c=getComputedStyle(b).backgroundColor;if(c&&!/rgba\\(0, 0, 0, 0\\)|transparent/.test(c)){bg=parse(c);break}b=b.parentElement}bg=bg||{r:20,g:18,b:24};
+      const o=parse(cs.outlineColor),l1=L(o),l2=L(bg),r=(Math.max(l1,l2)+.05)/(Math.min(l1,l2)+.05);out.push(sel+' '+r.toFixed(1)+':1 '+cs.outlineWidth+' '+cs.outlineStyle)}return out})()`);
+  const badRing = ring.filter((x) => parseFloat(x.split(' ')[1]) < 3 || /none/.test(x));
+  check('anillo de foco ≥ 3:1 y visible en botones, campos, pestañas y espectro', ring.length >= 6 && badRing.length === 0, ring.join(' ; '));
+  pg.close();
+};
+
+suites.a11y_zoom = async (ctx) => {
+  // Zoom del navegador al 200 %: ventana de 1440×900 → 720×450 px CSS con deviceScaleFactor 2. Y una letra base del 150 % (preferencia de tamaño de fuente).
+  for (const [label, w, h, dsf, fs] of [['zoom 200 %', 720, 450, 2, ''], ['zoom 200 % + letra grande', 720, 450, 2, '150%'], ['1440 px + letra grande', 1440, 900, 1, '150%']]) {
+    const pg = await ctx.br.newPage(w, h);
+    await pg.send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: dsf, mobile: false });
+    await pg.goto(`http://127.0.0.1:${ctx.fm.port}/`, 400); await pg.waitFor('window.__app&&__app.S.spec.n>0', 10000); await sleep(1200);
+    if (fs) await pg.ev(`(()=>{const s=document.createElement('style');s.textContent='html{font-size:${fs}!important}';document.head.append(s)})()`);
+    await sleep(400);
+    for (const t of ['receptor', 'hardware', 'protocolos', 'decoders', 'tv']) {
+      await pg.ev(`location.hash='${t}'`); await sleep(350);
+      const m = await pg.ev(`(()=>{const d=document.documentElement,iw=innerWidth;
+        const vis=e=>e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden'&&!e.classList.contains('skip');
+        const scrollers=e=>{for(let x=e;x;x=x.parentElement){const o=getComputedStyle(x).overflowX;if((o==='auto'||o==='scroll')&&x!==document.body&&x!==d)return true}return false};
+        const off=[];const ctl=[...document.querySelectorAll('button,input,select,textarea,a[href],[role=tab],summary,label')].filter(e=>vis(e)&&!e.closest('.sr,dialog:not([open])')&&!getComputedStyle(e).position.match(/fixed|sticky/)&&!e.matches('input[type=checkbox],input[type=radio]'));
+        for(const e of ctl){const r=e.getBoundingClientRect();if(r.width&&(r.right>iw+1||r.left<-1)&&!scrollers(e))off.push((e.id||e.textContent.trim().slice(0,14)||e.tagName)+'@'+Math.round(r.right))}
+        const inter=ctl.filter(e=>!e.matches('label')||!e.querySelector('input,select,textarea'));const ov=[];
+        for(let i=0;i<inter.length;i++){const a=inter[i].getBoundingClientRect();if(!a.width)continue;for(let j=i+1;j<inter.length;j++){const q=inter[j];if(inter[i].contains(q)||q.contains(inter[i]))continue;const b=q.getBoundingClientRect();if(!b.width)continue;
+          const w=Math.min(a.right,b.right)-Math.max(a.left,b.left),h2=Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top);if(w>3&&h2>3&&!scrollers(inter[i])&&!scrollers(q))ov.push((inter[i].id||inter[i].textContent.trim().slice(0,10))+'×'+(q.id||q.textContent.trim().slice(0,10)))}}
+        const clip=[...document.querySelectorAll('.topbar *,.tunebar *,.zoombar *,.tabs button,.btn,.chip,.flag')].filter(e=>vis(e)&&!e.closest('.sr')).filter(e=>{const c=getComputedStyle(e);return (c.overflowX==='hidden'||c.overflowY==='hidden')&&(e.scrollWidth>e.clientWidth+1||e.scrollHeight>e.clientHeight+1)}).map(e=>(e.id||e.className||e.tagName)+'');
+        return{sw:d.scrollWidth,iw,off:off.slice(0,6),ov:ov.slice(0,6),clip:clip.slice(0,6),fsz:getComputedStyle(document.body).fontSize}})()`);
+      check(`${label} · ${t}: ningún texto de cabecera, botones o chips queda recortado`, m.clip.length === 0, m.clip.join());
+      check(`${label} · ${t}: sin desplazamiento horizontal`, m.sw <= m.iw + 1, `${m.sw} > ${m.iw}`);
+      check(`${label} · ${t}: ningún control fuera de la ventana`, m.off.length === 0, m.off.join());
+      check(`${label} · ${t}: ningún control se solapa con otro`, m.ov.length === 0, m.ov.join());
+    }
+    await pg.ev(`location.hash='receptor'`); await sleep(300);
+    await pg.shot(`${shotsDir()}/22_a11y_${dsf === 2 ? 'zoom200' : 'fuente150'}${fs ? '_fuente' : ''}.png`);
+    pg.close();
+  }
+};
+
+suites.a11y_movimiento = async (ctx) => {
+  const pg = await openApp(ctx.br, ctx.fm.port); await sleep(1500);
+  const view = () => pg.ev('__app.getView().start');
+  // control: con movimiento normal hay inercia tras soltar
+  await pg.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  await pg.ev(`document.querySelector('#z-in').click();document.querySelector('#z-in').click();document.querySelector('#z-in').click();0`); await sleep(300);
+  const r = await pg.rect('#spec-wrap');
+  const fling = async () => { const y = r.y + r.h * 0.6; await pg.mouse('mouseMoved', r.x + r.w * 0.8, y, { buttons: 0 }); await pg.mouse('mousePressed', r.x + r.w * 0.8, y); for (let i = 1; i <= 6; i++) { await pg.mouse('mouseMoved', r.x + r.w * (0.8 - 0.05 * i), y, { buttons: 1 }); await sleep(8); } await pg.mouse('mouseReleased', r.x + r.w * 0.5, y, { buttons: 0 }); };
+  await fling(); const a0 = await view(); await sleep(700); const a1 = await view();
+  check('control: sin preferencia, la vista sigue desplazándose tras soltar (inercia)', Math.abs(a1 - a0) > 1e-4, `${a0} → ${a1}`);
+  await pg.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  check('prefers-reduced-motion: reduce activo en la página', await pg.ev(`matchMedia('(prefers-reduced-motion: reduce)').matches`));
+  await pg.ev(`document.querySelector('#z-reset').click();document.querySelector('#z-in').click();document.querySelector('#z-in').click();document.querySelector('#z-in').click();0`); await sleep(300);
+  await fling(); const b0 = await view(); await sleep(700); const b1 = await view();
+  check('reduced-motion: no hay inercia (la vista se queda donde se suelta)', Math.abs(b1 - b0) < 1e-6, `${b0} → ${b1}`);
+  const an = await pg.ev(`(()=>{const d=document.querySelector('.dot.off')||(()=>{const i=document.createElement('i');i.className='dot off';document.body.append(i);return i})();const c=getComputedStyle(d);return{anim:c.animationName,tr:getComputedStyle(document.querySelector('.pcard')||document.body).transitionDuration,sb:getComputedStyle(document.documentElement).scrollBehavior}})()`);
+  check('reduced-motion: sin animación del punto de conexión, ni transiciones, ni desplazamiento suave', an.anim === 'none' && /^0s/.test(an.tr) && an.sb === 'auto', JSON.stringify(an));
+  await pg.send('Emulation.setEmulatedMedia', { features: [] });
+  pg.close();
+};
+
+suites.a11y_paletas = async (ctx) => {
+  const pg = await openApp(ctx.br, ctx.fm.port); await sleep(1800);
+  // propiedad que importa para el daltonismo: la luminosidad crece de forma monótona con el nivel
+  const mono = await pg.ev(`import('/js/specrender.js').then(m=>{const lin=v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)};const res={};
+    for(const n of m.PALETTE_NAMES){const p=m.buildPalette(n);let bad=0,prev=-1;for(let i=0;i<256;i++){const L=.2126*lin(p[i*4])+.7152*lin(p[i*4+1])+.0722*lin(p[i*4+2]);if(L<prev-1e-3)bad++;prev=L}res[n]=bad}return res})`);
+  check('hay paletas viridis y cividis además de la clásica', ['classic', 'viridis', 'cividis'].every((n) => n in mono), JSON.stringify(mono));
+  check('viridis, cividis y grises: luminosidad monótona (legible con daltonismo)', mono.viridis === 0 && mono.cividis === 0 && mono.gray === 0, JSON.stringify(mono));
+  check('control: la paleta clásica NO es monótona (por eso se ofrece una alternativa)', mono.classic > 0, mono.classic);
+  await pg.ev(`location.hash='hardware'`); await sleep(300);
+  const wr = await pg.rect('#spec-wrap');
+  const sig0 = await pixelStats(pg, { x: wr.x, y: wr.y + wr.h * 0.40, w: wr.w, h: wr.h * 0.08 });
+  await pg.ev(`(()=>{const s=document.querySelector('#hw-pal');s.value='viridis';s.dispatchEvent(new Event('change',{bubbles:true}))})()`); await sleep(1500);
+  const sig1 = await pixelStats(pg, { x: wr.x, y: wr.y + wr.h * 0.40, w: wr.w, h: wr.h * 0.08 });
+  check('al elegir viridis la cascada cambia de color en caliente', sig1.hash !== sig0.hash, `${sig0.hash} → ${sig1.hash}`);
+  await pg.shot(`${shotsDir()}/23_a11y_viridis.png`);
+  check('la elección se recuerda en el navegador', (await pg.ev(`localStorage.getItem('wf-palette')`)) === 'viridis');
+  await pg.goto(`http://127.0.0.1:${ctx.fm.port}/`, 400); await pg.waitFor('window.__app&&__app.S.spec.n>0', 10000); await sleep(800);
+  check('y se restaura tras recargar', (await pg.ev(`document.querySelector('#hw-pal').value`)) === 'viridis');
+  await pg.ev(`(()=>{const s=document.querySelector('#hw-pal');s.value='classic';s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+  pg.close();
 };
 
 suites.latencia = async (ctx) => {
@@ -1114,7 +1392,7 @@ suites.senal_eventos = async (ctx) => {
 suites.errores = async (ctx) => {
   const all = [...(ctx.pgs || [])];
   check('cero excepciones no capturadas en toda la batería', ctx.allExceptions.length === 0, ctx.allExceptions.slice(0, 3).join(' | '));
-  const real = ctx.allConsole.filter((e) => !/:8806\//.test(e));   // los fallos de WebSocket de la prueba de reconexión (servidor caído a propósito) son esperados
+  const real = ctx.allConsole.filter((e) => !new RegExp(`:${8806 + PO}/`).test(e));   // los fallos de WebSocket de la prueba de reconexión (servidor caído a propósito) son esperados
   check('cero errores de consola en toda la batería', real.length === 0, real.slice(0, 5).join(' | '));
   const rf = ctx.allReqFail.filter((e) => !/ERR_CONNECTION_(REFUSED|RESET)/.test(e) || !ctx.reconDone);   // solo se toleran los rechazos o cortes (REFUSED/RESET según el instante) de la prueba de reconexión (servidor caído a propósito)
   check('cero peticiones fallidas (CSP incluida)', rf.length === 0, rf.slice(0, 5).join(' | '));
@@ -1239,12 +1517,12 @@ async function main() {
   fs.mkdirSync(shotsDir(), { recursive: true });
   makeData();
   const ctx = { allExceptions: [], allConsole: [], allReqFail: [] };
-  const br = new Browser(9661); await br.start(); ctx.br = br;
-  ctx.fm = startServer(8801, 'fm', ['--enable-tx']); ctx.marine = startServer(8802, 'marine'); ctx.ism = startServer(8803, 'ism');
-  ctx.mock = startMock(8804, true);
+  const br = new Browser(9661 + PO); await br.start(); ctx.br = br;
+  ctx.fm = startServer(8801 + PO, 'fm', ['--enable-tx']); ctx.marine = startServer(8802 + PO, 'marine'); ctx.ism = startServer(8803 + PO, 'ism');
+  ctx.mock = startMock(8804 + PO, true);
   const tvts = path.join(ROOT, 'build/tv2/data/test_full.ts');
-  if (fs.existsSync(tvts)) ctx.tv = launch(BIN, ['--port', '8805', '--tv-ts', tvts, '--replay', `${DATA}/fm.sigmf-meta`, '--config', 'none', '--web', path.join(ROOT, 'web')]), ctx.tv.port = 8805;
-  for (const p of [8801, 8802, 8803, 8804, 8805]) { if (p === 8805 && !ctx.tv) continue; await waitHttp(`http://127.0.0.1:${p}/`); }
+  if (fs.existsSync(tvts)) ctx.tv = launch(BIN, ['--port', String(8805 + PO), '--tv-ts', tvts, '--replay', `${DATA}/fm.sigmf-meta`, '--config', 'none', '--web', path.join(ROOT, 'web')]), ctx.tv.port = 8805 + PO;
+  for (const p of [8801, 8802, 8803, 8804, 8805].map((x) => x + PO)) { if (p === 8805 + PO && !ctx.tv) continue; await waitHttp(`http://127.0.0.1:${p}/`); }
   // recoger errores de todas las páginas
   const origNew = br.newPage.bind(br); const pages = [];
   br.newPage = async (...a) => { const p = await origNew(...a); pages.push(p); return p; };

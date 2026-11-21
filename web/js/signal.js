@@ -112,8 +112,14 @@ function guessMode(sig) {
 }
 
 /* ---------- panel ---------- */
-let open = false;
-const close = () => { const m = $('#sig-panel'); m.hidden = true; open = false; };
+let open = false, opener = null;
+/** Cierra el panel y devuelve el foco a quien lo abrió (el espectro, normalmente). */
+const close = () => {
+  const m = $('#sig-panel'), had = open && m.contains(document.activeElement);
+  m.hidden = true; open = false;
+  if (had || document.activeElement === document.body) { const o = opener && opener.isConnected ? opener : document.querySelector('#spec-wrap canvas.ov'); if (o) o.focus(); }
+  opener = null;
+};
 
 function sketch(B, sig) {
   const cv = h('canvas', { width: 340, height: 56, 'aria-label': 'Esbozo del espectro alrededor de la señal', role: 'img' });
@@ -157,6 +163,7 @@ function show({ sig, freq, tol, x, y }) {
     h('div', { class: 'why', text: c.why.join(' · ') + (c.d.kind === 'wide' ? ' · banda ancha' : '') }));
   const top = list.slice(0, 3), rest = list.slice(3, 12);
   const m = $('#sig-panel');
+  m.setAttribute('aria-modal', 'false');
   m.replaceChildren(
     h('div', { class: 'sp-h' }, h('b', { text: fmtHz(s.freq, 4) }), h('span', { class: 'muted', text: bands.length ? bands[0][2] : 'banda sin asignación conocida' }),
       h('button', { class: 'btn small sp-x', type: 'button', text: '✕', 'aria-label': 'Cerrar el panel', onclick: close })),
@@ -167,6 +174,7 @@ function show({ sig, freq, tol, x, y }) {
     h('div', { class: 'sp-h2', text: weak ? 'Sin señal clara: propuestas solo por banda' : 'Decodificadores propuestos' }),
     ...(top.length ? top.map(cand) : [h('p', { class: 'muted', text: 'Ningún protocolo del catálogo encaja con esta banda y este ancho.' })]),
     ...(rest.length ? [h('details', {}, h('summary', { text: `Más protocolos (${rest.length})` }), ...rest.map(cand))] : []));
+  opener = open ? opener : document.activeElement;
   m.hidden = false; open = true;
   const r = m.getBoundingClientRect();
   m.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 4)) + 'px';
@@ -177,6 +185,17 @@ function show({ sig, freq, tol, x, y }) {
 export function initSignal() {
   bus.on('sig-menu', show);
   document.addEventListener('pointerdown', (e) => { if (open && !e.target.closest('#sig-panel')) close(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && open) close(); });
+  document.addEventListener('keydown', (e) => {
+    if (!open) return;
+    if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+    // Foco atrapado: Tab y Mayús+Tab dan la vuelta dentro del panel mientras está abierto con el foco dentro.
+    if (e.key === 'Tab') {
+      const m = $('#sig-panel'); if (!m.contains(document.activeElement)) return;
+      const f = [...m.querySelectorAll('button, summary, [href], input, select, [tabindex]:not([tabindex="-1"])')].filter((x) => x.offsetParent && !x.disabled && !(x.closest('details:not([open])') && !x.matches('details:not([open]) > summary')));   // lo de un <details> cerrado no recibe foco
+      if (!f.length) return;
+      const a = f[0], z = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === a) { z.focus(); e.preventDefault(); } else if (!e.shiftKey && document.activeElement === z) { a.focus(); e.preventDefault(); }
+    }
+  });
   window.addEventListener('scroll', () => { if (open) close(); }, true);
 }

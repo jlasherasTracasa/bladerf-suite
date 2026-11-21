@@ -24,9 +24,21 @@
 export const QMIN = -160, QSTEP = 0.7, WF_ROWS = 1024, MAX_2D_W = 4096, WF_MAX_SWEEP = 4096, AXIS_H = 18;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
-/** Paleta: negro → azul → cian → verde → amarillo → rojo → blanco (RGBA, 256 entradas). */
-export function buildPalette() {
-  const stops = [[0, 0, 0, 20], [0.15, 10, 20, 120], [0.35, 20, 150, 200], [0.5, 40, 200, 90], [0.7, 240, 230, 50], [0.88, 240, 70, 30], [1, 255, 255, 255]];
+/* Paletas de la cascada (RGBA, 256 entradas, interpoladas entre puntos de control [t, r, g, b]).
+ * «classic» es la de siempre (negro, azul, cian, verde, amarillo, rojo, blanco): útil pero mezcla verde y rojo.
+ * «viridis» (van der Walt y Smith, matplotlib) y «cividis» (Nuñez, Anderton y Renslow 2018, PLoS ONE 13(7)) son
+ * perceptualmente uniformes: la luminosidad crece de forma monótona con el nivel, así que el orden se lee igual
+ * con visión normal que con deuteranopía, protanopía o en escala de grises. Los puntos de control son muestras
+ * de los mapas oficiales cada 1/8. */
+const PALETTES = {
+  classic: [[0, 0, 0, 20], [0.15, 10, 20, 120], [0.35, 20, 150, 200], [0.5, 40, 200, 90], [0.7, 240, 230, 50], [0.88, 240, 70, 30], [1, 255, 255, 255]],
+  viridis: [[0, 68, 1, 84], [0.125, 72, 36, 117], [0.25, 65, 68, 135], [0.375, 53, 95, 141], [0.5, 42, 120, 142], [0.625, 34, 168, 132], [0.75, 122, 209, 81], [0.875, 189, 223, 38], [1, 253, 231, 37]],
+  cividis: [[0, 0, 32, 77], [0.125, 0, 51, 112], [0.25, 49, 68, 107], [0.375, 87, 92, 108], [0.5, 124, 123, 120], [0.625, 160, 153, 118], [0.75, 188, 175, 111], [0.875, 222, 205, 93], [1, 255, 234, 70]],
+  gray: [[0, 0, 0, 0], [1, 255, 255, 255]],
+};
+export const PALETTE_NAMES = Object.keys(PALETTES);
+export function buildPalette(name = 'classic') {
+  const stops = PALETTES[name] || PALETTES.classic;
   const p = new Uint8Array(256 * 4);
   for (let i = 0; i < 256; i++) {
     const t = i / 255;
@@ -51,6 +63,15 @@ class WfGL {
     this.ok = true;
     canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.lost = true; });
     canvas.addEventListener('webglcontextrestored', () => { this.lost = false; this.tex = null; if (this.build() && this.n) this.setN(this.n); onLost && onLost(); });
+  }
+  /** Cambia la paleta en caliente: el color se decide en el shader, así que el historial entero se repinta. */
+  setPalette(pal) {
+    this.palette = pal;
+    const gl = this.gl;
+    if (!gl || this.lost || !this.palTex) return;
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.palTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, pal);
+    gl.activeTexture(gl.TEXTURE0);
   }
   build() {
     const gl = this.gl;
@@ -247,6 +268,12 @@ export class SpecRenderer {
     this.v = { start: 0, span: 1, lo: -110, hi: -30, holdOn: false, W: 50, plotH: 110, wfH: 100, dpr: 1 };
     this.pending = false; this.sized = false; this.rows = 0;
     this.stats = { frames: 0, ms: 0 };
+  }
+  /** Paleta de la cascada por nombre (la cascada 2D solo aplica la nueva a las filas siguientes: el color va ya cocido en cada fila). */
+  setPalette(name) {
+    this.palette = buildPalette(name);
+    if (this.wf.setPalette) this.wf.setPalette(this.palette); else this.wf.palette = this.palette;
+    this.request();
   }
   /** Tamaño lógico (W × plotH y wfH, en px CSS) y densidad de píxeles. */
   setSize(W, plotH, wfH, dpr) {

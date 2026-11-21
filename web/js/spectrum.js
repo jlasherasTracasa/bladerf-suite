@@ -38,6 +38,9 @@ let hover = null, sweepPick = null;
 /* ---- renderizador: worker con OffscreenCanvas (normal) o en este hilo (alternativa) ----
  * R expone lo mismo en los dos casos: spectrum(buf, sweep), size(...) y view(...). En el worker los
  * datos binarios viajan por transferencia (el ArrayBuffer del WebSocket no se copia). */
+let curPal = 'classic';
+/** Paleta de la cascada: 'classic' | 'viridis' | 'cividis' | 'gray' (se recuerda en este navegador). */
+export function setPalette(name) { curPal = name; try { localStorage.setItem('wf-palette', name); } catch { /* sin almacenamiento */ } if (R && R.pal) R.pal(name); }
 let R = null, worker = null, glKind = '', inflight = 0, dropped = 0;
 const sig = { view: '', size: '' };
 
@@ -55,7 +58,8 @@ function startLocal(force2d) {
   if (R) newCanvases();
   const r = new SpecRenderer(plotC, wfC, { force2d }, (ev) => onRenderEvent(ev));
   if (r.failed) return;                       // onRenderEvent('fail') ya reintenta en 2D
-  R = { spectrum: (b, sw) => r.spectrum(b, sw), size: (...a) => r.setSize(...a), view: (...a) => r.setView(...a), stats: () => r.stats };
+  R = { spectrum: (b, sw) => r.spectrum(b, sw), size: (...a) => r.setSize(...a), view: (...a) => r.setView(...a), stats: () => r.stats, pal: (nm) => r.setPalette(nm) };
+  if (curPal !== 'classic') R.pal(curPal);
 }
 
 function startRenderer(force2d) {
@@ -70,7 +74,8 @@ function startRenderer(force2d) {
       // Contrapresión: si el worker va retrasado (máquina saturada, pestaña en segundo plano) se descartan tramas en
       // vez de acumular mensajes sin límite; cada trama procesada se confirma con un 'ack'.
       R = { spectrum: (b, sw) => { if (inflight >= 12) { dropped++; return; } inflight++; worker.postMessage({ t: 'spec', buf: b, sweep: sw }, [b]); }, size: (W, pH, wH, d) => worker.postMessage({ t: 'size', W, plotH: pH, wfH: wH, dpr: d }),
-        view: (start, span, lo, hi, hold) => worker.postMessage({ t: 'view', start, span, lo, hi, hold }), stats: () => ({}) };
+        view: (start, span, lo, hi, hold) => worker.postMessage({ t: 'view', start, span, lo, hi, hold }), stats: () => ({}), pal: (nm) => worker.postMessage({ t: 'pal', name: nm }) };
+      if (curPal !== 'classic') R.pal(curPal);
       layout(); return;
     } catch (e) { console.warn('worker del espectro no disponible:', e); if (worker) { worker.terminate(); worker = null; } newCanvases(); }
   }
@@ -318,6 +323,25 @@ function askHere(cx, cy, x) {
   bus.emit('sig-menu', { sig: null, freq: xToFreq(x), tol: (10 / W) * view.span * S.spec.rate, x: cx, y: cy });
 }
 
+/** Teclado: sintoniza la señal detectada siguiente (dir > 0) o anterior (dir < 0) a la frecuencia del canal; da la vuelta al llegar al final. */
+export function nextSignal(dir) {
+  const l = sigList().sort((a, b) => a.freq - b.freq);
+  if (!l.length) return null;
+  const f = S.chan.freq, tol = 1000;
+  const s = dir > 0 ? (l.find((x) => x.freq > f + tol) || l[0]) : ([...l].reverse().find((x) => x.freq < f - tol) || l[l.length - 1]);
+  setChannel({ freq: Math.round(s.freq / 1000) * 1000 }, { user: true });   // al kHz: la señal exacta, no la rejilla del modo (en WFM la rejilla de 100 kHz la saltaría)
+  return s;
+}
+/** Teclado: «¿Qué es esta señal?» sobre la señal detectada más cercana al canal (±1 ancho) o, si no hay, en la frecuencia del canal. */
+export function signalAtChannel() {
+  if (sweeping() || !S.spec.rate) return false;
+  const r = ovC.getBoundingClientRect(), f = S.chan.freq;
+  const near = sigList().filter((s) => Math.abs(s.freq - f) <= Math.max(s.bw, 12500)).sort((a, b) => Math.abs(a.freq - f) - Math.abs(b.freq - f))[0] || null;
+  const x = clamp(freqToX(f), 0, W);
+  bus.emit('sig-menu', { sig: near, freq: f, tol: (10 / W) * view.span * S.spec.rate, x: r.left + x, y: r.top + 30 });
+  return true;
+}
+
 function hitEdge(x, tol = 7) {
   if (sweeping()) return null;
   const [lo, hi] = filterEdges(), xl = freqToX(lo), xh = freqToX(hi);
@@ -439,8 +463,12 @@ function onWheel(e) {
 export function initSpectrum() {
   wrap = $('#spec-wrap');
   plotC = document.createElement('canvas'); wfC = document.createElement('canvas'); ovC = document.createElement('canvas');
-  ovC.className = 'ov'; ovC.tabIndex = 0; ovC.setAttribute('role', 'img');
-  ovC.setAttribute('aria-label', 'Espectro y cascada. Clic para sintonizar, rueda para cambiar de frecuencia, Ctrl+rueda para el zoom, flechas para ajustar.');
+  ovC.className = 'ov'; ovC.tabIndex = 0; ovC.setAttribute('role', 'application');
+  ovC.setAttribute('aria-roledescription', 'espectro y cascada');
+  ovC.setAttribute('aria-label', 'Espectro y cascada. Flechas: sintonizar; N: señal siguiente; I: qué es esta señal; más y menos: zoom.');
+  ovC.setAttribute('aria-describedby', 'spec-help'); ovC.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight N I + -');
+  try { curPal = localStorage.getItem('wf-palette') || 'classic'; } catch { /* sin almacenamiento */ }
+  { const ps = $('#hw-pal'); if (ps) { if (![...ps.options].some((o) => o.value === curPal)) curPal = 'classic'; ps.value = curPal; ps.addEventListener('change', () => setPalette(ps.value)); } }
   wrap.append(plotC, wfC, ovC);
   ox = ovC.getContext('2d');
   startRenderer(false);

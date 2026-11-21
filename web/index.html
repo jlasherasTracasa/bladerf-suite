@@ -14,9 +14,9 @@
 <a class="skip" href="#tabs">Saltar al panel de control</a>
 
 <header class="topbar" role="banner">
-  <div class="brand"><svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true"><path d="M3 20h5l3-10 4 16 4-20 3 14h7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></svg><span>BladeRF Lab</span></div>
-  <div class="stats" id="topstats" role="status" aria-live="off">
-    <span class="chip" id="st-conn" title="Conexión con el servidor"><i class="dot off"></i><b>Sin conexión</b></span>
+  <div class="brand"><h1 class="sr">BladeRF Lab: receptor SDR</h1><svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true"><path d="M3 20h5l3-10 4 16 4-20 3 14h7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></svg><span>BladeRF Lab</span></div>
+  <div class="stats" id="topstats" role="group" aria-label="Estado del sistema">
+    <span class="chip" id="st-conn" title="Conexión con el servidor"><i class="dot off" aria-hidden="true"></i><b>Sin conexión</b></span>
     <span class="chip hide-sm" id="st-dev" title="Fuente de muestras">—</span>
     <span class="chip hide-sm" id="st-usb" title="Enlace USB">USB —</span>
     <span class="chip" id="st-rate" title="Tasa de muestreo medida">— Msps</span>
@@ -32,7 +32,7 @@
 </header>
 <div class="notices" id="notices" role="region" aria-label="Avisos"></div>
 
-<main class="layout">
+<main class="layout" id="main" aria-label="BladeRF Lab">
   <section class="scope" aria-label="Espectro y cascada">
     <div class="tunebar">
       <label class="freq-field"><span class="sr">Frecuencia de escucha</span>
@@ -76,7 +76,7 @@
     </div>
   </section>
 
-  <section class="side">
+  <section class="side" aria-label="Paneles de control">
     <div class="tabs" id="tabs" role="tablist" aria-label="Paneles"></div>
     <div class="panels" id="panels">
 
@@ -112,7 +112,7 @@
             <label>Ganancia<select id="hw-gmode"><option value="auto">Automática</option><option value="manual">Manual</option><option value="fast">AGC rápida (fast)</option><option value="slow">AGC lenta (slow)</option><option value="hybrid">AGC híbrida (hybrid)</option></select></label>
           </div>
           <p class="muted" id="hw-ovs-note" hidden></p>
-          <label id="hw-gain-l">Ganancia manual <output id="hw-gain-o"></output><input id="hw-gain" type="range" min="0" max="60" step="1"></label>
+          <label id="hw-gain-l">Ganancia manual <output id="hw-gain-o"></output><input id="hw-gain" aria-label="Ganancia manual (dB)" type="range" min="0" max="60" step="1"></label>
           <label class="chk" id="hw-bias-l"><input type="checkbox" id="hw-bias"><span>Bias-tee (alimenta antena activa; ¡cuidado!)</span></label>
         </div>
         <div class="card"><h2>Espectro y detector</h2>
@@ -122,6 +122,7 @@
               <option value="fpga" disabled>FPGA (imagen lab)</option>
             </select></label>
             <p class="muted" id="hw-sspec-note" hidden></p>
+            <label>Paleta de la cascada<select id="hw-pal"><option value="classic">Clásica (azul, verde, rojo)</option><option value="viridis">Viridis (apta para daltonismo)</option><option value="cividis">Cividis (apta para daltonismo)</option><option value="gray">Grises</option></select></label>
             <label>Tamaño FFT<select id="hw-fft"></select></label>
             <label>Imágenes por segundo<input id="hw-fps" type="number" min="1" max="60" step="1"></label>
             <label>Umbral del detector (dB SNR)<input id="hw-det" type="number" min="3" max="40" step="0.5"></label>
@@ -281,7 +282,7 @@
 
 <div class="sigpanel" id="sig-panel" role="dialog" aria-label="¿Qué es esta señal?" hidden></div>
 <dialog id="help-dlg" aria-labelledby="help-t"><h2 id="help-t">Atajos de teclado</h2>
-  <table class="tbl keys"><tbody>
+  <table class="tbl keys"><caption class="sr">Atajos</caption><thead class="sr"><tr><th scope="col">Entrada</th><th scope="col">Efecto</th></tr></thead><tbody>
   <tr><td><kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Paleta de órdenes: perfiles, modos, decodificadores, pestañas, «100.3m»…</td></tr>
   <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Sintonía: un paso (el del modo)</td></tr>
   <tr><td><kbd>Mayús</kbd>+<kbd>←</kbd> <kbd>→</kbd></td><td>Sintonía ×10</td></tr>
@@ -292,12 +293,16 @@
   <tr><td><kbd>+</kbd> <kbd>−</kbd></td><td>Acercar, alejar el espectro</td></tr>
   <tr><td><kbd>F</kbd> · <kbd>Inicio</kbd> · <kbd>0</kbd></td><td>Vista completa del espectro</td></tr>
   <tr><td><kbd>G</kbd></td><td>Editar la frecuencia</td></tr>
-  <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>Cambiar de panel</td></tr>
+  <tr><td><kbd>N</kbd> · <kbd>Mayús</kbd>+<kbd>N</kbd></td><td>Sintonizar la señal detectada siguiente / anterior</td></tr>
+  <tr><td><kbd>I</kbd> · <kbd>Intro</kbd> (con el foco en el espectro)</td><td>«¿Qué es esta señal?» en la frecuencia del canal</td></tr>
+  <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Estrechar / ensanchar el filtro del canal</td></tr>
+  <tr><td><kbd>Tab</kbd> · <kbd>Mayús</kbd>+<kbd>Tab</kbd></td><td>Siguiente / anterior control; en las pestañas, <kbd>←</kbd> <kbd>→</kbd> <kbd>Inicio</kbd> <kbd>Fin</kbd></td></tr>
+  <tr><td><kbd>1</kbd>–<kbd>8</kbd></td><td>Cambiar de panel</td></tr>
   <tr><td><kbd>R</kbd></td><td>Iniciar / parar grabación</td></tr>
   <tr><td><kbd>?</kbd></td><td>Esta ayuda</td></tr>
   </tbody></table>
   <h3 class="sub">En el espectro y la cascada</h3>
-  <table class="tbl keys"><tbody>
+  <table class="tbl keys"><caption class="sr">Atajos</caption><thead class="sr"><tr><th scope="col">Entrada</th><th scope="col">Efecto</th></tr></thead><tbody>
   <tr><td>Clic</td><td>Sintonizar · clic en una señal marcada: «decodificar como…»</td></tr>
   <tr><td>Rueda</td><td>Cambiar la frecuencia un paso (según el modo)</td></tr>
   <tr><td><kbd>Ctrl</kbd>+rueda · pellizco</td><td>Zoom alrededor del cursor</td></tr>
@@ -311,7 +316,10 @@
   <input id="pal-input" type="text" role="combobox" aria-expanded="true" aria-controls="pal-list" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="Escribe una orden o una frecuencia (100.3m)…" aria-label="Buscar orden">
   <ul id="pal-list" role="listbox" aria-label="Órdenes"></ul>
 </dialog>
-<div class="toasts" id="toasts" aria-live="polite"></div>
+<div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+<div class="sr" id="live-freq" role="status" aria-live="polite" aria-atomic="true"></div>
+<div class="sr" id="live-conn" role="status" aria-live="polite" aria-atomic="true"></div>
+<p class="sr" id="spec-help">Espectro y cascada. Flechas izquierda y derecha: sintonizar un paso; Mayús las multiplica por diez. N y Mayús+N: señal detectada siguiente o anterior. I o Intro: qué es esta señal. Más y menos: zoom. Corchetes: anchura del filtro. Interrogación: todos los atajos.</p>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

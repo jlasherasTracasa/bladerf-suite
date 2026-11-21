@@ -1,9 +1,9 @@
 // main.js — arranque: pestañas, barra superior, atajos de teclado, avisos.
-import { S, bus, $, $$, h, toast, fmtHz } from './util.js';
+import { S, bus, $, $$, h, toast, fmtHz, clamp } from './util.js';
 import { connect } from './ws.js';
 import { initAudio } from './audio.js';
-import { initReceiver, setChannel, tuneBy, getStep, MODES, toggleListen } from './receiver.js';
-import { initSpectrum, zoomBy, zoomReset, xToFreq, freqToX, getView, specRenderInfo } from './spectrum.js';
+import { initReceiver, setChannel, tuneBy, getStep, MODES, toggleListen, BW_MAX, BW_MIN } from './receiver.js';
+import { initSpectrum, zoomBy, zoomReset, xToFreq, freqToX, getView, specRenderInfo, nextSignal, signalAtChannel } from './spectrum.js';
 import { initSweep } from './sweep.js';
 import { initHardware, toggleRecording } from './hardware.js';
 import { initProtocols } from './protocols.js';
@@ -30,8 +30,8 @@ function buildTabs() {
       title: `${p.dataset.title} (${p.dataset.key})`, text: p.dataset.short || p.dataset.title, 'aria-label': p.dataset.title, onclick: () => showTab(id, true),
       onkeydown: (e) => {
         const tabs = $$('[role=tab]', bar), i = tabs.indexOf(e.currentTarget);
-        const n = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : -1;
-        if (n >= 0) { const t = tabs[(n + tabs.length) % tabs.length]; t.focus(); showTab(t.id.slice(4), false); e.preventDefault(); }
+        const n = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : null;
+        if (n !== null) { const t = tabs[(n + tabs.length) % tabs.length]; t.focus(); showTab(t.id.slice(4), false); e.preventDefault(); }
       },
     });
   }));
@@ -47,7 +47,7 @@ function showTab(id, user) {
   for (const t of $$('[role=tab]')) { const on = t.id === 'tab-' + id; t.setAttribute('aria-selected', on); t.tabIndex = on ? 0 : -1; }
   const act = $('#tab-' + id); if (act && act.scrollIntoView) act.scrollIntoView({ block: 'nearest', inline: 'center' });
   // En pantallas estrechas el panel queda bajo el espectro: llevarlo a la vista (la cabecera fija se compensa con scroll-margin-top).
-  if (user && innerWidth < 1000) $('#tabs').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  if (user && innerWidth < 1000) $('#tabs').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   bus.emit('tab', id);
 }
 
@@ -58,7 +58,7 @@ function shortcuts(e) {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const t = e.target;
   // nunca con el foco en un campo de texto, selector, diálogo o zona editable
-  if (t.closest && t.closest('input:not([type=checkbox]):not([type=range]), textarea, select, dialog, [contenteditable]')) return;
+  if (t.closest && t.closest('input:not([type=checkbox]):not([type=range]), textarea, select, dialog, [role=dialog], [contenteditable]')) return;
   if (t.matches && t.matches('button, [role=tab], summary, a') && (e.key === ' ' || e.key === 'Enter')) return;
   const free = t.tagName === 'BODY' || (t.classList && t.classList.contains('ov'));
   const step = getStep() * (e.shiftKey ? 10 : 1);
@@ -77,10 +77,17 @@ function shortcuts(e) {
     case '-': case '_': zoomBy(1 / 1.6); break;
     case '0': case 'f': case 'F': case 'Home': zoomReset(); break;
     case 'g': case 'G': $('#freq-input').focus(); break;
+    case 'n': case 'N': if (!nextSignal(e.shiftKey ? -1 : 1)) toast('No hay señales detectadas'); break;
+    case 'i': case 'I': if (!signalAtChannel()) return; break;
+    case 'Enter': if (!(t.classList && t.classList.contains('ov')) || !signalAtChannel()) return; break;
+    case '[': case ']': {
+      const bw = Math.round(clamp(S.chan.bw * (e.key === ']' ? 1.25 : 0.8), BW_MIN, BW_MAX[S.chan.mode] || 20000) / 10) * 10;
+      setChannel({ bw }, { user: true }); break;
+    }
     case 'r': case 'R': toggleRecording(); break;
     case '?': $('#help-dlg').showModal(); break;
     default: {
-      if (/^[1-7]$/.test(e.key)) {
+      if (/^[1-9]$/.test(e.key)) {
         const p = visiblePanels()[+e.key - 1];
         if (p) showTab(p.id.slice(2), true);   // el foco no cambia: las flechas siguen sintonizando
         break;
@@ -91,6 +98,16 @@ function shortcuts(e) {
   e.preventDefault();
 }
 
+/* ---- regiones vivas (lectores de pantalla): frecuencia/modo con retardo, y conexión; sin repetir ni inundar ---- */
+function initLive() {
+  const lf = $('#live-freq'), lc = $('#live-conn');
+  let tm = 0, last = '';
+  const say = () => { const t = `${fmtHz(S.chan.freq, 3)}, ${(S.chan.mode || '').toUpperCase()}`; if (t !== last) { last = t; lf.textContent = t; } };
+  bus.on('chan', () => { clearTimeout(tm); tm = setTimeout(say, 700); });   // una ráfaga de flechas se anuncia una sola vez, al final
+  let up = null;
+  bus.on('ws', (u) => { if (u !== up) { up = u; lc.textContent = u ? 'Conectado con el servidor' : 'Sin conexión con el servidor'; } });
+}
+
 function boot() {
   initAudio(); initReceiver(); initSpectrum(); initSweep(); initHardware(); initProtocols(); initDecoders(); initSignal(); initMap(); initMessages(); initRds(); initTx(); initTv(); initPalette(); initStatus();
   buildTabs(); showTab(decodeURIComponent(location.hash.slice(1)) || 'receptor');
@@ -98,8 +115,25 @@ function boot() {
   window.addEventListener('hashchange', () => showTab(decodeURIComponent(location.hash.slice(1)) || 'receptor'));
   $('#btn-help').addEventListener('click', () => $('#help-dlg').showModal());
   document.addEventListener('keydown', shortcuts);
+  // Foco atrapado en los <dialog> modales (ayuda, paleta): Tab y Mayús+Tab dan la vuelta dentro, sin saltar a la interfaz del navegador.
+  document.addEventListener('keydown', (e) => {
+    const d = e.key === 'Tab' && document.querySelector('dialog[open]');
+    if (!d) return;
+    const f = [...d.querySelectorAll('button, input, select, textarea, summary, [href], [tabindex]:not([tabindex="-1"])')].filter((x) => !x.disabled && x.getClientRects().length && !(x.closest('details:not([open])') && !x.matches('details:not([open]) > summary')));
+    if (!f.length) { e.preventDefault(); return; }
+    const a = f[0], z = f[f.length - 1], cur = document.activeElement;
+    if (!d.contains(cur)) { a.focus(); e.preventDefault(); }
+    else if (e.shiftKey && cur === a) { z.focus(); e.preventDefault(); }
+    else if (!e.shiftKey && cur === z) { a.focus(); e.preventDefault(); }
+  });
+  // Escape sobre un aviso lo cierra y devuelve el foco al espectro (los avisos no son modales: no atrapan el foco).
+  document.addEventListener('keydown', (e) => {
+    const n = e.key === 'Escape' && e.target.closest && e.target.closest('.notice');
+    if (n) { const b = n.querySelector('[aria-label="Cerrar aviso"]'); if (b) { b.click(); const c = $('#spec-wrap canvas.ov'); if (c) c.focus(); } }
+  });
   // La barra de estado, los avisos y la restauración tras reconectar viven en status.js.
   bus.on('ws', (up) => { if (!up) toast('Conexión perdida; reintentando…', 'err'); });
+  initLive();
   const setTitle = () => { document.title = `${fmtHz(S.chan.freq, 3)} · BladeRF Lab`; };
   bus.on('chan', setTitle); setTitle();
   connect();
