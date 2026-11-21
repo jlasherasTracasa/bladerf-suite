@@ -94,6 +94,16 @@ void engine_sweep_stop(engine_t *e);
  * no es la lab…) llegan después como mensaje "error" y el motor se queda como estaba. */
 int engine_set_spectrum_src(engine_t *e, const char *src, char *err, size_t errlen);
 
+/* Carga de la imagen de FPGA "lab" o "stock" en la RAM de la FPGA (volátil; la flash no se toca nunca).
+ * engine_set_fpga_images(): ruta de un .rbf o carpeta (o "") y carpetas candidatas (NULL-terminada, máx. 4), y el
+ * resultado de la carga inicial hecha en main antes de crear el motor (puede ser NULL); aparece en
+ * status.fpga_lab.load = {state: ok|omitido|error, msg, version, sha256}.
+ * engine_fpga_load(): pide la carga al hilo DSP (para el flujo, carga ~1-2 s, reaplica toda la configuración y
+ * rearranca). < 0 con err si no procede (fichero, grabación o barrido en curso, valor no válido); el resultado
+ * llega por "status" y "error" (level info/error). Quien llama debe rechazar antes si hay TX. */
+void engine_set_fpga_images(engine_t *e, const char *path, const char *const *dirs, const fpga_load_result_t *first);
+int engine_fpga_load(engine_t *e, const char *image, char *err, size_t errlen);
+
 /* Canales de audio (uno por cliente WebSocket) */
 void engine_add_client(engine_t *e, int client);
 void engine_remove_client(engine_t *e, int client);

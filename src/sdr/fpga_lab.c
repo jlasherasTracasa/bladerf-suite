@@ -4,6 +4,7 @@
 #include "fpga_lab.h"
 
 #include <stdatomic.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -462,6 +463,284 @@ size_t spectrum_msg_pack(uint8_t *m, const float *db, int n, int src, double cen
         m[32 + i] = (uint8_t)(v < 0.f ? 0.f : v > 255.f ? 255.f : v);
     }
     return 32 + (size_t)n;
+}
+
+
+/* ---- Carga de imagen en RAM ---------------------------------------------- */
+
+const char *fpga_load_state_name(fpga_load_state_t s)
+{
+    return s == FPGA_LOAD_OK ? "ok" : s == FPGA_LOAD_ERROR ? "error" : "omitido";
+}
+
+/* SHA-256 (FIPS 180-4): bloques de 512 bit; 64 rondas con Ch, Maj, Σ0, Σ1, σ0, σ1 sobre palabras de 32 bit. */
+static const uint32_t K256[64] = {
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98,
+    0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
+    0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8,
+    0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+    0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819,
+    0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
+    0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+    0xc67178f2};
+#define ROR32(x, n) (((x) >> (n)) | ((x) << (32 - (n))))
+
+static void sha256_block(uint32_t h[8], const uint8_t *p)
+{
+    uint32_t w[64];
+    for (int i = 0; i < 16; i++)
+        w[i] = (uint32_t)p[4 * i] << 24 | (uint32_t)p[4 * i + 1] << 16 | (uint32_t)p[4 * i + 2] << 8 | p[4 * i + 3];
+    for (int i = 16; i < 64; i++) {
+        uint32_t s0 = ROR32(w[i - 15], 7) ^ ROR32(w[i - 15], 18) ^ (w[i - 15] >> 3);
+        uint32_t s1 = ROR32(w[i - 2], 17) ^ ROR32(w[i - 2], 19) ^ (w[i - 2] >> 10);
+        w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+    }
+    uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6], hh = h[7];
+    for (int i = 0; i < 64; i++) {
+        uint32_t t1 = hh + (ROR32(e, 6) ^ ROR32(e, 11) ^ ROR32(e, 25)) + ((e & f) ^ (~e & g)) + K256[i] + w[i];
+        uint32_t t2 = (ROR32(a, 2) ^ ROR32(a, 13) ^ ROR32(a, 22)) + ((a & b) ^ (a & c) ^ (b & c));
+        hh = g; g = f; f = e; e = d + t1; d = c; c = b; b = a; a = t1 + t2;
+    }
+    h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e; h[5] += f; h[6] += g; h[7] += hh;
+}
+
+int fpga_sha256_file(const char *path, char hex[65])
+{
+    FILE *f = fopen(path, "rb");
+    if (!f)
+        return -1;
+    uint32_t h[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+    uint8_t buf[64 * 64];
+    uint64_t total = 0;
+    size_t have = 0;
+    for (;;) {
+        size_t r = fread(buf + have, 1, sizeof buf - have, f);
+        if (r == 0 && ferror(f)) {
+            fclose(f);
+            return -1;
+        }
+        have += r;
+        total += r;
+        size_t off = 0;
+        while (have - off >= 64 && (r > 0 || have - off >= 64)) {
+            sha256_block(h, buf + off);
+            off += 64;
+        }
+        memmove(buf, buf + off, have - off);
+        have -= off;
+        if (r == 0)
+            break;
+    }
+    fclose(f);
+    /* relleno: 0x80, ceros y la longitud en bits (64 bit, big-endian) */
+    uint8_t tail[128] = {0};
+    memcpy(tail, buf, have);
+    tail[have] = 0x80;
+    size_t nt = have + 1 + 8 <= 64 ? 64 : 128;
+    uint64_t bits = total * 8;
+    for (int i = 0; i < 8; i++)
+        tail[nt - 1 - i] = (uint8_t)(bits >> (8 * i));
+    for (size_t o = 0; o < nt; o += 64)
+        sha256_block(h, tail + o);
+    for (int i = 0; i < 8; i++)
+        snprintf(hex + 8 * i, 9, "%08x", h[i]);
+    return 0;
+}
+
+int fpga_image_verify(const char *path, char hex[65], char *err, size_t errlen)
+{
+    char sumfile[600];
+    snprintf(sumfile, sizeof sumfile, "%s.sha256", path);
+    FILE *f = fopen(sumfile, "r");
+    if (!f) {
+        set_err(err, errlen, "falta %s: no se carga una imagen sin suma de comprobación", sumfile);
+        return -1;
+    }
+    char line[256] = "";
+    char *ok = fgets(line, sizeof line, f);
+    fclose(f);
+    char want[65] = "";
+    size_t n = 0;
+    while (ok && n < 64 && ((line[n] >= '0' && line[n] <= '9') || (line[n] >= 'a' && line[n] <= 'f') ||
+                            (line[n] >= 'A' && line[n] <= 'F'))) {
+        want[n] = (char)((line[n] >= 'A' && line[n] <= 'F') ? line[n] + 32 : line[n]);
+        n++;
+    }
+    if (n != 64) {
+        set_err(err, errlen, "%s no tiene una suma SHA-256 válida", sumfile);
+        return -1;
+    }
+    want[64] = '\0';
+    if (fpga_sha256_file(path, hex) < 0) {
+        set_err(err, errlen, "no se puede leer %s", path);
+        return -1;
+    }
+    if (strcmp(want, hex) != 0) {
+        set_err(err, errlen, "la suma SHA-256 de %s no coincide (esperada %.12s…, calculada %.12s…)", path, want, hex);
+        return -1;
+    }
+    return 0;
+}
+
+#include <dirent.h>
+#include <sys/stat.h>
+
+static bool path_is_dir(const char *p)
+{
+    struct stat st;
+    return stat(p, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+int fpga_image_find(const char *dir, const char *model, const char *kind, char *out, size_t outlen, char *ver,
+                    size_t verlen)
+{
+    DIR *d = opendir(dir);
+    if (!d)
+        return -1;
+    char prefix[64];
+    snprintf(prefix, sizeof prefix, "hosted-%s-%s-", model, kind);
+    long best = -1;
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL) {
+        unsigned a, b, c;
+        char tail[8] = "";
+        if (strncmp(de->d_name, prefix, strlen(prefix)) != 0)
+            continue;
+        if (sscanf(de->d_name + strlen(prefix), "%u.%u.%u%7s", &a, &b, &c, tail) != 4 || strcmp(tail, ".rbf") != 0)
+            continue;
+        long key = (long)a * 1000000L + (long)b * 1000L + (long)c;
+        if (key > best) {
+            best = key;
+            snprintf(out, outlen, "%s/%s", dir, de->d_name);
+            snprintf(ver, verlen, "%u.%u.%u", a, b, c);
+        }
+    }
+    closedir(d);
+    return best >= 0 ? 0 : -1;
+}
+
+static void load_fail(fpga_load_result_t *r, fpga_load_state_t st, const char *fmt, ...) __attribute__((format(printf, 3, 4)));
+static void load_fail(fpga_load_result_t *r, fpga_load_state_t st, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(r->msg, sizeof r->msg, fmt, ap);
+    va_end(ap);
+    r->state = st;
+}
+
+/* "hosted-xA9-lab-0.16.103.rbf" → modelo "xA9" y versión "0.16.103"; false si el nombre no sigue ese patrón. */
+static bool image_name_parts(const char *path, char *model, size_t ml, char *ver, size_t vl)
+{
+    const char *b = strrchr(path, '/');
+    b = b ? b + 1 : path;
+    char m[16], k[16];
+    unsigned x, y, z;
+    if (sscanf(b, "hosted-%15[^-]-%15[^-]-%u.%u.%u.rbf", m, k, &x, &y, &z) != 5)
+        return false;
+    snprintf(model, ml, "%s", m);
+    snprintf(ver, vl, "%u.%u.%u", x, y, z);
+    return true;
+}
+
+void fpga_lab_ensure(const fpga_loader_t *ld, const char *kind, const char *path, const char *const *dirs,
+                     fpga_load_result_t *r)
+{
+    memset(r, 0, sizeof *r);
+    r->state = FPGA_LOAD_SKIPPED;
+    const bool want_lab = strcmp(kind, "lab") == 0;
+    if (!want_lab && strcmp(kind, "stock") != 0) {
+        load_fail(r, FPGA_LOAD_ERROR, "imagen desconocida «%s» (use lab o stock)", kind);
+        return;
+    }
+    if (!ld || !ld->fpga_kle || !ld->lib_version || !ld->is_lab || !ld->load || !ld->reopen) {
+        load_fail(r, FPGA_LOAD_SKIPPED, "la fuente no es un bladeRF");
+        return;
+    }
+    bool is_lab = false;
+    if (ld->is_lab(ld->ctx, &is_lab) < 0) {
+        load_fail(r, FPGA_LOAD_ERROR, "no se pudo detectar la imagen cargada");
+        return;
+    }
+    if (is_lab == want_lab) {
+        load_fail(r, FPGA_LOAD_SKIPPED, want_lab ? "la imagen lab ya está cargada" : "la imagen de serie ya está cargada");
+        return;
+    }
+    int ma = 0, mi = 0, pa = 0;
+    if (ld->lib_version(ld->ctx, &ma, &mi, &pa) < 0 || ma < FPGA_LIB_MIN_MAJOR ||
+        (ma == FPGA_LIB_MIN_MAJOR && mi < FPGA_LIB_MIN_MINOR)) {
+        load_fail(r, FPGA_LOAD_ERROR, "libbladeRF %d.%d.%d es demasiado antigua (se exige >= %d.%d)", ma, mi, pa,
+                  FPGA_LIB_MIN_MAJOR, FPGA_LIB_MIN_MINOR);
+        return;
+    }
+    int kle = 0;
+    if (ld->fpga_kle(ld->ctx, &kle) < 0 || (kle != 301 && kle != 49)) {
+        load_fail(r, FPGA_LOAD_ERROR, "modelo de FPGA desconocido (%d kLE): no se carga nada", kle);
+        return;
+    }
+    const char *model = kle == 301 ? "xA9" : "xA4";
+    if (kle != 301 && want_lab) {
+        load_fail(r, FPGA_LOAD_ERROR, "la imagen lab solo existe para la xA9 (301 kLE); esta placa es una %s", model);
+        return;
+    }
+
+    /* Localizar el fichero: ruta explícita (fichero o carpeta) o búsqueda en las carpetas candidatas */
+    char file[512] = "", ver[32] = "";
+    bool explicit_path = path && path[0];
+    if (explicit_path && !path_is_dir(path)) {
+        if (access(path, R_OK) != 0) {
+            load_fail(r, FPGA_LOAD_ERROR, "no se encuentra la imagen %s", path);
+            return;
+        }
+        snprintf(file, sizeof file, "%s", path);
+    } else {
+        const char *one[2] = {explicit_path ? path : NULL, NULL};
+        const char *const *list = explicit_path ? one : dirs;
+        bool found = false;
+        for (int i = 0; list && list[i] && !found; i++)
+            found = fpga_image_find(list[i], model, kind, file, sizeof file, ver, sizeof ver) == 0;
+        if (!found) {
+            load_fail(r, explicit_path ? FPGA_LOAD_ERROR : FPGA_LOAD_SKIPPED,
+                      "no hay ninguna imagen hosted-%s-%s-*.rbf%s", model, kind,
+                      explicit_path ? " en la carpeta indicada" : " (firmware/out o instalada)");
+            return;
+        }
+    }
+    snprintf(r->path, sizeof r->path, "%s", file);
+    char pm[16] = "";
+    char pv[32] = "";
+    if (image_name_parts(file, pm, sizeof pm, pv, sizeof pv)) {
+        snprintf(r->version, sizeof r->version, "%s", pv);
+        if (strcmp(pm, model) != 0) {
+            load_fail(r, FPGA_LOAD_ERROR, "la imagen es para la %s y esta placa es una %s: no se carga", pm, model);
+            return;
+        }
+    } else {
+        snprintf(r->version, sizeof r->version, "%s", ver);
+    }
+    char verr[300] = "";
+    if (fpga_image_verify(file, r->sha256, verr, sizeof verr) < 0) {
+        r->sha256[0] = '\0';
+        load_fail(r, FPGA_LOAD_ERROR, "%s", verr);
+        return;
+    }
+    char lerr[200] = "";
+    int lrc = ld->load(ld->ctx, file, lerr, sizeof lerr);
+    /* Siempre se cierra y reabre, también si la carga falló: el estado de la placa es incierto */
+    char rerr[200] = "";
+    int rrc = ld->reopen(ld->ctx, rerr, sizeof rerr);
+    if (lrc < 0) {
+        load_fail(r, FPGA_LOAD_ERROR, "la carga en RAM falló: %s%s%s", lerr, rrc < 0 ? "; además no se pudo reabrir: " : "",
+                  rrc < 0 ? rerr : "");
+        return;
+    }
+    if (rrc < 0) {
+        load_fail(r, FPGA_LOAD_ERROR, "imagen cargada pero no se pudo reabrir la placa: %s", rerr);
+        return;
+    }
+    r->state = FPGA_LOAD_OK;
+    snprintf(r->msg, sizeof r->msg, "imagen %s %s cargada en RAM (sha256 %.16s…); la flash no se ha tocado", kind,
+             r->version, r->sha256);
 }
 
 /* ---- Adaptador a libbladeRF ---------------------------------------------- */

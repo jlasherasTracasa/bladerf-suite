@@ -237,3 +237,36 @@ Fuente de espectro alternativa (CPU / GPU / FPGA) del motor, `src/engine.c` + `s
   (6144 palabras): 20 lecturas/s en vez de 30 de 4096, sin esperar búferes enormes; latencia <= 1 imagen.
   Al salir (`fpga_leave`) o fallar la entrada se restauran los búferes de IQ.
 - Banco sin placa (`tests/bench_fpga_spectrum.c`, con cambio de K simulado): 43 us/trama = 0,09 % de un núcleo.
+
+## 8. Imagen de FPGA «lab» cargada en RAM por defecto (F19)
+
+**Decisión: la flash no se escribe nunca.** Al abrir un bladeRF 2.0, BladeRF Lab carga la imagen lab en la **RAM de
+configuración de la FPGA** (`bladerf_load_fpga`). Es volátil: al desconectar la placa (o quitarle la alimentación)
+vuelve la imagen de serie de la flash. No se usa `bladerf_flash_fpga`, ni el autoload, ni se toca el FX3.
+
+**Al arrancar** (`main.c`, antes de crear el motor; si la placa no se puede abrir —p. ej. la tiene `openwebrx`— no se
+llega aquí y no se toca nada):
+
+1. Si la imagen cargada ya es la lab (detección segura de `fpga_lab_probe`) → `omitido`, no recarga.
+2. Comprobaciones previas: libbladeRF ≥ 2.5, modelo de FPGA (301 kLE = xA9; la lab solo existe para xA9; el modelo
+   del nombre del `.rbf` debe coincidir con el de la placa).
+3. Localiza `hosted-xA9-lab-<versión más alta>.rbf` en `firmware/out` (cwd, `<exe>/../../firmware/out`,
+   `<exe>/../firmware/out`) o `/usr/local/share/bladerf-lab/fpga`; o la ruta de `--fpga-lab=RUTA` (fichero o carpeta).
+4. Verifica su SHA-256 (implementación propia) contra el `.sha256` que lo acompaña. Sin `.sha256` o con otra suma no se carga.
+5. Carga en RAM (~1–2 s) y **cierre + reapertura del dispositivo por número de serie** (medido en placa: sin reabrir, tras `bladerf_load_fpga` fallaban `set_sample_rate` y `enable_module`), se vuelve a detectar la lab y el motor aplica la
+   configuración (frecuencia, tasa, ancho, ganancia, bias-tee, formato).
+6. El resultado se registra en el log (versión y suma) y se publica en `status.fpga_lab.load`:
+   `{"state":"ok|omitido|error","msg":…,"version":…,"sha256":…}`. Si falla algo, se sigue con la imagen que haya.
+
+Opciones: `--fpga-lab[=RUTA]` (activo por defecto), `--no-fpga-lab`; clave de `config.json` `"fpga_lab"`:
+`true | false | "ruta"` (la línea de órdenes manda y la clave se conserva al guardar).
+
+**En caliente:** `{"cmd":"fpga_load","image":"lab|stock"}` (botón «Cargar imagen … en RAM» del panel Hardware, con
+diálogo de confirmación que explica que la flash no se toca). Se rechaza con grabación, TX o barrido en curso o con
+fichero. Secuencia en el hilo DSP (`engine.c: fpga_reload`): sale del espectro FPGA si estaba activo, pausa el lector,
+`source_stop`, comprueba y carga, re-detecta, marca todo pendiente (`CFG_ALL`, bias-tee incluido), `apply_config`,
+`source_start` y reanuda el lector; el hilo DSP nunca queda esperando la FPGA porque el lector está en pausa y el DSP es
+quien hace la carga. Durante 1–2 s no llegan muestras (los decodificadores quedan en espera).
+
+Pruebas sin placa: `tests/test_fpga_load.c` (SHA-256 con vectores FIPS 180-4, ruta inexistente, suma errónea,
+modelo xA4, libbladeRF antigua, ya lab → no recarga, fallo de carga).

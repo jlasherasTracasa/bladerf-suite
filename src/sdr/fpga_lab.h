@@ -217,6 +217,61 @@ int fpga_lab_choose_params(int fft, double rate, int fps, int *log2n, int *k);
 size_t spectrum_msg_pack(uint8_t *out, const float *db, int n, int src, double center, double rate, float dbmin,
                          float dbstep);
 
+
+/* ---- Carga de la imagen lab en la RAM de la FPGA (F19) ---------------------
+ *
+ * POLÍTICA: la imagen se carga SOLO en la RAM de configuración de la FPGA (bladerf_load_fpga). Es volátil: al
+ * quitar la alimentación de la placa (desconectar el USB) vuelve la imagen de serie de la flash. Nunca se
+ * llama a bladerf_flash_fpga ni se activa el autoload, y la flash SPI no se toca.
+ *
+ * Teoría de la secuencia: el .rbf se verifica contra su .sha256 (sha256sum) ANTES de enviarlo; después
+ * bladerf_load_fpga() para la FPGA, la reconfigura (~1-2 s) y vuelve a inicializar el AD9361 (frecuencia, tasa,
+ * ganancia, bias-tee y flujos quedan en su valor por defecto). Quien llama debe, con el flujo RX parado,
+ * reaplicar toda la configuración y volver a arrancar el flujo. La lógica de decisión (fpga_lab_ensure) es
+ * independiente de libbladeRF: se usa a través de fpga_loader_t y se prueba con una placa simulada. */
+typedef enum { FPGA_LOAD_SKIPPED = 0, FPGA_LOAD_OK = 1, FPGA_LOAD_ERROR = 2 } fpga_load_state_t;
+const char *fpga_load_state_name(fpga_load_state_t s); /* "omitido", "ok", "error" */
+
+typedef struct {
+    fpga_load_state_t state;
+    char msg[240];       /* motivo (omitido/error) o resumen (ok) */
+    char path[512];      /* imagen usada */
+    char version[32];    /* "0.16.103", de la imagen */
+    char sha256[65];     /* suma verificada, hexadecimal */
+} fpga_load_result_t;
+
+typedef struct {
+    void *ctx;
+    int (*fpga_kle)(void *ctx, int *kle);                         /* 301 = xA9, 49 = xA4 */
+    int (*lib_version)(void *ctx, int *maj, int *min, int *patch);
+    int (*is_lab)(void *ctx, bool *lab);                          /* ¿la imagen cargada es la lab? */
+    /* Carga el .rbf en RAM (solo eso). */
+    int (*load)(void *ctx, const char *path, char *err, size_t errlen);
+    /* Cierra y vuelve a abrir el dispositivo (mismo número de serie) y refresca lo que se dedujo de la imagen.
+     * Obligatorio tras load, haya ido bien o mal: bladerf_load_fpga reinicia la FPGA y deja el RFIC/estado de
+     * libbladeRF sin inicializar de forma fiable (medido en placa: set_sample_rate y enable_module fallaban). */
+    int (*reopen)(void *ctx, char *err, size_t errlen);
+} fpga_loader_t;
+
+#define FPGA_LIB_MIN_MAJOR 2
+#define FPGA_LIB_MIN_MINOR 5
+
+/* SHA-256 propio de un fichero (hex en minúsculas, 65 bytes con el \0). < 0 si no se puede leer. */
+int fpga_sha256_file(const char *path, char hex[65]);
+/* Comprueba la suma de 'path' contra 'path.sha256' (formato de sha256sum). 0 si coincide; < 0 con err si
+ * falta el .sha256 o no coincide. hex recibe la suma calculada. */
+int fpga_image_verify(const char *path, char hex[65], char *err, size_t errlen);
+/* Busca en 'dir' hosted-<model>-<kind>-<M.m.p>.rbf de versión más alta (kind "lab" o "stock"; model "xA9").
+ * 0 si lo encuentra (ruta completa en out, versión en ver), < 0 si no hay. */
+int fpga_image_find(const char *dir, const char *model, const char *kind, char *out, size_t outlen, char *ver,
+                    size_t verlen);
+/* Decide y, si procede, carga la imagen 'kind' ("lab" o "stock"). 'path' puede ser NULL (se busca en las
+ * carpetas de dirs), un .rbf concreto o una carpeta. dirs: lista terminada en NULL de carpetas candidatas
+ * (puede ser NULL). Nunca devuelve < 0: el resultado va en r (omitido / ok / error). Orden: ya es la imagen
+ * pedida → omitido; versión de libbladeRF; modelo de FPGA; localizar el fichero; suma; carga. */
+void fpga_lab_ensure(const fpga_loader_t *ld, const char *kind, const char *path, const char *const *dirs,
+                     fpga_load_result_t *r);
+
 /* Adaptador a libbladeRF (solo con -DFPGA_LAB_WITH_LIBBLADERF). dev es un struct bladerf *. */
 #ifdef FPGA_LAB_WITH_LIBBLADERF
 void fpga_lab_io_bladerf(fpga_lab_io_t *io, void *bladerf_dev);

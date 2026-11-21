@@ -156,6 +156,14 @@ void source_set_spectrum_stream(source_t *s, bool on, double frame_period_s);
  * gobierna la fuente (el DSP del motor, con el lector en pausa). */
 int source_fpga_lab_io(source_t *s, fpga_lab_io_t *io);
 
+/* Carga en la RAM de la FPGA la imagen "lab" o "stock" (de serie) si no es la que hay, con las comprobaciones de
+ * fpga_lab_ensure (libbladeRF, modelo xA9/xA4, suma SHA-256). Para el flujo, recarga y refresca la información del
+ * dispositivo (versión de FPGA, formatos, lab); NO reaplica frecuencia/tasa/ganancia ni rearranca: lo hace quien
+ * llama (el motor marca CFG_ALL y source_start). Con el lector en pausa o antes de crear el motor. Nunca escribe
+ * la flash. El resultado queda en r (omitido/ok/error). */
+void source_fpga_ensure(source_t *s, const char *kind, const char *path, const char *const *dirs,
+                        fpga_load_result_t *r);
+
 /* Fichero a máxima velocidad (--replay-fast): sin dormir para guardar el ritmo real y sin bucle.
  * Al llegar al final source_read() devuelve SOURCE_EOF (el último bloque va completado con ceros).
  * Sin efecto en el bladeRF. Llamar antes de source_start(). */

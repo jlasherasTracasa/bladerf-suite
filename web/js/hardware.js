@@ -32,6 +32,42 @@ function renderSpectrumSrc(st) {
     : '';
 }
 
+// Imagen de FPGA en RAM (F19): botón «Cargar imagen lab / de serie» con confirmación explícita. La carga es
+// volátil (RAM de la FPGA): la flash no se toca y al desconectar la placa vuelve la de serie. Se deshabilita
+// mientras se graba, hay TX o barrido, o la fuente es un fichero (el servidor también lo rechaza).
+const LOAD_STATES = { ok: 'cargada en RAM', omitido: 'sin cambios', error: 'error' };
+function ensureFpgaLoadUI() {
+  if ($('#hw-fpga-btn')) return;
+  const note = $('#hw-sspec-note');
+  if (!note) return;
+  const btn = h('button', { id: 'hw-fpga-btn', class: 'btn small', type: 'button', text: 'Cargar imagen lab en RAM' });
+  const msg = h('p', { id: 'hw-fpga-note', class: 'muted', hidden: true });
+  note.after(btn, msg);
+  btn.addEventListener('click', () => {
+    const to = btn.dataset.to;
+    const txt = to === 'lab'
+      ? 'Se cargará la imagen de FPGA «lab» (espectro en la FPGA, formato sc8g) en la RAM de la placa. Es volátil: la flash NO se toca y al desconectar la placa vuelve la imagen de serie.\n\nDurante 1-2 s se interrumpe la recepción y se reaplica la configuración. ¿Continuar?'
+      : 'Se cargará la imagen de FPGA de serie en la RAM de la placa (la flash NO se toca). Durante 1-2 s se interrumpe la recepción. ¿Continuar?';
+    if (!confirm(txt)) return;
+    btn.disabled = true;
+    send({ cmd: 'fpga_load', image: to });
+  });
+}
+
+function renderFpgaLoad(st) {
+  ensureFpgaLoadUI();
+  const btn = $('#hw-fpga-btn'); if (!btn) return;
+  const lab = st.fpga_lab || {}, file = st.device.kind === 'file';
+  btn.hidden = file; $('#hw-fpga-note').hidden = file || !lab.load;
+  if (file) return;
+  btn.dataset.to = lab.present ? 'stock' : 'lab';
+  btn.textContent = lab.present ? 'Cargar imagen de serie en RAM' : 'Cargar imagen lab en RAM';
+  const rec = S.recording && S.recording.on, busy = rec || !!st.sweep;
+  btn.disabled = busy;
+  btn.title = busy ? 'No disponible mientras hay grabación, barrido o transmisión' : 'Carga en la RAM de la FPGA; la flash no se toca';
+  if (lab.load) $('#hw-fpga-note').textContent = `Carga de la imagen lab: ${LOAD_STATES[lab.load.state] || lab.load.state}${lab.load.msg ? ' — ' + lab.load.msg : ''}`;
+}
+
 // Formato de las muestras por el USB (status.device.formats, format_req, format_note, sc8g). Los controles se
 // crean aquí (no están en index.html): selector de formato junto a la tasa y, con sc8g, la ganancia digital
 // GAIN8 (automática o 0..3 = +0/6/12/18 dB) con el % de muestras recortadas (CNT_SAT8 de la imagen lab 1.3).
@@ -109,6 +145,7 @@ function renderStatus(st) {
   }
   for (const id of ['#hw-center', '#hw-rate', '#hw-rfbw', '#hw-gmode']) $(id).disabled = !d.can_tune;
   renderSpectrumSrc(st);
+  renderFpgaLoad(st);
   const kv = [
     ['Tipo', d.kind], ['Placa', d.board], ['Serie', d.serial], ['Firmware FX3', d.fw], ['FPGA', d.fpga], ['libbladeRF', d.lib],
     ['Frecuencia', `${fmtHz(d.freq_min)} – ${fmtHz(d.freq_max)}`], ['Tasa', `${fmtHz(d.rate_min)} – ${fmtHz(d.rate_max)}`],

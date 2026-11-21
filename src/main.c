@@ -73,6 +73,11 @@ typedef struct {
     bool cal_started;         /* cal_th es un hilo sin unir (solo lo toca el hilo de red y main) */
     volatile int cal_running; /* 1 mientras cal_thread no ha terminado */
     volatile int closing;     /* 1 al cerrar: las calibraciones pendientes no empiezan */
+    /* Imagen de FPGA lab en RAM (F19): por defecto se carga al abrir un bladeRF si no es ya la lab */
+    bool fpga_lab_on;
+    char fpga_lab_path[512];  /* "" = buscar en fpga_dirs; si no, un .rbf o una carpeta */
+    char fpga_dirs_buf[4][600];
+    const char *fpga_dirs[5];
 } app_t;
 
 static volatile sig_atomic_t g_stop;
@@ -245,6 +250,35 @@ static void load_config(const char *path, engine_cfg_t *c)
     free(buf);
 }
 
+/* Clave "fpga_lab" de la configuración: true | false | "ruta" (fichero .rbf o carpeta). Solo cambia lo que la
+ * línea de órdenes no haya fijado ya (cli_set). */
+static void load_fpga_cfg(const char *path, app_t *a)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f)
+        return;
+    char *buf = malloc(1 << 16);
+    size_t n = buf ? fread(buf, 1, (1 << 16) - 1, f) : 0;
+    fclose(f);
+    if (!buf)
+        return;
+    buf[n] = '\0';
+    jtok_t t[128];
+    if (json_parse(buf, n, t, 128) >= 1 && t[0].type == J_OBJ) {
+        bool b;
+        if (get_bool(buf, t, "fpga_lab", &b)) {
+            a->fpga_lab_on = b;
+        } else {
+            char p[512];
+            if (get_str(buf, t, "fpga_lab", p, sizeof p)) {
+                a->fpga_lab_on = true;
+                snprintf(a->fpga_lab_path, sizeof a->fpga_lab_path, "%s", p);
+            }
+        }
+    }
+    free(buf);
+}
+
 /* Llamado desde el hilo DSP cada vez que el motor aplica un cambio. */
 static void save_config(void *ctx, const engine_cfg_t *c)
 {
@@ -258,6 +292,14 @@ static void save_config(void *ctx, const engine_cfg_t *c)
               rate, c->rf_bw, gain_mode_name(c->gain_mode));
     sb_printf(&sb, "  \"gain\": %d,\n  \"biastee\": %s,\n  \"fft\": %d,\n  \"fps\": %d,\n  \"det_snr\": %.1f,\n", c->gain_db,
               c->biastee ? "true" : "false", c->fft_size, c->fps, c->det_snr);
+    if (!a->fpga_lab_on)
+        sb_puts(&sb, "  \"fpga_lab\": false,\n");
+    else if (a->fpga_lab_path[0]) {
+        sb_puts(&sb, "  \"fpga_lab\": ");
+        sb_json_str(&sb, a->fpga_lab_path);
+        sb_puts(&sb, ",\n");
+    } else
+        sb_puts(&sb, "  \"fpga_lab\": true,\n");
     if (c->loc_valid)
         sb_printf(&sb, "  \"loc\": {\"lat\": %.6f, \"lon\": %.6f}\n}\n", c->lat, c->lon);
     else
@@ -663,6 +705,16 @@ static void on_text(void *app, int client, const char *msg, size_t len)
         cmd_tx_cal(a, msg, t);
     } else if (strcmp(cmd, "tx_stop") == 0) {
         tx_stop(a->tx);
+    } else if (strcmp(cmd, "fpga_load") == 0) {
+        /* {"cmd":"fpga_load","image":"lab|stock"}: carga la imagen en la RAM de la FPGA (volátil, la flash no se
+         * toca). La confirmación la pide la web; aquí se rechaza si hay TX o grabación. */
+        char img[16] = "";
+        if (!get_str(msg, t, "image", img, sizeof img))
+            send_error(a, client, "fpga_load: 'image' (lab o stock) es obligatorio");
+        else if (tx_busy(a->tx))
+            send_error(a, client, "fpga_load: hay una transmisión en curso");
+        else if (engine_fpga_load(a->eng, img, err, sizeof err) < 0)
+            send_error(a, client, err);
     } else if (strcmp(cmd, "sweep") == 0) {
         /* Barrido rápido: {"cmd":"sweep","start":Hz,"stop":Hz,"fft":N} (ver docs/hardware/HARDWARE.md) */
         double f0, f1, nfft = 1024;
@@ -794,6 +846,9 @@ static void usage(const char *prog)
            "  --web DIR            carpeta de la interfaz web (por defecto web/)\n"
            "  --recdir DIR         carpeta de grabaciones (recordings/)\n"
            "  --config FICHERO     configuración persistente (~/.config/bladerf-lab/config.json; 'none' = sin)\n"
+           "  --fpga-lab[=RUTA]    carga la imagen de FPGA lab en la RAM de la placa si no es ya la lab (por defecto;\n"
+           "                       RUTA = .rbf o carpeta; firmware/out si se omite). Volátil: la flash no se toca\n"
+           "  --no-fpga-lab        no cambia la imagen de la FPGA (clave de configuración: \"fpga_lab\": true|false|\"ruta\")\n"
            "  --profile ID         aplica un perfil al arrancar\n"
            "  --decode ID[@Hz]     añade un decodificador (repetible)\n"
            "  --print              imprime los eventos de decodificadores por stdout (JSONL)\n"
@@ -817,7 +872,7 @@ static void usage(const char *prog)
 enum {
     O_HOST = 256, O_PORT, O_SERIAL, O_REPLAY, O_RATE, O_FREQ, O_NOGPU, O_WEB, O_RECDIR, O_CONFIG, O_PROFILE,
     O_DECODE, O_PRINT, O_LOGEV, O_DURATION, O_GEN, O_GENP, O_GENF, O_GENC, O_GENR, O_OUT, O_ETX, O_ETXA, O_CALL,
-    O_TXG, O_TVTS, O_RFAST, O_LABELS
+    O_TXG, O_TVTS, O_RFAST, O_LABELS, O_FPGALAB, O_NOFPGALAB
 };
 
 static const struct option LONGOPTS[] = {
@@ -827,7 +882,7 @@ static const struct option LONGOPTS[] = {
     {"print", 0, 0, O_PRINT}, {"log-events", 1, 0, O_LOGEV}, {"duration", 1, 0, O_DURATION}, {"gen", 1, 0, O_GEN},
     {"gen-params", 1, 0, O_GENP}, {"gen-freq", 1, 0, O_GENF}, {"gen-center", 1, 0, O_GENC},
     {"gen-rate", 1, 0, O_GENR}, {"out", 1, 0, O_OUT}, {"enable-tx", 0, 0, O_ETX}, {"enable-tx-air", 0, 0, O_ETXA},
-    {"callsign", 1, 0, O_CALL}, {"tx-max-gain", 1, 0, O_TXG}, {"tv-ts", 1, 0, O_TVTS}, {"replay-fast", 0, 0, O_RFAST}, {"labels", 1, 0, O_LABELS}, {"help", 0, 0, 'h'}, {0, 0, 0, 0},
+    {"callsign", 1, 0, O_CALL}, {"tx-max-gain", 1, 0, O_TXG}, {"tv-ts", 1, 0, O_TVTS}, {"replay-fast", 0, 0, O_RFAST}, {"labels", 1, 0, O_LABELS}, {"fpga-lab", 2, 0, O_FPGALAB}, {"no-fpga-lab", 0, 0, O_NOFPGALAB}, {"help", 0, 0, 'h'}, {0, 0, 0, 0},
 };
 
 static bool is_dir(const char *p)
@@ -837,6 +892,28 @@ static bool is_dir(const char *p)
 }
 
 /* Busca web/ junto al cwd o al ejecutable (build/x/bladerf-lab → ../../web). */
+/* Carpetas donde buscar hosted-xA9-{lab,stock}-*.rbf: firmware/out del árbol (cwd o junto al binario) y la
+ * ubicación instalada. */
+static void find_fpga_dirs(const char *argv0, app_t *a)
+{
+    char exe[600] = "";
+    ssize_t k = readlink("/proc/self/exe", exe, sizeof exe - 1);
+    if (k > 0)
+        exe[k] = '\0';
+    else
+        snprintf(exe, sizeof exe, "%s", argv0);
+    char *sl = strrchr(exe, '/');
+    if (sl)
+        *sl = '\0';
+    snprintf(a->fpga_dirs_buf[0], sizeof a->fpga_dirs_buf[0], "firmware/out");
+    snprintf(a->fpga_dirs_buf[1], sizeof a->fpga_dirs_buf[1], "%.560s/../../firmware/out", exe);
+    snprintf(a->fpga_dirs_buf[2], sizeof a->fpga_dirs_buf[2], "%.560s/../firmware/out", exe);
+    snprintf(a->fpga_dirs_buf[3], sizeof a->fpga_dirs_buf[3], "/usr/local/share/bladerf-lab/fpga");
+    for (int i = 0; i < 4; i++)
+        a->fpga_dirs[i] = a->fpga_dirs_buf[i];
+    a->fpga_dirs[4] = NULL;
+}
+
 static void find_webroot(const char *argv0, char *out, size_t n)
 {
     char exe[600] = "";
@@ -899,6 +976,8 @@ int main(int argc, char **argv)
     int64_t rate_opt = 0, freq_opt = 0, gen_freq = 0, gen_center = 0, gen_rate = 0;
     bool no_gpu = false, print = false, replay_fast = false;
     const char *labels_path = NULL;
+    int fl_cli = 0;              /* --fpga-lab = 1, --no-fpga-lab = 2 (mandan sobre la configuración) */
+    const char *fl_path = NULL;
     double duration = 0;
     tx_policy_t pol = {0};
     int c;
@@ -930,6 +1009,8 @@ int main(int argc, char **argv)
         case O_OUT: out = optarg; break;
         case O_RFAST: replay_fast = true; break;
         case O_LABELS: labels_path = optarg; replay_fast = true; break;
+        case O_FPGALAB: fl_cli = 1; fl_path = optarg; break;
+        case O_NOFPGALAB: fl_cli = 2; break;
         case O_ETX: pol.enabled = true; break;
         case O_ETXA: pol.air = true; pol.enabled = true; break;
         case O_CALL: snprintf(pol.callsign, sizeof pol.callsign, "%s", optarg); break;
@@ -947,6 +1028,7 @@ int main(int argc, char **argv)
     memset(&app, 0, sizeof app);
     pthread_mutex_init(&app.out_lock, NULL);
     app.print_events = print;
+    app.fpga_lab_on = true;
 
     /* --- configuración --- */
     engine_cfg_t cfg;
@@ -962,6 +1044,14 @@ int main(int argc, char **argv)
     }
     if (app.cfg_path[0])
         load_config(app.cfg_path, &cfg);
+    if (app.cfg_path[0])
+        load_fpga_cfg(app.cfg_path, &app);
+    if (fl_cli == 1) {
+        app.fpga_lab_on = true;
+        snprintf(app.fpga_lab_path, sizeof app.fpga_lab_path, "%s", fl_path ? fl_path : "");
+    } else if (fl_cli == 2) {
+        app.fpga_lab_on = false;
+    }
     app.saved_center = cfg.center_hz;
     app.saved_rate = cfg.rate;
     if ((replay_fast || labels_path) && !replay) {
@@ -989,6 +1079,19 @@ int main(int argc, char **argv)
         return 1;
     }
     app.can_tune = source_info(app.src)->can_tune;
+    /* Imagen lab en RAM (F19): antes de crear el motor y los hilos, la placa es nuestra. Si no se pudo abrir
+     * (otro proceso la tiene) no se llega aquí y no se toca nada. */
+    fpga_load_result_t fload;
+    memset(&fload, 0, sizeof fload);
+    if (!replay) {
+        find_fpga_dirs(argv[0], &app);
+        if (app.fpga_lab_on)
+            source_fpga_ensure(app.src, "lab", app.fpga_lab_path[0] ? app.fpga_lab_path : NULL, app.fpga_dirs, &fload);
+        else {
+            fload.state = FPGA_LOAD_SKIPPED;
+            snprintf(fload.msg, sizeof fload.msg, "desactivada (--no-fpga-lab o fpga_lab: false)");
+        }
+    }
 
     /* --- servidor, host, motor, TX --- */
     char webroot[700];
@@ -1017,6 +1120,8 @@ int main(int argc, char **argv)
         return 1;
     }
     engine_set_host(app.eng, app.host);
+    if (!replay)
+        engine_set_fpga_images(app.eng, app.fpga_lab_path, app.fpga_dirs, &fload);
     if (replay_fast) {
         /* Sin ritmo real: el lector espera al DSP y el DSP al host (nunca se descarta un bloque) */
         engine_set_replay_fast(app.eng, true);

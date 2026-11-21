@@ -932,3 +932,15 @@ Resultados de `build_lab.sh -S <semilla>` (Quartus 20.1.1, 8-49 min según semil
 La temporización sigue dependiendo de la colocación (camino peor con la semilla 44: `loopback_fifo_control:remaining` -> `loopback_streams`, de serie; con otras semillas: comparador de 64 bit de `time_tamer.timestamp` -> `fifo_reader.meta_time_go` en TX, también de serie). Por eso `build_lab.sh` fija ahora `-S 44` (`LAB_SEED` lo cambia): **no cambiar la semilla sin repetir el análisis**. Con la semilla 44 la holgura es >= +0,35 ns en los cuatro modelos. Recursos (semilla 44): 9 858 / 113 560 ALM (9 %), 19 634 registros, 4 033 858 / 12 492 800 bit de memoria (32 %), 42 / 342 DSP, 173 / 224 pines.
 
 Imagen final: `firmware/out/hosted-xA9-lab-0.16.103.rbf`, SHA-256 `452872280275b66cf627558cbfa55851b42b96a65a0f7b9d45c841ab72776c04` (semilla 44; informes en `firmware/out/logs/{sta,fit}_s{11,22,33,44}.summary`). Simulaciones tras el cambio: `run_lab_pack.sh 7` 0 diferencias (SC8 s = 0..3 y SC16 empaquetado; `CNT_SAT8` 37 366 / 45 382 / 48 242), `run_lab_regs.sh` OK, `run_rx_timestamp_lab.sh` OK. El parche `patches/0004-lab-1.3-ganancia-SC8-CNT_SAT8.diff` se ha regenerado con este RTL. Sin cargar nada en la placa.
+
+## 18. Cómo se instala la imagen lab: RAM, nunca flash (F19)
+
+La imagen lab (`firmware/out/hosted-xA9-lab-<versión>.rbf` + `.sha256`) se carga **en la RAM de la FPGA** con
+`bladerf_load_fpga`, cada vez que BladeRF Lab abre la placa y esta tiene otra imagen (ver `docs/hardware/HARDWARE.md` §8).
+Es volátil: al desconectar el USB, la **flash conserva la imagen de serie** (0.16.0) y es esa la que arranca. Nunca se
+escribe la flash SPI (`-L`, autoload, `bladerf_flash_fpga`) ni el FX3. Para volver a la de serie sin desconectar:
+`{"cmd":"fpga_load","image":"stock"}` (carga `hosted-xA9-stock-0.16.0.rbf`, también verificado por su `.sha256`).
+
+Las sumas `.sha256` las genera `firmware/build_lab.sh` (formato de `sha256sum`); el cargador las exige y las calcula con
+un SHA-256 propio (`fpga_sha256_file`). Un `.rbf` sin suma, con suma distinta, de otro modelo de FPGA (xA4) o con
+libbladeRF < 2.5 se rechaza sin tocar la placa.

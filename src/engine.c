@@ -88,6 +88,12 @@ struct engine {
     uint32_t lab_version_pub;
     bool lab_v12_pub;
     uint32_t lab_caps_pub, lab_synth_pub;
+    /* Carga de imagen de FPGA en RAM (F19): orden desde la red (1 lab, 2 stock; bajo e->lock) y último resultado */
+    int fload_cmd;
+    char fload_path[512];
+    char fload_dirs[4][512];
+    fpga_load_result_t fload;  /* state/msg/version/sha256 publicados en status (bajo e->lock) */
+    bool fload_set;
     bool spec_gpu;
     int ssrc_cmd;          /* 0 nada, 1 pasar a FPGA, 2 volver a CPU/GPU (bajo e->lock) */
     bool fpga_active;
@@ -191,6 +197,16 @@ static void send_error(engine_t *e, int client, const char *msg)
     sb_json_str(&sb, msg);
     sb_puts(&sb, "}");
     broadcast_json(e, client, &sb);
+    sb_free(&sb);
+}
+
+static void send_info(engine_t *e, const char *msg)
+{
+    sb_t sb = {0};
+    sb_puts(&sb, "{\"type\":\"error\",\"level\":\"info\",\"msg\":");
+    sb_json_str(&sb, msg);
+    sb_puts(&sb, "}");
+    broadcast_json(e, -1, &sb);
     sb_free(&sb);
 }
 
@@ -819,6 +835,15 @@ static void fpga_status_json(engine_t *e, sb_t *sb)
     sb_printf(sb, ",\"spectrum_src\":\"%s\"", e->fpga_active ? "fpga" : e->spec_gpu ? "gpu" : "cpu");
     sb_printf(sb, ",\"fpga_lab\":{\"present\":%s,\"active\":%s", e->lab_present_pub ? "true" : "false",
               e->fpga_active ? "true" : "false");
+    if (e->fload_set) {
+        sb_printf(sb, ",\"load\":{\"state\":\"%s\",\"msg\":", fpga_load_state_name(e->fload.state));
+        sb_json_str(sb, e->fload.msg);
+        sb_puts(sb, ",\"version\":");
+        sb_json_str(sb, e->fload.version);
+        sb_puts(sb, ",\"sha256\":");
+        sb_json_str(sb, e->fload.sha256);
+        sb_puts(sb, "}");
+    }
     if (e->lab_present_pub)
         sb_printf(sb, ",\"version\":\"%u.%u\"", (e->lab_version_pub >> 16) & 0xFFFFu, e->lab_version_pub & 0xFFFFu);
     if (e->fpga_active)
@@ -985,6 +1010,110 @@ static void send_status(engine_t *e)
     engine_status_json(e, &sb);
     broadcast_json(e, -1, &sb);
     sb_free(&sb);
+}
+
+/* ======================================================================= */
+/*  Carga de la imagen de FPGA en RAM (F19). Hilo DSP.                      */
+/* ======================================================================= */
+void engine_set_fpga_images(engine_t *e, const char *path, const char *const *dirs, const fpga_load_result_t *first)
+{
+    pthread_mutex_lock(&e->lock);
+    snprintf(e->fload_path, sizeof e->fload_path, "%s", path ? path : "");
+    for (int i = 0; i < 4; i++)
+        e->fload_dirs[i][0] = '\0';
+    for (int i = 0; dirs && dirs[i] && i < 4; i++)
+        snprintf(e->fload_dirs[i], sizeof e->fload_dirs[i], "%s", dirs[i]);
+    if (first) {
+        e->fload = *first;
+        e->fload_set = true;
+    }
+    pthread_mutex_unlock(&e->lock);
+}
+
+int engine_fpga_load(engine_t *e, const char *image, char *err, size_t errlen)
+{
+    if (!image || (strcmp(image, "lab") != 0 && strcmp(image, "stock") != 0)) {
+        snprintf(err, errlen, "fpga_load: use lab o stock");
+        return -1;
+    }
+    if (strcmp(source_info(e->src)->kind, "bladerf") != 0) {
+        snprintf(err, errlen, "fpga_load: la fuente es un fichero, no hay FPGA");
+        return -1;
+    }
+    recorder_status_t rs;
+    recorder_status(e->rec, &rs);
+    if (rs.active) {
+        snprintf(err, errlen, "fpga_load: hay una grabación en curso; páralá antes");
+        return -1;
+    }
+    pthread_mutex_lock(&e->lock);
+    bool busy = e->sweep_active || e->fload_cmd != 0;
+    if (!busy)
+        e->fload_cmd = strcmp(image, "lab") == 0 ? 1 : 2;
+    pthread_mutex_unlock(&e->lock);
+    if (busy) {
+        snprintf(err, errlen, "fpga_load: hay un barrido o una carga en curso");
+        return -1;
+    }
+    return 0;
+}
+
+/* Secuencia: sale del espectro FPGA si estaba activo, para el flujo con el lector pausado, comprueba y carga
+ * (source_fpga_ensure), vuelve a detectar la lab, marca todo como pendiente (la reinicialización de libbladeRF
+ * deja el AD9361 por defecto), reaplica con apply_config y rearranca el flujo. Si algo falla en la carga la
+ * placa sigue con la imagen que tenía y se reaplica igual (inocuo). */
+static void fpga_reload(engine_t *e, const char *kind)
+{
+    pthread_mutex_lock(&e->lock);
+    engine_cfg_t cur = e->cfg;
+    char path[512], dirs_s[4][512];
+    snprintf(path, sizeof path, "%s", e->fload_path);
+    memcpy(dirs_s, e->fload_dirs, sizeof dirs_s);
+    pthread_mutex_unlock(&e->lock);
+    const char *dirs[5] = {NULL, NULL, NULL, NULL, NULL};
+    int nd = 0;
+    for (int i = 0; i < 4; i++)
+        if (dirs_s[i][0])
+            dirs[nd++] = dirs_s[i];
+    if (e->fpga_active)
+        fpga_leave(e, &cur);
+    reader_pause(e);
+    source_stop(e->src);
+    fpga_load_result_t r;
+    /* la ruta fija (--fpga-lab=RUTA) es de la imagen lab: la de serie se busca en las carpetas */
+    source_fpga_ensure(e->src, kind, path[0] && strcmp(kind, "lab") == 0 ? path : NULL, dirs, &r);
+
+    fpga_lab_io_t io;
+    char perr[160];
+    fpga_lab_t lab;
+    bool present = source_fpga_lab_io(e->src, &io) == 0 && fpga_lab_probe(&io, &lab, perr, sizeof perr) > 0;
+    pthread_mutex_lock(&e->lock);
+    e->fload = r;
+    e->fload_set = true;
+    memset(&e->lab, 0, sizeof e->lab);
+    if (present)
+        e->lab = lab;
+    e->lab_present_pub = present;
+    e->lab_version_pub = present ? lab.version : 0;
+    e->lab_v12_pub = present && lab.v12;
+    e->lab_caps_pub = present ? lab.caps : 0;
+    e->lab_synth_pub = present ? lab.synth : 0;
+    if (r.state == FPGA_LOAD_OK)
+        e->cfg.biastee = false; /* la reinicialización lo apaga: apply_config debe reescribirlo */
+    e->dirty |= CFG_ALL;
+    pthread_mutex_unlock(&e->lock);
+
+    apply_config(e, false);
+    if (source_start(e->src) < 0) {
+        LOG_E("No se pudo rearrancar la recepción tras la carga: %s", source_error(e->src));
+        send_error(e, -1, source_error(e->src));
+    }
+    reader_resume(e, true);
+    if (r.state == FPGA_LOAD_ERROR)
+        send_error(e, -1, r.msg);
+    else if (r.state == FPGA_LOAD_OK)
+        send_info(e, r.msg);
+    send_status(e);
 }
 
 /* Cierra el barrido y devuelve el motor a su configuración normal: se marca todo
@@ -1380,6 +1509,14 @@ static void *dsp_main(void *arg)
         }
 
         apply_config(e, false);
+
+        /* Carga de imagen de FPGA en RAM (orden de la web) */
+        pthread_mutex_lock(&e->lock);
+        int flc = e->fload_cmd;
+        e->fload_cmd = 0;
+        pthread_mutex_unlock(&e->lock);
+        if (flc)
+            fpga_reload(e, flc == 1 ? "lab" : "stock");
 
         /* Fuente del espectro (CPU/GPU ↔ FPGA) */
         pthread_mutex_lock(&e->lock);

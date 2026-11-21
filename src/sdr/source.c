@@ -867,6 +867,143 @@ int source_fpga_lab_io(source_t *s, fpga_lab_io_t *io)
     return 0;
 }
 
+
+/* ======================================================================= */
+/*  Carga de la imagen de FPGA en RAM (F19). Política en fpga_lab.h:        */
+/*  bladerf_load_fpga solamente; nunca bladerf_flash_fpga ni autoload.      */
+/* ======================================================================= */
+static int ld_kle(void *c, int *kle)
+{
+    bladerf_fpga_size sz = BLADERF_FPGA_UNKNOWN;
+    int st = bladerf_get_fpga_size(((source_t *)c)->dev, &sz);
+    *kle = (int)sz;
+    return st;
+}
+
+static int ld_lib(void *c, int *ma, int *mi, int *pa)
+{
+    (void)c;
+    struct bladerf_version v;
+    bladerf_version(&v);
+    *ma = (int)v.major;
+    *mi = (int)v.minor;
+    *pa = (int)v.patch;
+    return 0;
+}
+
+static int ld_is_lab(void *c, bool *lab)
+{
+    source_t *s = c;
+    fpga_lab_io_t io;
+    char perr[160];
+    fpga_lab_t tmp;
+    source_fpga_lab_io(s, &io);
+    int r = fpga_lab_probe(&io, &tmp, perr, sizeof perr);
+    *lab = r > 0;
+    return r < 0 ? -1 : 0;
+}
+
+/* Tras la carga libbladeRF reinicializa la placa (_bladerf2_initialize): AD9361 con sus valores por defecto,
+ * perfiles de quick-tune perdidos, oversample apagado. Se rehace aquí lo que source_open_bladerf deduce de la
+ * imagen (versión, formatos, lab) y se invalida lo que se cacheaba; el motor reaplica frecuencia, tasa,
+ * ancho, ganancia y bias-tee con CFG_ALL y rearranca el flujo. */
+static void refresh_after_fpga_load(source_t *s)
+{
+    source_info_t *in = &s->info;
+    struct bladerf_version v;
+    unsigned fv = 0;
+    if (bladerf_fpga_version(s->dev, &v) == 0) {
+        snprintf(in->fpga_version, sizeof in->fpga_version, "%u.%u.%u", v.major, v.minor, v.patch);
+        fv = v.major * 10000 + v.minor * 100 + v.patch;
+    }
+    in->rate_max_oversample = fv >= 1500 ? SOURCE_RATE_OVERSAMPLE_MAX : 0;
+    in->fmt_packed12 = fv >= 1600;
+    in->fmt_sc8g = false;
+    memset(&s->lab, 0, sizeof s->lab);
+    fpga_lab_io_t io;
+    char perr[160];
+    if (source_fpga_lab_io(s, &io) == 0 && fpga_lab_probe(&io, &s->lab, perr, sizeof perr) > 0)
+        in->fmt_sc8g = fpga_lab_has_gain8(&s->lab);
+    s->oversample = false;
+    s->streaming = false;
+    s->qt_n = 0;
+    s->g8_hw = -1;
+    s->sat8_n0 = 0;
+    s->sat8_c0 = 0;
+    s->g8_calm = 0;
+    in->gain_cal = false;
+    load_gain_cal(s);
+    resolve_format(s);
+}
+
+static int ld_load(void *c, const char *path, char *err, size_t errlen)
+{
+    source_t *s = c;
+    if (s->tx_on) {
+        snprintf(err, errlen, "hay una transmisión en curso");
+        return -1;
+    }
+    source_stop(s);
+    LOG_I("FPGA: cargando %s en la RAM de la FPGA (volátil; la flash no se toca)…", path);
+    int st = bladerf_load_fpga(s->dev, path);
+    if (st < 0) {
+        snprintf(err, errlen, "bladerf_load_fpga: %s", bladerf_strerror(st));
+        return -1;
+    }
+    return 0;
+}
+
+/* Cierra y vuelve a abrir por número de serie. bladerf_load_fpga reinicia la FPGA y la reinicialización interna
+ * de libbladeRF no deja el AD9361 utilizable (set_sample_rate / enable_module fallaban tras la carga): con un
+ * open limpio el RFIC se inicializa igual que al arrancar. La FPGA tarda un instante en responder: se reintenta. */
+static int ld_reopen(void *c, char *err, size_t errlen)
+{
+    source_t *s = c;
+    char serial[40];
+    snprintf(serial, sizeof serial, "%s", s->info.serial);
+    char devstr[96] = "";
+    if (serial[0])
+        snprintf(devstr, sizeof devstr, "*:serial=%s", serial);
+    source_stop(s);
+    bladerf_close(s->dev);
+    s->dev = NULL;
+    int st = -1;
+    for (int i = 0; i < 10; i++) {
+        st = bladerf_open(&s->dev, devstr[0] ? devstr : NULL);
+        if (st == 0)
+            break;
+        s->dev = NULL;
+        struct timespec ts = {0, 300 * 1000000L};
+        nanosleep(&ts, NULL);
+    }
+    if (st < 0) {
+        snprintf(err, errlen, "bladerf_open: %s", bladerf_strerror(st));
+        return -1;
+    }
+    refresh_after_fpga_load(s);
+    return 0;
+}
+
+void source_fpga_ensure(source_t *s, const char *kind, const char *path, const char *const *dirs,
+                        fpga_load_result_t *r)
+{
+    memset(r, 0, sizeof *r);
+    if (!s || !s->dev || strcmp(bladerf_get_board_name(s->dev), "bladerf2") != 0) {
+        r->state = FPGA_LOAD_SKIPPED;
+        snprintf(r->msg, sizeof r->msg, "la fuente no es un bladeRF 2.0");
+        return;
+    }
+    fpga_loader_t ld = {.ctx = s, .fpga_kle = ld_kle, .lib_version = ld_lib, .is_lab = ld_is_lab, .load = ld_load,
+                       .reopen = ld_reopen};
+    fpga_lab_ensure(&ld, kind, path, dirs, r);
+    if (r->state == FPGA_LOAD_OK)
+        LOG_I("FPGA: %s (versión de FPGA ahora %s)", r->msg, s->info.fpga_version);
+    else if (r->state == FPGA_LOAD_ERROR)
+        LOG_W("FPGA: %s; sigo con la imagen que haya", r->msg);
+    else
+        LOG_I("FPGA: carga omitida: %s", r->msg);
+}
+
 int source_stop(source_t *s)
 {
     if (s->dev && s->streaming)
