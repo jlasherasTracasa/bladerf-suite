@@ -1,6 +1,7 @@
 /*
  * source.c — Implementación de las fuentes de muestras. Ver source.h.
  */
+#include <stdatomic.h>
 #include "source.h"
 
 #include "../util/json.h"
@@ -71,6 +72,18 @@ struct source {
     /* bladeRF */
     struct bladerf *dev;
     bool tx_on;
+    rxfmt_t fmt_req;      /* formato pedido (RXFMT_AUTO por defecto) */
+    rxfmt_t fmt_eff;      /* formato concreto sobre el USB: SC16, PACKED12 o SC8G (nunca AUTO) */
+    fpga_lab_t lab;       /* imagen lab detectada al abrir (lab.present) */
+    bool need_meta;       /* el barrido exige metadatos: fuerza sc16 */
+    int g8_cfg;           /* desplazamiento GAIN8 pedido: 0..3, o -1 = automático */
+    _Atomic unsigned g8_shift;  /* desplazamiento en uso (lo lee el hilo lector al convertir) */
+    int g8_hw;            /* último valor escrito en la FPGA (-1 = desconocido) */
+    _Atomic unsigned g8_peak;   /* pico |SC8| desde la última sondeo */
+    _Atomic uint64_t rx_count; /* muestras entregadas desde source_start (marca de tiempo sintética) */
+    uint64_t sat8_n0;     /* rx_count en el último sondeo de CNT_SAT8 */
+    uint32_t sat8_c0;
+    int g8_calm;          /* sondeos seguidos que piden subir (histéresis) */
     bool oversample;      /* feature OVERSAMPLE activa: SC8_Q7 a > 61,44 Msps */
     bool low_latency;     /* búferes pequeños (barrido) */
     bool spec_stream;     /* flujo de espectro de la FPGA lab: poco caudal, búferes pequeños */
@@ -111,8 +124,13 @@ void source_set_fast(source_t *s, bool on) { s->fast = on && !s->dev; }
 
 const char *source_format(const source_t *s)
 {
-    if (s->dev)
-        return s->oversample ? "sc8q7" : "sc16q11";
+    if (s->dev) {
+        if (s->fmt_eff == RXFMT_SC8G)
+            return "sc8g";
+        if (s->oversample)
+            return "sc8q7";
+        return s->fmt_eff == RXFMT_PACKED12 ? "packed12" : "sc16q11";
+    }
     switch (s->fmt) {
     case FMT_CS8: return "cs8";
     case FMT_CU8: return "cu8";
@@ -225,7 +243,25 @@ source_t *source_open_bladerf(const char *serial, char *err, size_t errlen)
         if (fv >= 1500)
             in->rate_max_oversample = SOURCE_RATE_OVERSAMPLE_MAX;
         load_gain_cal(s);
+        /* SC16_Q11_PACKED existe en la imagen de serie desde la 0.16 (fifo_writer: pack_sc12q11) */
+        in->fmt_packed12 = fv >= 1600;
     }
+    switch (bladerf_device_speed(s->dev)) {
+    case BLADERF_DEVICE_SPEED_HIGH: in->usb_speed = 2; break;
+    case BLADERF_DEVICE_SPEED_SUPER: in->usb_speed = 3; break;
+    default: in->usb_speed = 0; break;
+    }
+    /* Imagen lab >= 1.3 con GAIN8: sc8g. La detección solo lee la versión y config_gpio (segura en la de serie). */
+    {
+        fpga_lab_io_t io;
+        char perr[160];
+        if (source_fpga_lab_io(s, &io) == 0 && fpga_lab_probe(&io, &s->lab, perr, sizeof perr) > 0)
+            in->fmt_sc8g = fpga_lab_has_gain8(&s->lab);
+    }
+    s->fmt_req = RXFMT_AUTO;
+    s->fmt_eff = RXFMT_SC16;
+    s->g8_cfg = -1;
+    s->g8_hw = -1;
     in->can_tune = true;
     bool bt;
     in->has_biastee = bladerf_get_bias_tee(s->dev, RX0, &bt) == 0;
@@ -233,11 +269,149 @@ source_t *source_open_bladerf(const char *serial, char *err, size_t errlen)
     return s;
 }
 
+/* ======================================================================= */
+/*  Formato de RX por el USB (F11c)                                        */
+/* ======================================================================= */
+/* Teoría: el enlace USB limita las muestras/s según los bytes por muestra: SC16 = 4 B, packed12 = 3 B (12 bit
+ * por componente, 8 componentes en 3 palabras de 32 bit), SC8 = 2 B. En USB 2 Hi-Speed el caudal útil medido es
+ * ≈ 45 MB/s: 11,25 Msps en SC16, 15 Msps en packed12 y 22,5 Msps en SC8. */
+const char *rxfmt_name(rxfmt_t f)
+{
+    switch (f) {
+    case RXFMT_SC16: return "sc16";
+    case RXFMT_PACKED12: return "packed12";
+    case RXFMT_SC8G: return "sc8g";
+    default: return "auto";
+    }
+}
+
+bool rxfmt_parse(const char *s, rxfmt_t *f)
+{
+    static const rxfmt_t all[] = {RXFMT_AUTO, RXFMT_SC16, RXFMT_PACKED12, RXFMT_SC8G};
+    for (size_t i = 0; s && i < sizeof all / sizeof all[0]; i++)
+        if (strcasecmp(s, rxfmt_name(all[i])) == 0) {
+            *f = all[i];
+            return true;
+        }
+    return false;
+}
+
+double source_usb_capacity(int usb_speed) { return usb_speed == 2 ? 45e6 : 360e6; }
+
+static int rxfmt_bytes(rxfmt_t f) { return f == RXFMT_SC16 ? 4 : f == RXFMT_PACKED12 ? 3 : 2; }
+
+rxfmt_t source_choose_format(rxfmt_t req, uint32_t rate, int usb_speed, bool packed_ok, bool sc8g_ok)
+{
+    const bool ok[4] = {false, true, packed_ok, sc8g_ok};
+    if (req != RXFMT_AUTO) {
+        if (ok[req])
+            return req;
+        return packed_ok ? RXFMT_PACKED12 : RXFMT_SC16; /* explícito pero no disponible: el más próximo */
+    }
+    const double cap = source_usb_capacity(usb_speed);
+    rxfmt_t best = RXFMT_SC16;
+    for (int f = RXFMT_SC16; f <= RXFMT_SC8G; f++) {
+        if (!ok[f])
+            continue;
+        best = (rxfmt_t)f; /* acaba en el de menos bytes disponible si ninguno cabe */
+        if ((double)rate * rxfmt_bytes((rxfmt_t)f) <= cap)
+            break;
+    }
+    return best;
+}
+
+unsigned sc8g_auto_shift(unsigned cur, double sat_pct, int peak)
+{
+    if (cur > 3)
+        cur = 3;
+    if (sat_pct > 0.01)
+        return cur > 0 ? cur - 1 : 0;
+    if (cur < 3 && peak > 0 && peak * 2 < 112)
+        return cur + 1;
+    return cur;
+}
+
+int source_sc8g_to_q11(const int8_t *in, int16_t *out, size_t n_values, unsigned shift)
+{
+    const int32_t rnd = shift ? (1 << (shift - 1)) : 0;
+    int pk = 0;
+    for (size_t i = 0; i < n_values; i++) {
+        const int32_t b = in[i];
+        out[i] = (int16_t)((b * 16 + 8 + rnd) >> shift);
+        const int a = b < 0 ? -b : b;
+        pk = a > pk ? a : pk;
+    }
+    return pk;
+}
+
+static inline int16_t sext12(uint32_t v) { return (int16_t)((int16_t)(v << 4) >> 4); }
+
+void source_packed12_to_q11(const uint8_t *in, int16_t *out, size_t nsamples)
+{
+    for (size_t n = 0; n + 4 <= nsamples; n += 4, in += 12, out += 8) {
+        uint32_t w[3];
+        for (int k = 0; k < 3; k++)
+            w[k] = (uint32_t)in[4 * k] | (uint32_t)in[4 * k + 1] << 8 | (uint32_t)in[4 * k + 2] << 16 |
+                   (uint32_t)in[4 * k + 3] << 24;
+        out[0] = sext12(w[0]);
+        out[1] = sext12(w[0] >> 12);
+        out[2] = sext12((w[0] >> 24) | (w[1] << 8));
+        out[3] = sext12(w[1] >> 4);
+        out[4] = sext12(w[1] >> 16);
+        out[5] = sext12((w[1] >> 28) | (w[2] << 4));
+        out[6] = sext12(w[2] >> 8);
+        out[7] = sext12(w[2] >> 20);
+    }
+}
+
+rxfmt_t source_format_request(const source_t *s) { return s->fmt_req; }
+rxfmt_t source_format_effective(const source_t *s) { return s->dev ? s->fmt_eff : RXFMT_SC16; }
+int source_sc8g_shift(const source_t *s) { return (int)atomic_load(&s->g8_shift); }
+
+bool source_has_timestamps(const source_t *s)
+{
+    if (!s->dev)
+        return true;
+    return s->oversample ? s->fmt_eff != RXFMT_SC8G : s->fmt_eff == RXFMT_SC16;
+}
+
+/* Fija fmt_eff según el formato pedido, la tasa y el enlace. En oversample (> 61,44 Msps) libbladeRF ya usa
+ * SC8: ahí fmt_eff solo es SC8G si se pidió y la FPGA lo ofrece; si no, SC16 significa «SC8 de serie». */
+static void resolve_format(source_t *s)
+{
+    rxfmt_t e;
+    if (s->need_meta && !s->oversample)
+        e = RXFMT_SC16;
+    else if (s->oversample)
+        e = (s->fmt_req == RXFMT_SC8G && s->info.fmt_sc8g) ? RXFMT_SC8G : RXFMT_SC16;
+    else
+        e = source_choose_format(s->fmt_req, s->rate, s->info.usb_speed, s->info.fmt_packed12, s->info.fmt_sc8g);
+    if (e != s->fmt_eff)
+        LOG_I("Formato de RX: %s (pedido %s, %.2f Msps, USB %d)", rxfmt_name(e), rxfmt_name(s->fmt_req),
+              s->rate / 1e6, s->info.usb_speed);
+    s->fmt_eff = e;
+}
+
+/* Escribe GAIN8 si cambió (y si la FPGA lo tiene). */
+static void sync_gain8(source_t *s, int shift)
+{
+    if (!fpga_lab_has_gain8(&s->lab) || s->g8_hw == shift)
+        return;
+    if (fpga_lab_gain8_set(&s->lab, (unsigned)shift) == 0)
+        s->g8_hw = shift;
+}
+
 static int bladerf_stream_config(source_t *s)
 {
     /* Formato: Q11 de 16 bit normalmente; en oversample libbladeRF solo admite 8 bit.
      * Con "META" cada lectura devuelve la marca de tiempo (necesaria para el barrido). */
     bladerf_format fmt = s->oversample ? BLADERF_FORMAT_SC8_Q7_META : BLADERF_FORMAT_SC16_Q11_META;
+    /* sc8g y packed12 no admiten metadatos (packed12 por limitación de libbladeRF; sc8g porque la ganancia y
+     * el desempaquetado se hacen aquí): sin marca de tiempo del FPGA ni aviso de overrun. */
+    if (s->fmt_eff == RXFMT_SC8G)
+        fmt = BLADERF_FORMAT_SC8_Q7;
+    else if (s->fmt_eff == RXFMT_PACKED12 && !s->oversample)
+        fmt = BLADERF_FORMAT_SC16_Q11_PACKED;
     unsigned nbuf = SYNC_BUFFERS, len = SYNC_BUFLEN, xfers = SYNC_XFERS;
     unsigned tmo = s->rx_timeout_ms ? s->rx_timeout_ms : SYNC_TIMEOUT_MS;
     if (s->spec_stream) {
@@ -256,11 +430,26 @@ static int bladerf_stream_config(source_t *s)
         len = 65536;
         xfers = 32;
     }
+    /* GAIN8 se escribe ANTES de habilitar RX y solo actúa en modo de 8 bit: fuera de sc8g se deja a 0 para que
+     * el oversample de serie (SC8 puro) no se vea afectado por un valor residual. */
+    sync_gain8(s, s->fmt_eff == RXFMT_SC8G ? (int)atomic_load(&s->g8_shift) : 0);
     int st = bladerf_sync_config(s->dev, BLADERF_RX_X1, fmt, nbuf, len, xfers, tmo);
+    if (st < 0 && fmt == BLADERF_FORMAT_SC16_Q11_PACKED) {
+        /* Biblioteca antigua sin SC16_Q11_PACKED: se desactiva y se vuelve a SC16 */
+        LOG_W("packed12 no disponible en esta libbladeRF (%s): vuelvo a sc16", bladerf_strerror(st));
+        s->info.fmt_packed12 = false;
+        s->fmt_eff = RXFMT_SC16;
+        return bladerf_stream_config(s);
+    }
     if (st < 0) {
         SETERR(s, "sync_config: %s", bladerf_strerror(st));
         return st;
     }
+    s->rx_count = 0;
+    s->sat8_n0 = 0;
+    s->sat8_c0 = 0;
+    if (s->fmt_eff == RXFMT_SC8G)
+        fpga_lab_read_sat8(&s->lab, &s->sat8_c0);
     st = bladerf_enable_module(s->dev, RX0, true);
     if (st < 0)
         SETERR(s, "enable_module: %s", bladerf_strerror(st));
@@ -401,6 +590,102 @@ int source_set_frequency(source_t *s, int64_t hz)
     return 0;
 }
 
+/* Re-resuelve el formato y, si hay flujo, lo reconfigura (llamar con el lector en pausa). */
+static int reapply_format(source_t *s)
+{
+    const bool was = s->streaming;
+    const rxfmt_t before = s->fmt_eff;
+    resolve_format(s);
+    if (!was || before == s->fmt_eff)
+        return 0;
+    bladerf_enable_module(s->dev, RX0, false);
+    return bladerf_stream_config(s);
+}
+
+int source_require_timestamps(source_t *s, bool on)
+{
+    if (!s->dev)
+        return 0;
+    s->need_meta = on;
+    return reapply_format(s);
+}
+
+int source_set_format(source_t *s, rxfmt_t req)
+{
+    if (!s->dev) {
+        SETERR(s, "el formato de RX no aplica con un fichero");
+        return -1;
+    }
+    if (req == RXFMT_PACKED12 && !s->info.fmt_packed12) {
+        SETERR(s, "packed12 exige FPGA >= 0.16 y una libbladeRF con SC16_Q11_PACKED");
+        return -1;
+    }
+    if (req == RXFMT_SC8G && !s->info.fmt_sc8g) {
+        SETERR(s, "sc8g exige la imagen lab >= 1.3 (FPGA 0.16.103) cargada en la placa");
+        return -1;
+    }
+    s->fmt_req = req;
+    return reapply_format(s);
+}
+
+int source_set_sc8g_shift(source_t *s, int shift)
+{
+    if (shift < -1 || shift > 3) {
+        SETERR(s, "desplazamiento GAIN8: use -1 (automático) o 0..3");
+        return -1;
+    }
+    s->g8_cfg = shift;
+    if (shift >= 0) {
+        atomic_store(&s->g8_shift, (unsigned)shift);
+        if (s->dev && s->fmt_eff == RXFMT_SC8G)
+            sync_gain8(s, shift);
+    }
+    return 0;
+}
+
+/* Sondeo de CNT_SAT8 (+ ajuste automático). El cambio de GAIN8 y el de la conversión no son simultáneos: las
+ * muestras que ya estaban en vuelo por el USB (hasta unas decenas de ms) se convierten con el valor nuevo y
+ * salen mal escaladas una vez; se descarta el pico de ese intervalo. */
+bool source_sc8g_poll(source_t *s, double *sat_pct, int *shift)
+{
+    if (!s->dev || s->fmt_eff != RXFMT_SC8G)
+        return false;
+    uint32_t c;
+    if (fpga_lab_read_sat8(&s->lab, &c) < 0)
+        return false;
+    const uint64_t n = atomic_load(&s->rx_count);
+    const uint64_t dn = n - s->sat8_n0;
+    if (dn == 0)
+        return false;
+    const double pct = 100.0 * (double)(uint32_t)(c - s->sat8_c0) / (double)dn;
+    s->sat8_n0 = n;
+    s->sat8_c0 = c;
+    const unsigned peak = atomic_exchange(&s->g8_peak, 0);
+    unsigned cur = atomic_load(&s->g8_shift);
+    if (s->g8_cfg < 0) {
+        unsigned nx = sc8g_auto_shift(cur, pct, (int)peak);
+        if (nx > cur) {
+            if (++s->g8_calm < 2) /* histéresis: subir solo tras dos intervalos seguidos pidiéndolo */
+                nx = cur;
+            else
+                s->g8_calm = 0;
+        } else {
+            s->g8_calm = 0;
+        }
+        if (nx != cur) {
+            sync_gain8(s, (int)nx);
+            atomic_store(&s->g8_shift, nx);
+            atomic_store(&s->g8_peak, 0);
+            cur = nx;
+        }
+    }
+    if (sat_pct)
+        *sat_pct = pct;
+    if (shift)
+        *shift = (int)cur;
+    return true;
+}
+
 /* Activa/desactiva OVERSAMPLE. Debe hacerse con el flujo parado y seguirse de un
  * set_sample_rate (libbladeRF reescribe entonces los registros del AD9361). */
 static int set_oversample(source_t *s, bool on)
@@ -445,6 +730,7 @@ int source_set_rate(source_t *s, uint32_t rate, uint32_t *actual)
                 *actual = act;
         }
     }
+    resolve_format(s); /* la tasa (o el modo oversample) puede cambiar el formato automático */
     if (was)
         bladerf_stream_config(s);
     return st;
@@ -684,7 +970,9 @@ static int bladerf_read(source_t *s, int16_t *iq, unsigned n, uint64_t *ts, unsi
 {
     unsigned got = 0;
     bool first = true;
-    if (s->oversample && (size_t)n * 2 > s->raw_cap) {
+    const bool raw8 = s->oversample || s->fmt_eff == RXFMT_SC8G; /* llega SC8 y se convierte aquí */
+    const bool meta_on = s->oversample ? s->fmt_eff != RXFMT_SC8G : s->fmt_eff == RXFMT_SC16;
+    if (raw8 && (size_t)n * 2 > s->raw_cap) {
         s->raw = realloc(s->raw, (size_t)n * 2);
         if (!s->raw) {
             s->raw_cap = 0;
@@ -699,21 +987,28 @@ static int bladerf_read(source_t *s, int16_t *iq, unsigned n, uint64_t *ts, unsi
         meta.flags = UINT32_C(1) << 31; /* = BLADERF_META_FLAG_RX_NOW; la macro (1 << 31) es UB con int */
         /* En oversample se lee SC8 al búfer auxiliar y se convierte; si no, se
          * lee directamente a iq. (void*: la API es la misma para ambos formatos.) */
-        void *dst = s->oversample ? (void *)(s->raw + 2 * (size_t)got) : (void *)(iq + 2 * (size_t)got);
+        void *dst = raw8 ? (void *)(s->raw + 2 * (size_t)got) : (void *)(iq + 2 * (size_t)got);
         int st = bladerf_sync_rx(s->dev, dst, n - got, &meta, s->rx_timeout_ms ? s->rx_timeout_ms : SYNC_TIMEOUT_MS);
         if (st < 0) {
             SETERR(s, "sync_rx: %s", bladerf_strerror(st));
             return st;
         }
-        if ((meta.status & BLADERF_META_STATUS_OVERRUN) && overruns)
+        if (meta_on && (meta.status & BLADERF_META_STATUS_OVERRUN) && overruns)
             (*overruns)++;
         if (first && ts)
-            *ts = meta.timestamp;
+            *ts = meta_on ? meta.timestamp : s->rx_count; /* sin metadatos: cuenta propia */
         first = false;
         got += meta.actual_count ? meta.actual_count : (n - got);
     }
-    if (s->oversample)
+    s->rx_count += n;
+    if (s->fmt_eff == RXFMT_SC8G) {
+        const unsigned sh = atomic_load(&s->g8_shift);
+        const unsigned pk = (unsigned)source_sc8g_to_q11((const int8_t *)s->raw, iq, 2 * (size_t)n, sh);
+        if (pk > atomic_load(&s->g8_peak))
+            atomic_store(&s->g8_peak, pk);
+    } else if (s->oversample) {
         source_sc8_to_q11((const int8_t *)s->raw, iq, 2 * (size_t)n);
+    }
     return 0;
 }
 
@@ -804,6 +1099,11 @@ int source_tx_configure(source_t *s, int64_t freq_hz, uint32_t rate, int gain_db
     }
     if (s->oversample) {
         SETERR(s, "la transmisión no está disponible mientras el modo oversample (> 61,44 Msps) esté activo");
+        return -1;
+    }
+    if (s->fmt_eff != RXFMT_SC16) {
+        /* sync_config de TX reescribe config_gpio (bits de 8 bit y empaquetado) y rompería el flujo de RX */
+        SETERR(s, "la transmisión no está disponible con el formato de RX %s: use format=sc16", rxfmt_name(s->fmt_eff));
         return -1;
     }
     int st = bladerf_set_loopback(s->dev, rfic_loopback ? BLADERF_LB_RFIC_BIST : BLADERF_LB_NONE);

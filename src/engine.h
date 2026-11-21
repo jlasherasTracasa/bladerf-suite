@@ -47,6 +47,9 @@ typedef struct {
     bool loc_valid;
     double lat, lon;
     float det_snr;         /* umbral del detector de señales (dB) */
+    rxfmt_t format;        /* formato de RX por el USB (source.h); 0 = auto */
+    bool sc8g_manual;      /* true: sc8g_shift fijo; false: automático */
+    int sc8g_shift;        /* 0..3 (solo con sc8g_manual) */
 } engine_cfg_t;
 
 /* Campos de engine_cfg_t que se quieren cambiar */
@@ -59,6 +62,7 @@ enum {
     CFG_FFT = 1 << 5,
     CFG_LOC = 1 << 6,
     CFG_DET = 1 << 7,
+    CFG_FORMAT = 1 << 8,   /* format, sc8g_manual, sc8g_shift (no entra en CFG_ALL: el primer apply usa el automático) */
     CFG_ALL = 0xFF,
 };
 

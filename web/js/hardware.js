@@ -32,9 +32,57 @@ function renderSpectrumSrc(st) {
     : '';
 }
 
+// Formato de las muestras por el USB (status.device.formats, format_req, format_note, sc8g). Los controles se
+// crean aquí (no están en index.html): selector de formato junto a la tasa y, con sc8g, la ganancia digital
+// GAIN8 (automática o 0..3 = +0/6/12/18 dB) con el % de muestras recortadas (CNT_SAT8 de la imagen lab 1.3).
+const FMT_LABELS = {
+  auto: 'Automático (según el USB)', sc16: 'SC16 (16 bit, con marcas de tiempo)',
+  packed12: 'packed12 (12 bit, +33 % de tasa)', sc8g: 'sc8g (8 bit + ganancia digital, +100 %)',
+};
+function ensureFormatUI() {
+  if ($('#hw-fmt')) return;
+  const rate = $('#hw-rate')?.closest('label');
+  if (!rate) return;
+  const sel = h('select', { id: 'hw-fmt' });
+  const lab = h('label', { id: 'hw-fmt-l', text: 'Formato USB' }, sel);
+  rate.after(lab);
+  const shift = h('select', { id: 'hw-g8' }, ...[['-1', 'Automática'], ['0', '0 dB (×1)'], ['1', '+6 dB (×2)'], ['2', '+12 dB (×4)'], ['3', '+18 dB (×8)']].map(([v, t]) => h('option', { value: v, text: t })));
+  const lab2 = h('label', { id: 'hw-g8-l', hidden: true, text: 'Ganancia digital sc8g' }, shift);
+  lab.after(lab2);
+  const note = h('p', { id: 'hw-fmt-note', class: 'muted', hidden: true });
+  const ovs = $('#hw-ovs-note');
+  (ovs || rate.parentElement).after(note);
+  sel.addEventListener('change', (e) => cfg({ format: e.target.value }));
+  shift.addEventListener('change', (e) => cfg({ sc8g_shift: +e.target.value }));
+}
+
+function renderFormat(st) {
+  ensureFormatUI();
+  const sel = $('#hw-fmt'); if (!sel) return;
+  const d = st.device, file = d.kind === 'file', list = d.formats || ['auto', 'sc16'];
+  $('#hw-fmt-l').hidden = file;
+  if (file) { $('#hw-g8-l').hidden = true; $('#hw-fmt-note').hidden = true; return; }
+  const sig = list.join();
+  if (sel.dataset.sig !== sig) {
+    sel.dataset.sig = sig;
+    fillSelect(sel, list.map((f) => [f, FMT_LABELS[f] || f]), st.format_req || 'auto');
+  }
+  if (!editing(sel)) sel.value = st.format_req || 'auto';
+  const g = st.sc8g;
+  $('#hw-g8-l').hidden = !list.includes('sc8g');
+  if (g && !editing($('#hw-g8'))) $('#hw-g8').value = g.manual ? String(g.shift) : '-1';
+  const parts = [];
+  if (st.format_note) parts.push(st.format_note);
+  if (g) parts.push(`Ganancia digital ${g.gain_db} dB (×${1 << g.shift}); recortes: ${g.sat_pct.toFixed(g.sat_pct < 0.1 ? 3 : 1)} % de las muestras${g.sat_pct > 0.5 ? ' — demasiados, baja la ganancia digital' : ''}.`);
+  const note = $('#hw-fmt-note');
+  note.hidden = !parts.length;
+  note.textContent = parts.join(' ');
+}
+
 function renderStatus(st) {
   const d = st.device;
   fillRates(st);
+  renderFormat(st);
   if (!editing($('#hw-center'))) $('#hw-center').value = fmtHz(st.center, 6);
   if (!editing($('#hw-rate'))) $('#hw-rate').value = st.rate;
   // Con fuente de fichero no hay filtro analógico que mostrar: se indica en vez de un guion
@@ -66,6 +114,8 @@ function renderStatus(st) {
     ['Frecuencia', `${fmtHz(d.freq_min)} – ${fmtHz(d.freq_max)}`], ['Tasa', `${fmtHz(d.rate_min)} – ${fmtHz(d.rate_max)}`],
     ['Ancho RF', `${fmtHz(d.bw_min)} – ${fmtHz(d.bw_max)}`], ['Ganancia', `${d.gain_min} – ${d.gain_max} dB`],
     ['Formato de muestras', st.format ? `${st.format}${st.oversample ? ' (oversample)' : ''}` : '—'],
+    ['Enlace USB', d.usb_speed ? `USB ${d.usb_speed >= 3 ? '3 (SuperSpeed)' : '2 (Hi-Speed)'}` : '—'],
+    ['Recortes sc8g', st.sc8g ? `${st.sc8g.sat_pct.toFixed(3)} % (ganancia ${st.sc8g.gain_db} dB)` : '—'],
     ['Tasa máx. con oversample', d.rate_max_oversample ? fmtHz(d.rate_max_oversample) : 'no disponible'],
     ['Nivel en dBm', st.dbm_offset != null ? `sí (offset ${st.dbm_offset} dB)` : 'no (sin calibración de ganancia)'],
     ['Motor FFT', st.stats?.backend ?? '—'], ['Versión', `${st.app} ${st.version}`],

@@ -56,7 +56,60 @@ typedef struct {
     bool has_biastee;
     bool can_tx;
     bool gain_cal;        /* hay tabla de calibración de ganancia cargada (dBm) */
+    int usb_speed;        /* 2 = Hi-Speed (USB 2), 3 = SuperSpeed (USB 3), 0 = desconocido o fichero */
+    bool fmt_packed12;    /* libbladeRF/FPGA admiten SC16_Q11_PACKED (imagen de serie >= 0.16) */
+    bool fmt_sc8g;        /* imagen lab >= 1.3 con CAPS bit 8: SC8 con ganancia digital (GAIN8) */
 } source_info_t;
+
+typedef struct source source_t;
+
+/* ---- Formato de RX por el USB (F11c) ----
+ * El motor siempre recibe Q11 int16; esto solo cambia lo que viaja por el USB.
+ *   sc16      SC16_Q11 con metadatos (4 B/muestra): el de siempre; da marca de tiempo y detecta pérdidas.
+ *   packed12  SC16_Q11_PACKED (3 B/muestra, sin pérdida de bits): +33 % de tasa. libbladeRF lo desempaqueta en
+ *             bladerf_sync_rx. Sin metadatos: no hay marca de tiempo (source_read_ts la sintetiza contando) ni
+ *             aviso de overrun, y no sirve para el barrido (retune programado) ni coexiste con TX.
+ *   sc8g      SC8_Q7 (2 B/muestra) con la ganancia digital 2^s de la lab 1.3 (GAIN8): +100 % de tasa a costa de
+ *             resolución (8 bit; la ganancia recupera rango dinámico con señales débiles). Mismas limitaciones.
+ *   auto      sc16 mientras el enlace lo sostiene; si no, packed12 y luego sc8g (source_choose_format). */
+typedef enum { RXFMT_AUTO = 0, RXFMT_SC16 = 1, RXFMT_PACKED12 = 2, RXFMT_SC8G = 3 } rxfmt_t;
+const char *rxfmt_name(rxfmt_t f);                 /* "auto", "sc16", "packed12", "sc8g" */
+bool rxfmt_parse(const char *s, rxfmt_t *f);
+/* Bytes/s que sostiene el enlace USB en la práctica (Hi-Speed ≈ 45 MB/s medidos; SuperSpeed y desconocido
+ * ≈ 360 MB/s, sobrado para SC16 a 61,44 Msps). */
+double source_usb_capacity(int usb_speed);
+/* Formato concreto (nunca AUTO) para 'req' a 'rate' Msps. Con req explícito devuelve req si está disponible
+ * (si no, el mejor disponible); con AUTO elige el primero de sc16, packed12, sc8g cuyo caudal cabe en el enlace
+ * (rate·bytes <= capacidad) y, si ninguno cabe, el de menos bytes disponible. */
+rxfmt_t source_choose_format(rxfmt_t req, uint32_t rate, int usb_speed, bool packed_ok, bool sc8g_ok);
+/* Elección automática del desplazamiento GAIN8 a partir de la medición de un intervalo: 'sat_pct' = % de
+ * muestras recortadas, 'peak' = máximo |valor| de las muestras ya amplificadas (0..128). Baja un paso con
+ * cualquier recorte apreciable (> 0,01 %) y sube uno si el pico, doblado, sigue sin llegar a 112/128. */
+unsigned sc8g_auto_shift(unsigned cur, double sat_pct, int peak);
+/* SC8_Q7 con ganancia 2^shift (0..3) → Q11, deshaciéndola (redondeo al más próximo: la FPGA trunca):
+ * out = ((in·16 + 8) + 2^(shift-1)) >> shift. Devuelve el pico |in| (0..128). n_values = 2·muestras. */
+int source_sc8g_to_q11(const int8_t *in, int16_t *out, size_t n_values, unsigned shift);
+/* SC16_Q11_PACKED → Q11: 4 muestras IQ (12 B) → 8 int16; nsamples múltiplo de 4. Misma aritmética que el
+ * desempaquetado de libbladeRF (sync.c); en producción lo hace la propia biblioteca: esta copia sirve de
+ * referencia y de prueba (tests/test_source.c). */
+void source_packed12_to_q11(const uint8_t *in, int16_t *out, size_t nsamples);
+
+/* Elige el formato (RXFMT_AUTO por defecto). Con fichero: devuelve < 0 («no aplica»). Un formato no disponible
+ * en este equipo da < 0 con el texto en source_error(). Si hay flujo en marcha se reconfigura. Llamar con el
+ * lector en pausa (como source_set_rate). */
+int source_set_format(source_t *s, rxfmt_t req);
+rxfmt_t source_format_request(const source_t *s);
+rxfmt_t source_format_effective(const source_t *s); /* RXFMT_SC16 con fichero */
+/* Desplazamiento GAIN8: shift 0..3 fijo, o -1 = automático (por defecto). */
+int source_set_sc8g_shift(source_t *s, int shift);
+int source_sc8g_shift(const source_t *s);
+/* Telemetría de sc8g (llamar ~1 Hz desde un solo hilo): lee CNT_SAT8, calcula el % de recortes de los últimos
+ * segundos y, en modo automático, ajusta el desplazamiento. false si el formato efectivo no es sc8g. */
+bool source_sc8g_poll(source_t *s, double *sat_pct, int *shift);
+/* El barrido necesita metadatos (retune programado): con on = true fuerza sc16 mientras dure. */
+int source_require_timestamps(source_t *s, bool on);
+/* true si la lectura entrega marcas de tiempo reales (sc16 con metadatos, u oversample SC8 con metadatos). */
+bool source_has_timestamps(const source_t *s);
 
 typedef struct source source_t;
 

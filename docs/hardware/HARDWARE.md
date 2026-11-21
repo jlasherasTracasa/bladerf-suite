@@ -168,6 +168,32 @@ frente al tamaño real de la cola del Nios, y la velocidad (objetivo: un barrido
 ritmo real. `tests/test_source.c` lo verifica (incluida la vuelta del bucle cuando un
 bloque da varias vueltas al fichero).
 
+## 5b. Formatos de RX de más caudal (F11c: `packed12`, `sc8g`)
+
+El USB 2 de la placa sostiene ≈ 45 MB/s: 11,25 Msps en SC16 (4 B/muestra). Dos formatos más estrechos, ambos
+convertidos a Q11 `int16` en `src/sdr/source.c` (el resto del programa no cambia):
+
+* **`packed12`** — `BLADERF_FORMAT_SC16_Q11_PACKED` de libbladeRF ≥ 2.6 (cabecera instalada en
+  `/usr/local/include`; la de `/usr/include` es anterior y no lo trae; si la biblioteca en ejecución no lo
+  acepta, el motor vuelve a sc16 con un aviso). La FPGA de serie ≥ 0.16 activa el bit 21 de `config_gpio`
+  (`BLADERF_GPIO_HIGHLY_PACKED_MODE`) y `bladerf_sync_rx` desempaqueta 4 muestras (12 B) en 8 `int16`, sin
+  pérdida de bits: 3 B/muestra → 15 Msps en USB 2. Exige buffers múltiplo de 4096 muestras y **no admite
+  metadatos**.
+* **`sc8g`** — `BLADERF_FORMAT_SC8_Q7` con la ganancia digital 2^s de la lab 1.3 (registro 23 `GAIN8`, bits
+  [1:0]) y el contador de recortes `CNT_SAT8` (24); exige `VERSION ≥ 1.3` y CAPS bit 8. Se convierte con
+  `v12 = ((b·16 + 8 + 2^(s-1)) >> s)` (deshace la ganancia, +½ LSB porque la FPGA trunca). 2 B/muestra →
+  22,5 Msps. `GAIN8` se escribe antes de habilitar RX; en `auto` el motor lee `CNT_SAT8` y el pico cada ~1 s
+  (`source_sc8g_poll`): baja un paso con recortes > 0,01 % y sube uno si el pico doblado sigue < 112/128 durante
+  dos intervalos. Al cambiar `GAIN8` las muestras ya en vuelo por el USB (decenas de ms) se convierten con el
+  valor nuevo: un glitch puntual. Fuera de sc8g se deja `GAIN8` = 0 (persiste ante reset).
+
+**Degradación sin metadatos** (ambos): `source_read_ts` entrega una cuenta propia de muestras en vez de la marca
+de tiempo del FPGA, no se detectan overruns (`stats.overruns` no sube; mirar `ring_ms`/`drops`), el barrido
+(retune programado) fuerza sc16 mientras dura, y la transmisión se rechaza mientras RX use otro formato (el
+`sync_config` de TX reescribe `config_gpio` y rompería el flujo). `config.format = "auto"` (por defecto) decide
+por tasa y enlace (`source_choose_format`); ver `docs/arquitectura/WEBSOCKET.md`. Pruebas sin placa:
+`tests/test_source.c` (modelo bit a bit de ambas conversiones, elección por tasa/USB, registros simulados).
+
 ## 6. Pendiente con el equipo libre (solo RX)
 
 1. 122,88 Msps: overruns y `meas_rate` reales; comprobar el issue #940.

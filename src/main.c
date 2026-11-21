@@ -330,6 +330,18 @@ static void cmd_config(app_t *a, const char *js, const jtok_t *t)
     if (num_chk(a, -1, "config", js, t, "fft", 0, 1.04858e+06, &v) > 0) { c.fft_size = (int)v; f |= CFG_FFT; }
     if (num_chk(a, -1, "config", js, t, "fps", 0, 1000, &v) > 0) { c.fps = (int)v; f |= CFG_FFT; }
     if (num_chk(a, -1, "config", js, t, "det_snr", -100, 200, &v) > 0) { c.det_snr = (float)v; f |= CFG_DET; }
+    /* Formato de RX por el USB: "auto" | "sc16" | "packed12" | "sc8g"; sc8g_shift = -1 (auto) | 0..3 (GAIN8) */
+    if (get_str(js, t, "format", s, sizeof s)) {
+        if (rxfmt_parse(s, &c.format))
+            f |= CFG_FORMAT;
+        else
+            send_error(a, -1, "format: use auto, sc16, packed12 o sc8g");
+    }
+    if (num_chk(a, -1, "config", js, t, "sc8g_shift", -1, 3, &v) > 0) {
+        c.sc8g_manual = v >= 0;
+        c.sc8g_shift = v >= 0 ? (int)v : 0;
+        f |= CFG_FORMAT;
+    }
     /* Fuente del espectro: "cpu" | "gpu" | "fpga" (imagen lab). Se aplica en el motor tras el resto de campos. */
     char ssrc[16];
     bool has_ssrc = get_str(js, t, "spectrum_src", ssrc, sizeof ssrc);

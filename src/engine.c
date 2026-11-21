@@ -101,6 +101,9 @@ struct engine {
     fpga_lab_telem_t fpga_tel; /* telemetría lab >= 1.2 (publicada bajo e->lock) */
     bool fpga_tel_ok;
     uint64_t fpga_time;        /* marca de tiempo de 64 bit de la FPGA (0 si no hay) */
+    double sat8_t;             /* último sondeo de CNT_SAT8 (monotónico) */
+    double sat8_pct;           /* % de muestras SC8 recortadas por GAIN8 en el último intervalo */
+    int sc8g_shift;            /* desplazamiento GAIN8 en uso (-1 = sin dato) */
     double fpga_t_tel;         /* última lectura de telemetría (monotónico) */
     uint64_t fpga_frames, fpga_gaps; /* publicados en "status" (copia de las estadísticas del parser) */
     char spec_backend[160];
@@ -846,7 +849,7 @@ static void apply_config(engine_t *e, bool first)
     /* Todo lo que toca la fuente o cambia la tasa: lector en pausa (así nadie
      * llama a libbladeRF a la vez que sync_rx) y, al acabar, se tira lo que
      * hubiera en el anillo: son muestras de la sintonía/tasa anteriores. */
-    const unsigned touch = CFG_RATE | CFG_CENTER | CFG_RFBW | CFG_GAIN | CFG_BIASTEE;
+    const unsigned touch = CFG_RATE | CFG_CENTER | CFG_RFBW | CFG_GAIN | CFG_BIASTEE | CFG_FORMAT;
     const bool paused = !first && (d & touch) && e->rd_started;
     if (paused)
         reader_pause(e);
@@ -855,6 +858,19 @@ static void apply_config(engine_t *e, bool first)
     const source_info_t *in = source_info(e->src);
     char err[300] = "";
 
+    if (d & CFG_FORMAT) {
+        /* Antes que la tasa: set_rate re-evalúa el formato automático con el nuevo valor */
+        if (e->sw || e->fpga_active) {
+            snprintf(err, sizeof err, "No se puede cambiar el formato de RX durante un barrido o con el espectro FPGA");
+        } else if (source_set_format(e->src, w.format) < 0) {
+            snprintf(err, sizeof err, "Formato de RX: %s", source_error(e->src));
+        } else {
+            a.format = w.format;
+            source_set_sc8g_shift(e->src, w.sc8g_manual ? w.sc8g_shift : -1);
+            a.sc8g_manual = w.sc8g_manual;
+            a.sc8g_shift = w.sc8g_shift;
+        }
+    }
     if (d & CFG_RATE) {
         uint32_t act = w.rate;
         if (source_set_rate(e->src, w.rate, &act) < 0)
@@ -924,7 +940,7 @@ static void apply_config(engine_t *e, bool first)
         }
     }
     if (paused)
-        reader_resume(e, (d & (CFG_RATE | CFG_CENTER)) != 0);
+        reader_resume(e, (d & (CFG_RATE | CFG_CENTER | CFG_FORMAT)) != 0);
     pthread_mutex_lock(&e->lock);
     e->cfg = a;
     /* Los canales deben conocer la nueva tasa/centro */
@@ -977,6 +993,7 @@ static void sweep_end(engine_t *e)
 {
     sweep_destroy(e->sw); /* cancela los retunes pendientes y para el flujo */
     e->sw = NULL;
+    source_require_timestamps(e->src, false);
     /* El barrido lee la fuente él mismo: el lector sigue en pausa hasta aquí */
     pthread_mutex_lock(&e->lock);
     e->sweep_active = false;
@@ -1004,10 +1021,12 @@ static void sweep_begin(engine_t *e, const sweep_cfg_t *req)
     pthread_mutex_unlock(&e->lock);
     source_set_gain(e->src, GAIN_MANUAL, g);
 
+    source_require_timestamps(e->src, true); /* el retune programado exige metadatos: sc16 mientras dure */
     sweep_io_t io = sweep_io_source(e->src);
     char err[300] = "";
     e->sw = sweep_create(req, &io, err, sizeof err);
     if (!e->sw) {
+        source_require_timestamps(e->src, false);
         LOG_W("%s", err);
         send_error(e, -1, err);
         pthread_mutex_lock(&e->lock);
@@ -1152,6 +1171,18 @@ static void send_recording(engine_t *e, int client)
 
 static void periodic(engine_t *e, double now, double *t_sig, double *t_status, uint64_t *samples, double *t_rate)
 {
+    /* sc8g: CNT_SAT8 y ajuste automático de GAIN8 (~1 Hz; cada lectura es una transferencia de control USB) */
+    if (now - e->sat8_t >= 1.0) {
+        e->sat8_t = now;
+        double pct = 0;
+        int sh = 0;
+        const bool ok = source_sc8g_poll(e->src, &pct, &sh);
+        pthread_mutex_lock(&e->lock);
+        e->sc8g_shift = ok ? sh : -1;
+        if (ok)
+            e->sat8_pct = pct;
+        pthread_mutex_unlock(&e->lock);
+    }
     if (now - *t_sig >= 0.5) {
         *t_sig = now;
         det_signal_t tmp[MAX_SIGNALS];
@@ -1660,8 +1691,34 @@ void engine_request(engine_t *e, const engine_cfg_t *w, unsigned fields)
     if (fields & CFG_FFT) { e->want.fft_size = c.fft_size; e->want.fps = c.fps; }
     if (fields & CFG_LOC) { e->want.loc_valid = c.loc_valid; e->want.lat = c.lat; e->want.lon = c.lon; }
     if (fields & CFG_DET) e->want.det_snr = c.det_snr;
+    if (fields & CFG_FORMAT) { e->want.format = c.format; e->want.sc8g_manual = c.sc8g_manual; e->want.sc8g_shift = c.sc8g_shift; }
     e->dirty |= fields;
     pthread_mutex_unlock(&e->lock);
+}
+
+
+/* Campos de formato de RX para "status": lo pedido, el aviso (por qué el automático eligió otro formato y
+ * qué se pierde) y, con sc8g, el desplazamiento GAIN8 y el % de recortes (CNT_SAT8). Bajo e->lock. */
+static void format_status_json(engine_t *e, sb_t *sb)
+{
+    const source_info_t *in = source_info(e->src);
+    const rxfmt_t req = e->cfg.format, eff = source_format_effective(e->src);
+    sb_printf(sb, ",\"format_req\":\"%s\"", rxfmt_name(req));
+    if (strcmp(in->kind, "bladerf") != 0 || source_oversample(e->src) || eff == RXFMT_SC16) {
+        sb_puts(sb, ",\"format_note\":null");
+    } else {
+        const int bytes = eff == RXFMT_PACKED12 ? 3 : 2;
+        sb_printf(sb, ",\"format_note\":\"%s%s a %.2f Msps (%d B/muestra; USB %s, sc16 sostiene %.1f Msps). Sin marca de "
+                      "tiempo ni aviso de pérdidas, sin barrido ni TX.\"",
+                  req == RXFMT_AUTO ? "Formato automático: " : "Formato: ", rxfmt_name(eff), e->cfg.rate / 1e6, bytes,
+                  in->usb_speed == 2 ? "2" : in->usb_speed == 3 ? "3" : "?",
+                  source_usb_capacity(in->usb_speed) / 4e6);
+    }
+    if (eff == RXFMT_SC8G && e->sc8g_shift >= 0)
+        sb_printf(sb, ",\"sc8g\":{\"shift\":%d,\"gain_db\":%d,\"manual\":%s,\"sat_pct\":%.4f}", e->sc8g_shift,
+                  6 * e->sc8g_shift, e->cfg.sc8g_manual ? "true" : "false", e->sat8_pct);
+    else
+        sb_puts(sb, ",\"sc8g\":null");
 }
 
 static void abs_deadline(struct timespec *ts, double s)
@@ -1842,13 +1899,20 @@ void engine_status_json(engine_t *e, sb_t *sb)
         sb_puts(sb, ",\"rate_max_oversample\":null");
     sb_printf(sb, ",\"bw_min\":%u,\"bw_max\":%u,\"gain_min\":%d,\"gain_max\":%d", in->bw_min, in->bw_max,
               in->gain_min, in->gain_max);
-    sb_printf(sb, ",\"can_tune\":%s,\"biastee\":%s,\"can_tx\":%s}", in->can_tune ? "true" : "false",
+    sb_printf(sb, ",\"can_tune\":%s,\"biastee\":%s,\"can_tx\":%s", in->can_tune ? "true" : "false",
               in->has_biastee ? "true" : "false", in->can_tx ? "true" : "false");
+    if (in->usb_speed)
+        sb_printf(sb, ",\"usb_speed\":%d", in->usb_speed);
+    else
+        sb_puts(sb, ",\"usb_speed\":null");
+    sb_printf(sb, ",\"formats\":[\"auto\",\"sc16\"%s%s]}", in->fmt_packed12 ? ",\"packed12\"" : "",
+              in->fmt_sc8g ? ",\"sc8g\"" : "");
     sb_printf(sb, ",\"center\":%lld,\"rate\":%u,\"rf_bw\":%u,\"gain_mode\":\"%s\",\"gain\":%d,\"gain_now\":%d",
               (long long)c->center_hz, c->rate, c->rf_bw, gain_mode_name(c->gain_mode), c->gain_db, e->gain_now);
     /* Formato de las muestras en el USB/fichero (a las demás partes siempre llegan en Q11 int16) */
     sb_printf(sb, ",\"format\":\"%s\",\"oversample\":%s", source_format(e->src),
               source_oversample(e->src) ? "true" : "false");
+    format_status_json(e, sb);
     /* dBm = dBFS + dbm_offset, solo con tabla de calibración de ganancia de libbladeRF */
     if (e->dbm_valid)
         sb_printf(sb, ",\"dbm_offset\":%.2f", e->dbm_off);

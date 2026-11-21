@@ -54,16 +54,20 @@ enum {
     FPGA_LAB_REG_CAPS = 16, FPGA_LAB_REG_SYNTH = 17, FPGA_LAB_REG_CNT_ADC_SAT = 18,
     FPGA_LAB_REG_SAT_WIN = 19, FPGA_LAB_REG_CNT_SPEC_DROP = 20,
     FPGA_LAB_REG_TIME_LO = 21, FPGA_LAB_REG_TIME_HI = 22,
-    FPGA_LAB_REG_MAX = 22
+    /* Nuevos en lab 1.3 (FPGA 0.16.103, FIRMWARE.md §17): ganancia digital del modo SC8 y su recorte */
+    FPGA_LAB_REG_GAIN8 = 23, FPGA_LAB_REG_CNT_SAT8 = 24,
+    FPGA_LAB_REG_MAX = 24
 };
 
 #define FPGA_LAB_VERSION_1_1 0x00010001u
 #define FPGA_LAB_VERSION_1_2 0x00010002u
+#define FPGA_LAB_VERSION_1_3 0x00010003u
 /* Máscaras de CAPS (registro 16) */
 #define FPGA_LAB_CAP_SPECTRUM (1u << 0)
 #define FPGA_LAB_CAP_ADC_SAT (1u << 1)
 #define FPGA_LAB_CAP_TIMESTAMP (1u << 2)
 #define FPGA_LAB_CAP_SPEC_DROP (1u << 3)
+#define FPGA_LAB_CAP_GAIN8 (1u << 8) /* registros 23 (GAIN8) y 24 (CNT_SAT8) */
 #define FPGA_LAB_SAT_WIN_SAMPLES 65536.0 /* tamaño de la ventana de SAT_WIN */
 
 #define FPGA_SPEC_MAGIC0 0x4C415031u
@@ -134,6 +138,14 @@ int fpga_lab_read_telemetry(const fpga_lab_t *lab, fpga_lab_telem_t *t);
 /* Marca de tiempo de 64 bit (muestras del canal 0 desde la carga de la FPGA): lee TIME_LO y DESPUÉS
  * TIME_HI (la lectura de LO congela HI; en el orden contrario un acarreo daría ±2^32). Solo >= 1.2. */
 int fpga_lab_read_time(const fpga_lab_t *lab, uint64_t *t);
+
+/* Solo lab >= 1.3 con CAPS bit 8. GAIN8 (reg. 23, bits [1:0]): I y Q se multiplican por 2^s (s = 0..3)
+ * antes de tomar los 8 bit altos; solo actúa en SC8. CNT_SAT8 (reg. 24): muestras SC8 recortadas por esa
+ * ganancia desde el último CLEAR (32 bit, da la vuelta: usar diferencias). */
+bool fpga_lab_has_gain8(const fpga_lab_t *lab);
+int fpga_lab_gain8_set(const fpga_lab_t *lab, unsigned shift);
+int fpga_lab_gain8_get(const fpga_lab_t *lab, unsigned *shift);
+int fpga_lab_read_sat8(const fpga_lab_t *lab, uint32_t *cnt);
 
 /* Cambia SOLO K con el flujo en marcha, sin tocar rx_mux ni parar RX (FIRMWARE.md §16.6: el motor se
  * reinicia internamente; se pierde la trama en acumulación y se trunca la que se esté leyendo; el

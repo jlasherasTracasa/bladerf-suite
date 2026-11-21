@@ -144,6 +144,31 @@ int fpga_lab_read_telemetry(const fpga_lab_t *lab, fpga_lab_telem_t *t)
     return 0;
 }
 
+bool fpga_lab_has_gain8(const fpga_lab_t *lab)
+{
+    return lab && lab->present && lab->version >= FPGA_LAB_VERSION_1_3 && (lab->caps & FPGA_LAB_CAP_GAIN8);
+}
+
+int fpga_lab_gain8_set(const fpga_lab_t *lab, unsigned shift)
+{
+    if (!fpga_lab_has_gain8(lab) || shift > 3) return -1;
+    return fpga_lab_reg_write(lab, FPGA_LAB_REG_GAIN8, shift);
+}
+
+int fpga_lab_gain8_get(const fpga_lab_t *lab, unsigned *shift)
+{
+    uint32_t v;
+    if (!fpga_lab_has_gain8(lab) || fpga_lab_reg_read(lab, FPGA_LAB_REG_GAIN8, &v) < 0) return -1;
+    *shift = v & 3u;
+    return 0;
+}
+
+int fpga_lab_read_sat8(const fpga_lab_t *lab, uint32_t *cnt)
+{
+    if (!fpga_lab_has_gain8(lab)) return -1;
+    return fpga_lab_reg_read(lab, FPGA_LAB_REG_CNT_SAT8, cnt);
+}
+
 int fpga_lab_read_time(const fpga_lab_t *lab, uint64_t *t)
 {
     uint32_t lo = 0, hi = 0;

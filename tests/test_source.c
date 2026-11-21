@@ -212,6 +212,219 @@ static void test_sc8(void)
     CHECK_NEAR(pin, pout, 1e-9);
 }
 
+/* ---------------------------------------------------------------------- */
+/*  Formatos de RX por el USB (F11c)                                      */
+/* ---------------------------------------------------------------------- */
+/* Modelo independiente de la FPGA (rx_lab.vhd, gain8_comb + pack_eight_bit_mode): x12 de 12 bit → ×2^s,
+ * saturado a 12 bit con signo → 8 bit altos (desplazamiento aritmético, es decir, truncado). */
+static int8_t fpga_sc8(int x12, unsigned s, int *clipped)
+{
+    int g = x12 * (1 << s);
+    *clipped = g > 2047 || g < -2048;
+    g = g > 2047 ? 2047 : g < -2048 ? -2048 : g;
+    return (int8_t)(g >> 4);
+}
+
+static void test_rxfmt_names_and_choice(void)
+{
+    printf("formatos RX: nombres y elección automática\n");
+    const char *n[] = {"auto", "sc16", "packed12", "sc8g"};
+    for (int i = 0; i < 4; i++) {
+        rxfmt_t f = RXFMT_AUTO;
+        CHECK(rxfmt_parse(n[i], &f));
+        CHECK_EQ(f, i);
+        CHECK(strcmp(rxfmt_name(f), n[i]) == 0);
+    }
+    rxfmt_t f;
+    CHECK(rxfmt_parse("PACKED12", &f) && f == RXFMT_PACKED12);
+    CHECK(!rxfmt_parse("sc8", &f) && !rxfmt_parse(NULL, &f));
+
+    /* USB 2 (45 MB/s): SC16 hasta 11,25 Msps, packed12 hasta 15, sc8g después */
+    CHECK_EQ(source_choose_format(RXFMT_AUTO, 2000000, 2, true, true), RXFMT_SC16);
+    CHECK_EQ(source_choose_format(RXFMT_AUTO, 11250000, 2, true, true), RXFMT_SC16);
+    CHECK_EQ(source_choose_format(RXFMT_AUTO, 11250001, 2, true, true), RXFMT_PACKED12);
+    CHECK_EQ(source_choose_format(RXFMT_AUTO, 15000000, 2, true, true), RXFMT_PACKED12);
+    CHECK_EQ(source_choose_format(RXFMT_AUTO, 15360000, 2, true, true), RXFMT_SC8G);
+    CHECK_EQ(source_choose_format(RXFMT_AUTO, 30720000, 2, true, true), RXFMT_SC8G);
+    /* Sin imagen lab: lo más estrecho disponible es packed12; sin packed12, SC16 */
+    CHECK_EQ(source_choose_format(RXFMT_AUTO, 20000000, 2, true, false), RXFMT_PACKED12);
+    CHECK_EQ(source_choose_format(RXFMT_AUTO, 20000000, 2, false, false), RXFMT_SC16);
+    CHECK_EQ(source_choose_format(RXFMT_AUTO, 20000000, 2, false, true), RXFMT_SC8G);
+    /* USB 3 (o desconocido): SC16 en toda la gama nativa */
+    CHECK_EQ(source_choose_format(RXFMT_AUTO, 61440000, 3, true, true), RXFMT_SC16);
+    CHECK_EQ(source_choose_format(RXFMT_AUTO, 61440000, 0, true, true), RXFMT_SC16);
+    /* Explícito: se respeta si está disponible; si no, el más próximo */
+    CHECK_EQ(source_choose_format(RXFMT_SC16, 30000000, 2, true, true), RXFMT_SC16);
+    CHECK_EQ(source_choose_format(RXFMT_PACKED12, 1000000, 3, true, true), RXFMT_PACKED12);
+    CHECK_EQ(source_choose_format(RXFMT_SC8G, 1000000, 3, true, true), RXFMT_SC8G);
+    CHECK_EQ(source_choose_format(RXFMT_SC8G, 1000000, 3, true, false), RXFMT_PACKED12);
+    CHECK_EQ(source_choose_format(RXFMT_PACKED12, 1000000, 3, false, false), RXFMT_SC16);
+}
+
+static void test_sc8g_conversion(void)
+{
+    printf("conversión SC8 con GAIN8 → Q11 (bit a bit contra el modelo)\n");
+    int8_t in[256];
+    int16_t out[256];
+    for (int i = 0; i < 256; i++)
+        in[i] = (int8_t)(i - 128);
+    for (unsigned sh = 0; sh <= 3; sh++) {
+        int pk = source_sc8g_to_q11(in, out, 256, sh);
+        CHECK_EQ(pk, 128);
+        int bad = 0;
+        for (int i = 0; i < 256; i++) {
+            /* modelo: v = ((b·16 + 8) / 2^s) redondeado al más próximo, con división en coma flotante */
+            double v = floor(((double)in[i] * 16 + 8) / (double)(1u << sh) + 0.5);
+            if (out[i] != (int16_t)v)
+                bad++;
+        }
+        CHECK_EQ(bad, 0);
+    }
+    /* Sin ganancia: ±½ LSB de Q7 respecto a la conversión de serie (×16, sin sesgo) */
+    source_sc8g_to_q11(in, out, 256, 0);
+    for (int i = 0; i < 256; i++)
+        CHECK_EQ(out[i], in[i] * 16 + 8);
+    /* Ida y vuelta con el modelo de la FPGA: entrada de 12 bit sin recorte → error ≤ 8/2^s (+1 por redondeo) */
+    uint32_t r = 12345;
+    for (unsigned sh = 0; sh <= 3; sh++) {
+        long clip = 0, over = 0, n = 20000;
+        for (long k = 0; k < n; k++) {
+            r = r * 1664525u + 1013904223u;
+            int x = (int)((r >> 8) % 4096u) - 2048;
+            int c;
+            int8_t b = fpga_sc8(x, sh, &c);
+            int16_t y;
+            source_sc8g_to_q11(&b, &y, 1, sh);
+            if (c) {
+                clip++;
+                continue;
+            }
+            if (abs(y - x) > (8 >> sh) + 1)
+                over++;
+        }
+        CHECK_EQ(over, 0);
+        CHECK(sh == 0 ? clip == 0 : clip > 0); /* el recorte solo existe con ganancia */
+    }
+    /* El pico se mide sobre el valor ya amplificado */
+    int8_t one[4] = {3, -7, 100, -128};
+    int16_t o4[4];
+    CHECK_EQ(source_sc8g_to_q11(one, o4, 4, 1), 128);
+    one[3] = 5;
+    CHECK_EQ(source_sc8g_to_q11(one, o4, 4, 1), 100);
+}
+
+static void test_packed12(void)
+{
+    printf("conversión SC16_Q11_PACKED → Q11 (bit a bit)\n");
+    enum { NS = 1024 };
+    static int16_t q[2 * NS], got[2 * NS];
+    static uint8_t pk[3 * NS];
+    uint32_t r = 777;
+    for (int i = 0; i < 2 * NS; i++) {
+        r = r * 1664525u + 1013904223u;
+        q[i] = (int16_t)((int)((r >> 8) % 4096u) - 2048);
+    }
+    q[0] = -2048;
+    q[1] = 2047;
+    /* Empaquetador de referencia: flujo de bits LSB primero, componentes I0 Q0 I1 Q1… de 12 bit */
+    memset(pk, 0, sizeof pk);
+    for (int c = 0; c < 2 * NS; c++)
+        for (int b = 0; b < 12; b++)
+            if ((q[c] >> b) & 1)
+                pk[(c * 12 + b) / 8] |= (uint8_t)(1u << ((c * 12 + b) % 8));
+    source_packed12_to_q11(pk, got, NS);
+    CHECK(memcmp(q, got, sizeof q) == 0);
+    /* La misma aritmética con enteros de 16 bit que usa libbladeRF en sync_rx (sync.c) */
+    static int16_t lib[2 * NS];
+    for (size_t zz = 0, jj = 0; zz < 2 * NS; zz += 4, jj += 3) {
+        const uint16_t *m = (const uint16_t *)(const void *)pk;
+        lib[zz + 0] = (int16_t)((int16_t)((m[jj + 0] & 0x0FFF) << 4) >> 4);
+        lib[zz + 1] = (int16_t)(((int16_t)((m[jj + 1] & 0x00FF) << 8) >> 4) | ((m[jj + 0] & 0xF000) >> 12));
+        lib[zz + 2] = (int16_t)(((int16_t)((m[jj + 2] & 0x000F) << 12) >> 4) | ((m[jj + 1] & 0xFF00) >> 8));
+        lib[zz + 3] = (int16_t)((int16_t)(m[jj + 2] & 0xFFF0) >> 4);
+    }
+    CHECK(memcmp(lib, got, sizeof got) == 0);
+}
+
+static void test_sc8g_auto_shift(void)
+{
+    printf("ajuste automático de GAIN8\n");
+    CHECK_EQ(sc8g_auto_shift(0, 0.0, 10), 1);    /* señal débil: sube */
+    CHECK_EQ(sc8g_auto_shift(1, 0.0, 40), 2);
+    CHECK_EQ(sc8g_auto_shift(1, 0.0, 60), 1);    /* doblar pasaría de 112: se queda */
+    CHECK_EQ(sc8g_auto_shift(3, 0.0, 5), 3);     /* tope */
+    CHECK_EQ(sc8g_auto_shift(2, 0.5, 127), 1);   /* recorte: baja */
+    CHECK_EQ(sc8g_auto_shift(0, 5.0, 127), 0);   /* ya sin ganancia */
+    CHECK_EQ(sc8g_auto_shift(2, 0.005, 120), 2); /* recorte despreciable: se mantiene */
+    CHECK_EQ(sc8g_auto_shift(0, 0.0, 0), 0);     /* sin señal: no se toca */
+}
+
+/* Banco de registros simulado para el cliente GAIN8 de fpga_lab (sin placa) */
+static uint32_t g_regs[32];
+static int mock_rd(void *c, uint32_t a, uint32_t *v) { (void)c; *v = g_regs[a / 4]; return 0; }
+static int mock_wr(void *c, uint32_t a, uint32_t v) { (void)c; g_regs[a / 4] = v; return 0; }
+
+static void test_gain8_registers(void)
+{
+    printf("registros GAIN8 y CNT_SAT8 (E/S simulada)\n");
+    fpga_lab_t lab;
+    memset(&lab, 0, sizeof lab);
+    lab.io.wb_read = mock_rd;
+    lab.io.wb_write = mock_wr;
+    lab.present = true;
+    lab.version = FPGA_LAB_VERSION_1_2;
+    lab.v12 = true;
+    lab.caps = 0xF;
+    CHECK(!fpga_lab_has_gain8(&lab)); /* 1.2: no existe */
+    CHECK(fpga_lab_gain8_set(&lab, 1) < 0);
+    lab.version = FPGA_LAB_VERSION_1_3;
+    CHECK(!fpga_lab_has_gain8(&lab)); /* versión 1.3 pero sin CAPS bit 8 */
+    lab.caps |= FPGA_LAB_CAP_GAIN8;
+    CHECK(fpga_lab_has_gain8(&lab));
+    CHECK(fpga_lab_gain8_set(&lab, 4) < 0);
+    CHECK(fpga_lab_gain8_set(&lab, 2) == 0);
+    CHECK_EQ(g_regs[23], 2);
+    unsigned sh = 0;
+    CHECK(fpga_lab_gain8_get(&lab, &sh) == 0 && sh == 2);
+    g_regs[24] = 4242;
+    uint32_t c = 0;
+    CHECK(fpga_lab_read_sat8(&lab, &c) == 0 && c == 4242);
+}
+
+static void test_format_file(void)
+{
+    printf("formato de RX con fichero: no aplica\n");
+    int16_t iq[2 * 4096];
+    for (int i = 0; i < 2 * 4096; i++)
+        iq[i] = (int16_t)(i % 1000);
+    write_file("fmt.cs16", iq, sizeof iq);
+    source_t *s = open_file("fmt.cs16", 48000, 100000000);
+    if (!s) {
+        tu_fails++;
+        return;
+    }
+    CHECK(source_set_format(s, RXFMT_PACKED12) < 0);
+    CHECK(strstr(source_error(s), "no aplica") != NULL);
+    CHECK(source_set_format(s, RXFMT_SC8G) < 0);
+    CHECK_EQ(source_format_effective(s), RXFMT_SC16);
+    CHECK(strcmp(source_format(s), "cs16") == 0);
+    CHECK(!source_info(s)->fmt_packed12 && !source_info(s)->fmt_sc8g);
+    CHECK_EQ(source_info(s)->usb_speed, 0);
+    CHECK(source_has_timestamps(s));
+    CHECK(source_require_timestamps(s, true) == 0);
+    CHECK(source_sc8g_shift(s) == 0);
+    double pct;
+    int sh;
+    CHECK(!source_sc8g_poll(s, &pct, &sh));
+    /* y la lectura sigue entregando las muestras del fichero sin alterar */
+    int16_t got[2 * 64];
+    unsigned ovr = 0;
+    source_start(s);
+    CHECK(source_read(s, got, 64, &ovr) == 0);
+    CHECK(memcmp(got, iq, sizeof got) == 0);
+    source_close(s);
+}
+
 static void test_pacing(void)
 {
     printf("ritmo real y bucle\n");
@@ -706,6 +919,12 @@ int main(void)
     test_formats();
     test_sigmf();
     test_sc8();
+    test_rxfmt_names_and_choice();
+    test_sc8g_conversion();
+    test_packed12();
+    test_sc8g_auto_shift();
+    test_gain8_registers();
+    test_format_file();
     test_pacing();
     test_sweep_quick();
     test_sweep_resync();

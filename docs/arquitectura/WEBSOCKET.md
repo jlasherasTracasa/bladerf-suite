@@ -40,9 +40,12 @@ continua (±2 bins del centro) ya viene sustituido en el espectro.
 {"type":"status","app","version",
  "device":{"kind":"bladerf|file","board","serial","fw","fpga","lib","freq_min","freq_max",
            "rate_min","rate_max","rate_max_oversample":Hz|null,"bw_min","bw_max",
-           "gain_min","gain_max","can_tune","biastee","can_tx"},
+           "gain_min","gain_max","can_tune","biastee","can_tx",
+           "usb_speed":2|3|null,"formats":["auto","sc16","packed12"?,"sc8g"?]},
  "center","rate","rf_bw","gain_mode":"auto|manual|fast|slow|hybrid","gain","gain_now",
- "format":"sc16|sc8|…","oversample":bool,"dbm_offset":dB|null,
+ "format":"sc16q11|packed12|sc8g|sc8q7|cs16|…","oversample":bool,
+ "format_req":"auto|sc16|packed12|sc8g","format_note":"…"|null,
+ "sc8g":null|{"shift":0..3,"gain_db":0|6|12|18,"manual":bool,"sat_pct":%},"dbm_offset":dB|null,
  "spectrum_src":"cpu|gpu|fpga",
  "fpga_lab":{"present":bool,"active":bool,"version":"1.1"   (solo si present),
              "n","k","frames","gaps"                         (solo si active)},
@@ -63,6 +66,13 @@ continua (±2 bins del centro) ya viene sustituido en el espectro.
   AD9361. `format` es el formato de las muestras en el USB/fichero (el resto del
   programa siempre trabaja en Q11) y `oversample` indica si está activo el modo de
   122,88 Msps.
+* Formato por el USB (F11c): `device.usb_speed` es 2 (Hi-Speed, ≈ 45 MB/s) o 3 (SuperSpeed) o `null`
+  (fichero/desconocido); `device.formats` lista lo que admite este equipo (`packed12` con FPGA ≥ 0.16,
+  `sc8g` solo con la imagen lab ≥ 1.3). `format_req` es lo pedido, `format` lo que realmente viaja
+  (`packed12` = SC16_Q11_PACKED de 3 B/muestra, `sc8g` = SC8 con ganancia digital de la FPGA) y
+  `format_note` explica por qué el automático eligió uno distinto de SC16 y qué se pierde (sin marca de
+  tiempo ni aviso de pérdidas, sin barrido ni TX). `sc8g.sat_pct` = % de muestras recortadas por la ganancia
+  digital (CNT_SAT8, ~1 Hz).
 * `dbm_offset`: dBm = dBFS + `dbm_offset`; `null` si no hay tabla de calibración de
   ganancia (no mostrar dBm).
 * `sweep`: `null` o el barrido en curso (ver «Cliente → servidor»).
@@ -193,6 +203,11 @@ Notas:
 
 * `config.gain_mode` admite también `fast`, `slow` y `hybrid`. Una tasa mayor que 61,44 Msps
   activa el modo oversample automáticamente (solo si `device.rate_max_oversample`).
+* `config.format` = `auto` (por defecto) | `sc16` | `packed12` | `sc8g`. `auto` usa SC16 mientras el enlace
+  lo sostiene (`tasa·4 B` ≤ 45 MB/s en USB 2; ≈ 11,25 Msps) y pasa a `packed12` (≤ 15 Msps) y luego a `sc8g`
+  (≤ 22,5 Msps; sin imagen lab se queda en packed12). Un formato no disponible → `error`. Con fichero no
+  aplica (`error`). `config.sc8g_shift` = `-1` (automático: sube con la señal débil, baja ante recortes) o 0..3
+  (+0/6/12/18 dB fijos). Se rechaza durante un barrido o con `spectrum_src=fpga`; el barrido fuerza sc16.
 * `tx_play` reproduce una grabación de `recordings/` (nombre con o sin extensión). Solo
   `file` (escribe una copia `tx_play_*`) y `loopback` (bucle interno, requiere
   `--enable-tx`); `air` se rechaza siempre. Responde con `tx_result`.
